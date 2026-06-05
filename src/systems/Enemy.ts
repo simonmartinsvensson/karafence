@@ -22,12 +22,20 @@ export class Enemy {
   /** Set once hp hits zero. */
   dead = false;
 
+  private readonly scene: Phaser.Scene;
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
   private readonly container: Phaser.GameObjects.Container;
   private readonly body: Phaser.GameObjects.Rectangle;
   private readonly hpFill: Phaser.GameObjects.Rectangle;
+  private readonly shieldFill?: Phaser.GameObjects.Rectangle;
   private readonly baseColor: number;
+
+  /** Shield that must be depleted before hp takes damage. */
+  shield: number;
+  private readonly maxShield: number;
+  /** Stage Rusher: id of the tower it is immune to (the first to hit it). */
+  private bypassedTowerId: string | null = null;
 
   /** Movement speed multiplier (1 = normal). Driven by slow debuffs. */
   private slowFactor = 1;
@@ -50,7 +58,9 @@ export class Enemy {
     laneIndex: number,
     hpScale = 1,
     speedScale = 1,
+    startCol = map.spawnCol,
   ) {
+    this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.type = type;
@@ -60,11 +70,13 @@ export class Enemy {
     this.reward = type.reward;
     this.armor = type.armor;
     this.speedScale = speedScale;
+    this.shield = type.shield ?? 0;
+    this.maxShield = this.shield;
 
     this.laneIndex = laneIndex;
     this.targetLane = laneIndex;
-    this.col = map.spawnCol;
-    this.targetCol = map.spawnCol;
+    this.col = startCol;
+    this.targetCol = startCol;
 
     const ts = layout.tileSize;
     const start = tileToWorld(layout, this.col, map.laneRows[laneIndex]);
@@ -73,7 +85,7 @@ export class Enemy {
     this.baseColor = type.color;
     this.body = scene.add
       .rectangle(0, 0, bodySize, bodySize, type.color)
-      .setStrokeStyle(1, 0x000000, 0.6);
+      .setStrokeStyle(1, type.boss ? 0xffffff : 0x000000, type.boss ? 0.9 : 0.6);
 
     const barWidth = Math.floor(ts * 0.7);
     const barY = -bodySize / 2 - 5;
@@ -82,9 +94,17 @@ export class Enemy {
       .rectangle(-barWidth / 2, barY, barWidth, 3, 0x51cf66)
       .setOrigin(0, 0.5);
 
+    const children: Phaser.GameObjects.GameObject[] = [this.body, barBg, this.hpFill];
+    if (this.maxShield > 0) {
+      this.shieldFill = scene.add
+        .rectangle(-barWidth / 2, barY - 4, barWidth, 3, 0x74c0fc)
+        .setOrigin(0, 0.5);
+      children.push(this.shieldFill);
+    }
+
     this.container = scene.add
-      .container(start.x, start.y, [this.body, barBg, this.hpFill])
-      .setDepth(10);
+      .container(start.x, start.y, children)
+      .setDepth(type.boss ? 12 : 10);
 
     this.pickNextTarget();
   }
@@ -100,6 +120,28 @@ export class Enemy {
   /** Towers should only target enemies that are alive and still in play. */
   get isTargetable(): boolean {
     return !this.dead && !this.arrivedAtStage;
+  }
+
+  get isBoss(): boolean {
+    return this.type.boss !== undefined;
+  }
+
+  /** Health fraction (0-1), for the boss bar. */
+  get hpRatio(): number {
+    return this.maxHp > 0 ? this.hp / this.maxHp : 0;
+  }
+
+  get shieldRatio(): number {
+    return this.maxShield > 0 ? this.shield / this.maxShield : 0;
+  }
+
+  /** Current grid column (used to spawn splits at the death location). */
+  get gridCol(): number {
+    return this.col;
+  }
+
+  get lane(): number {
+    return this.laneIndex;
   }
 
   /** Choose the next waypoint: one column left, possibly switching lanes. */
@@ -159,12 +201,48 @@ export class Enemy {
     }
   }
 
-  /** Apply damage from a tower hit. Armor reduces it, min 1. */
-  takeDamage(amount: number): void {
-    const dealt = Math.max(1, amount - this.armor);
+  /**
+   * Apply damage from a tower hit. Armor reduces it (min 1). Handles VIP
+   * deflection, Stage Rusher first-tower bypass, and shield absorption.
+   * @param towerId identity of the firing tower ("col,row").
+   */
+  takeDamage(amount: number, towerId?: string): void {
+    // Stage Rusher: ignore the first tower to hit it (and that tower forever).
+    if (this.type.bypassFirstTower && towerId) {
+      if (this.bypassedTowerId === null) this.bypassedTowerId = towerId;
+      if (this.bypassedTowerId === towerId) {
+        this.flash(0xffffff);
+        return;
+      }
+    }
+    // VIP: random deflection.
+    if (this.type.deflectChance && Math.random() < this.type.deflectChance) {
+      this.flash(0xfff3bf);
+      return;
+    }
+
+    let dealt = Math.max(1, amount - this.armor);
+
+    // Shield soaks damage first; overflow carries to hp.
+    if (this.shield > 0) {
+      const toShield = Math.min(this.shield, dealt);
+      this.shield -= toShield;
+      dealt -= toShield;
+      if (this.shieldFill) this.shieldFill.scaleX = this.shieldRatio;
+    }
+    if (dealt <= 0) return;
+
     this.hp = Math.max(0, this.hp - dealt);
     this.hpFill.scaleX = this.hp / this.maxHp;
     if (this.hp === 0) this.dead = true;
+  }
+
+  /** Brief color blip to signal a deflected / bypassed hit. */
+  private flash(color: number): void {
+    this.body.setFillStyle(color);
+    this.scene.time.delayedCall(80, () => {
+      if (this.slowRemaining <= 0) this.body.setFillStyle(this.baseColor);
+    });
   }
 
   /**

@@ -12,6 +12,8 @@ export interface WaveManagerCallbacks {
   onKill?: (enemy: Enemy) => void;
   /** The current wave was fully cleared (drives intermission + interest). */
   onWaveCleared?: () => void;
+  /** A boss enemy just spawned (drives the boss health bar + abilities). */
+  onBossSpawn?: (enemy: Enemy) => void;
 }
 
 /**
@@ -86,14 +88,13 @@ export class WaveManager {
     this.speedScale = 1 + DIFFICULTY.speedPerWave * index;
 
     const wave = WAVES[index];
-    this.toSpawn = wave.groups.reduce(
-      (sum, g) => sum + scaledCount(g.count, index),
-      0,
-    );
+    const groupCount = (g: (typeof wave.groups)[number]) =>
+      g.noScale ? g.count : scaledCount(g.count, index);
+    this.toSpawn = wave.groups.reduce((sum, g) => sum + groupCount(g), 0);
 
     let at = 0;
     for (const group of wave.groups) {
-      const count = scaledCount(group.count, index);
+      const count = groupCount(group);
       for (let i = 0; i < count; i++) {
         this.timers.push(
           this.scene.time.delayedCall(at, () => this.spawn(group.type)),
@@ -107,17 +108,39 @@ export class WaveManager {
     if (this.stopped) return;
     const laneIndex = this.laneCursor % this.map.laneRows.length;
     this.laneCursor++;
+    this.spawnEnemy(typeKey, laneIndex);
+    this.toSpawn = Math.max(0, this.toSpawn - 1);
+  }
+
+  /**
+   * Spawn one enemy, optionally at a given column (used for Superfan splits and
+   * boss-summoned enemies). Bosses are never difficulty-scaled. Does not touch
+   * `toSpawn` (use `spawn` for scheduled wave spawns).
+   */
+  spawnAt(typeKey: EnemyTypeKey, laneIndex: number, startCol?: number): Enemy {
+    return this.spawnEnemy(typeKey, laneIndex, startCol);
+  }
+
+  private spawnEnemy(
+    typeKey: EnemyTypeKey,
+    laneIndex: number,
+    startCol?: number,
+  ): Enemy {
+    const type = ENEMY_TYPES[typeKey];
+    const isBoss = type.boss !== undefined;
     const enemy = new Enemy(
       this.scene,
       this.map,
       this.layout,
-      ENEMY_TYPES[typeKey],
+      type,
       laneIndex,
-      this.hpScale,
-      this.speedScale,
+      isBoss ? 1 : this.hpScale,
+      isBoss ? 1 : this.speedScale,
+      startCol ?? this.map.spawnCol,
     );
     this.enemies.add(enemy);
-    this.toSpawn = Math.max(0, this.toSpawn - 1);
+    if (isBoss) this.callbacks.onBossSpawn?.(enemy);
+    return enemy;
   }
 
   /** @param dt seconds since last frame */
@@ -132,6 +155,13 @@ export class WaveManager {
         this.enemies.delete(enemy);
       } else if (enemy.dead) {
         this.callbacks.onKill?.(enemy);
+        // Superfan: split into smaller enemies at the death location.
+        const split = enemy.type.splitInto;
+        if (split) {
+          for (let i = 0; i < split.count; i++) {
+            this.spawnAt(split.type, enemy.lane, enemy.gridCol);
+          }
+        }
         enemy.destroy();
         this.enemies.delete(enemy);
       }

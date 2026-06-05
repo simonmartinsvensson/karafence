@@ -46,10 +46,14 @@ export class Tower {
   /** Purchased tier per path (0-3). */
   readonly tiers: Record<UpgradePathKey, number> = { A: 0, B: 0 };
 
+  /** Stable identity ("col,row"), used by Stage Rusher bypass. */
+  readonly id: string;
+
   private readonly scene: Phaser.Scene;
   private readonly layout: GridLayout;
   private readonly enemies: Iterable<Enemy>;
   private readonly damageMultiplier: () => number;
+  private readonly attackSpeedMultiplier: () => number;
   private readonly worldX: number;
   private readonly worldY: number;
   private readonly container: Phaser.GameObjects.Container;
@@ -60,6 +64,7 @@ export class Tower {
   private rangePx = 0;
   private projectileSpeed = 0;
   private cooldown = 0;
+  private frozenRemaining = 0;
   private totalSpent: number;
 
   constructor(
@@ -70,14 +75,17 @@ export class Tower {
     row: number,
     enemies: Iterable<Enemy>,
     damageMultiplier: () => number,
+    attackSpeedMultiplier: () => number,
   ) {
     this.scene = scene;
     this.layout = layout;
     this.type = type;
     this.col = col;
     this.row = row;
+    this.id = `${col},${row}`;
     this.enemies = enemies;
     this.damageMultiplier = damageMultiplier;
+    this.attackSpeedMultiplier = attackSpeedMultiplier;
     this.targeting = type.defaultTargeting;
     this.totalSpent = type.cost;
 
@@ -237,7 +245,26 @@ export class Tower {
     return this.targeting;
   }
 
+  get x(): number {
+    return this.worldX;
+  }
+
+  get y(): number {
+    return this.worldY;
+  }
+
+  /** Heckler King taunt: silence the tower for `seconds`. */
+  freeze(seconds: number): void {
+    this.frozenRemaining = Math.max(this.frozenRemaining, seconds);
+    this.body.setStrokeStyle(2, 0x74c0fc, 1);
+  }
+
   // --- Combat --------------------------------------------------------------
+
+  /** Seconds between shots, including the global attack-speed multiplier. */
+  private fireInterval(): number {
+    return 1 / (this.stats.attackSpeed * this.attackSpeedMultiplier());
+  }
 
   /**
    * Advance the tower. Returns projectiles for the caller to track (splash
@@ -245,6 +272,11 @@ export class Tower {
    * @param dt seconds since last frame
    */
   update(dt: number): Projectile[] {
+    if (this.frozenRemaining > 0) {
+      this.frozenRemaining -= dt;
+      if (this.frozenRemaining <= 0) this.body.setStrokeStyle(2, 0xffffff, 0.85);
+      return [];
+    }
     if (this.cooldown > 0) {
       this.cooldown -= dt;
       if (this.cooldown > 0) return [];
@@ -252,7 +284,7 @@ export class Tower {
 
     if (this.stats.splash) {
       if (this.enemiesInRange().length === 0) return [];
-      this.cooldown = 1 / this.stats.attackSpeed;
+      this.cooldown = this.fireInterval();
       this.fireSplash();
       if (this.stats.doubleFire) {
         this.scene.time.delayedCall(120, () => {
@@ -264,7 +296,7 @@ export class Tower {
 
     const targets = this.selectTargets(this.stats.multiTarget);
     if (targets.length === 0) return [];
-    this.cooldown = 1 / this.stats.attackSpeed;
+    this.cooldown = this.fireInterval();
     return targets.map(
       (target) =>
         new Projectile(
@@ -280,7 +312,10 @@ export class Tower {
   }
 
   private dealHit(enemy: Enemy): void {
-    enemy.takeDamage(Math.round(this.stats.damage * this.damageMultiplier()));
+    enemy.takeDamage(
+      Math.round(this.stats.damage * this.damageMultiplier()),
+      this.id,
+    );
     if (this.stats.slowOnHit) {
       enemy.applySlow(this.stats.slowFactor, this.stats.slowDuration);
     }

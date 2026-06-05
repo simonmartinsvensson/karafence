@@ -26,6 +26,7 @@ import {
   ENCORE_REWIND_SECONDS,
   type PowerUpKey,
 } from '../data/powerups';
+import { BOSS_CONFIG } from '../data/enemies';
 
 const TILE_COLORS: Record<TileType, number> = {
   [TileType.Stage]: 0x3a2150,
@@ -34,7 +35,7 @@ const TILE_COLORS: Record<TileType, number> = {
 };
 
 const HUD_HEIGHT = 22;
-const SINGER_MAX_HP = 20;
+const SINGER_MAX_HP = 30;
 const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
 const COMBO_BONUS = 0.15; // gold bonus per combo step
 const INTERMISSION_SECONDS = 12;
@@ -66,6 +67,15 @@ export class GameScene extends Phaser.Scene {
   private intermissionRemaining = 0;
   private intermissionUi?: Phaser.GameObjects.Container;
 
+  // Active boss + its ability state.
+  private activeBoss: Enemy | null = null;
+  private bossAbilityTimer = 0;
+  private bossPhase2 = false;
+  private bossPhase3 = false;
+  private bossBar?: Phaser.GameObjects.Container;
+  private bossBarFill?: Phaser.GameObjects.Rectangle;
+  private bossBarLabel?: Phaser.GameObjects.Text;
+
   private waveText!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
@@ -92,6 +102,7 @@ export class GameScene extends Phaser.Scene {
       onReachStage: (enemy) => this.onEnemyReachStage(enemy),
       onKill: (enemy) => this.onEnemyKilled(enemy),
       onWaveCleared: () => this.onWaveCleared(),
+      onBossSpawn: (enemy) => this.onBossSpawn(enemy),
     });
 
     this.towers = new TowerManager(this, this.map, this.layout, this.waves.enemies);
@@ -112,6 +123,7 @@ export class GameScene extends Phaser.Scene {
     this.towers.update(dt);
     this.tickCombo(dt);
     this.tickIntermission(dt);
+    this.driveBoss(dt);
     this.refreshHud();
   }
 
@@ -353,6 +365,14 @@ export class GameScene extends Phaser.Scene {
   // --- Game flow -----------------------------------------------------------
 
   private onEnemyReachStage(enemy: Enemy): void {
+    // The Mic Grabber steals gold and kills the combo if he reaches the stage.
+    if (enemy.type.boss === 'micGrabber') {
+      this.gold = Math.max(0, this.gold - BOSS_CONFIG.micGrabber.goldSteal);
+      this.combo = 0;
+      this.updateComboHud(false);
+      this.floatText(enemy.x, enemy.y, '🎤 -10g STOLEN!', '#ff6b6b');
+    }
+    if (enemy === this.activeBoss) this.clearBoss();
     this.damageSinger(enemy.damage);
   }
 
@@ -360,8 +380,9 @@ export class GameScene extends Phaser.Scene {
   private onEnemyKilled(enemy: Enemy): void {
     this.combo += 1;
     this.comboTimer = COMBO_WINDOW;
-    const bonus = Math.round(enemy.reward * COMBO_BONUS * this.combo);
-    const gain = enemy.reward + bonus;
+    const reward = this.rewardAfterCritic(enemy);
+    const bonus = Math.round(reward * COMBO_BONUS * this.combo);
+    const gain = reward + bonus;
     this.gold += gain;
 
     this.floatText(
@@ -372,7 +393,152 @@ export class GameScene extends Phaser.Scene {
     );
     this.updateComboHud(true);
     if (this.combo >= 5 && this.combo % 5 === 0) this.crowdGoesWild();
+    if (enemy === this.activeBoss) this.clearBoss();
     this.refreshHud();
+  }
+
+  /** Critic "bad review" aura: cut the reward of enemies dying near a Critic. */
+  private rewardAfterCritic(enemy: Enemy): number {
+    const ts = this.layout.tileSize;
+    for (const other of this.waves.enemies) {
+      if (other === enemy || other.dead || !other.type.criticAura) continue;
+      const within =
+        Math.hypot(other.x - enemy.x, other.y - enemy.y) <= other.type.criticAura * ts;
+      if (within) return Math.floor(enemy.reward * (other.type.reviewPenalty ?? 0.5));
+    }
+    return enemy.reward;
+  }
+
+  // --- Bosses --------------------------------------------------------------
+
+  private onBossSpawn(boss: Enemy): void {
+    this.activeBoss = boss;
+    this.bossAbilityTimer =
+      boss.type.boss === 'hecklerKing'
+        ? BOSS_CONFIG.hecklerKing.tauntInterval
+        : boss.type.boss === 'djWontStop'
+          ? BOSS_CONFIG.djWontStop.spawnInterval
+          : 0;
+    this.bossPhase2 = false;
+    this.bossPhase3 = false;
+    this.showBossBar(boss);
+  }
+
+  private showBossBar(boss: Enemy): void {
+    this.bossBar?.destroy(true);
+    const w = GAME_WIDTH - 16;
+    const bg = this.add.rectangle(0, 0, w, 9, 0x2a0e16, 0.95).setStrokeStyle(1, 0xffffff, 0.5);
+    this.bossBarFill = this.add
+      .rectangle(-w / 2, 0, w, 9, 0xff5070)
+      .setOrigin(0, 0.5);
+    this.bossBarLabel = this.add
+      .text(0, 0, boss.type.name, {
+        fontFamily: 'monospace',
+        fontSize: '7px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    this.bossBar = this.add
+      .container(GAME_WIDTH / 2, 19, [bg, this.bossBarFill, this.bossBarLabel])
+      .setDepth(135);
+  }
+
+  private updateBossBar(): void {
+    const boss = this.activeBoss;
+    if (!boss || !this.bossBarFill || !this.bossBarLabel) return;
+    const shielded = boss.shieldRatio > 0;
+    this.bossBarFill.scaleX = shielded ? boss.shieldRatio : boss.hpRatio;
+    this.bossBarFill.fillColor = shielded ? 0x74c0fc : 0xff5070;
+    this.bossBarLabel.setText(boss.type.name + (shielded ? '  [SHIELD]' : ''));
+  }
+
+  private clearBoss(): void {
+    this.activeBoss = null;
+    this.towers.attackSpeedMultiplier = 1; // undo Talent Judge phase 3
+    this.bossBar?.destroy(true);
+    this.bossBar = undefined;
+    this.bossBarFill = undefined;
+    this.bossBarLabel = undefined;
+  }
+
+  /** Per-frame boss abilities. */
+  private driveBoss(dt: number): void {
+    const boss = this.activeBoss;
+    if (!boss) return;
+    // Safety: if the boss left play without a kill/stage event.
+    if (!this.waves.enemies.has(boss)) {
+      this.clearBoss();
+      return;
+    }
+    this.updateBossBar();
+    const ts = this.layout.tileSize;
+
+    switch (boss.type.boss) {
+      case 'hecklerKing': {
+        this.bossAbilityTimer -= dt;
+        if (this.bossAbilityTimer <= 0) {
+          const cfg = BOSS_CONFIG.hecklerKing;
+          this.bossAbilityTimer = cfg.tauntInterval;
+          this.towers.freezeTowersInRadius(
+            boss.x,
+            boss.y,
+            cfg.freezeRadiusTiles * ts,
+            cfg.freezeDuration,
+          );
+          this.bossShout(boss, cfg.freezeRadiusTiles * ts, '🔇 TAUNT!');
+        }
+        break;
+      }
+      case 'djWontStop': {
+        this.bossAbilityTimer -= dt;
+        if (this.bossAbilityTimer <= 0) {
+          const cfg = BOSS_CONFIG.djWontStop;
+          this.bossAbilityTimer = cfg.spawnInterval;
+          const lanes = this.map.laneRows.length;
+          for (let i = 0; i < cfg.spawnCount; i++) {
+            this.waves.spawnAt(cfg.spawnType, Math.floor(Math.random() * lanes));
+          }
+          this.floatText(boss.x, boss.y, '🎧 DROP THE BEAT!', '#63e6be');
+        }
+        break;
+      }
+      case 'talentJudge': {
+        const cfg = BOSS_CONFIG.talentJudge;
+        if (!this.bossPhase2 && boss.hpRatio <= cfg.phase2Hp) {
+          this.bossPhase2 = true;
+          const lanes = this.map.laneRows.length;
+          for (let i = 0; i < cfg.rusherCount; i++) {
+            this.waves.spawnAt(cfg.rusherType, i % lanes);
+          }
+          this.floatText(boss.x, boss.y, 'PHASE 2: RUSHERS!', '#ffd43b');
+        }
+        if (!this.bossPhase3 && boss.hpRatio <= cfg.phase3Hp) {
+          this.bossPhase3 = true;
+          this.towers.attackSpeedMultiplier = cfg.attackSpeedFactor;
+          this.floatText(boss.x, boss.y, 'PHASE 3: TOWERS SLOWED!', '#ff6b6b');
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  /** Boss taunt visual: an expanding ring + a callout. */
+  private bossShout(boss: Enemy, radius: number, msg: string): void {
+    const ring = this.add
+      .circle(boss.x, boss.y, radius, 0xffd43b, 0.18)
+      .setStrokeStyle(2, 0xffd43b, 0.8)
+      .setScale(0.2)
+      .setDepth(19);
+    this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0,
+      duration: 450,
+      onComplete: () => ring.destroy(),
+    });
+    this.floatText(boss.x, boss.y, msg, '#ffd43b');
   }
 
   // --- Combo (Crowd Hype) --------------------------------------------------
@@ -569,6 +735,7 @@ export class GameScene extends Phaser.Scene {
 
   private triggerVictory(): void {
     this.gameOver = true;
+    this.clearBoss();
     this.add
       .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6)
       .setDepth(200);
@@ -600,6 +767,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
+    this.clearBoss();
     this.add
       .rectangle(
         GAME_WIDTH / 2,

@@ -81,17 +81,28 @@ stage (purple), aisle (carpet brown), buildable seats/floor (teal). The singer
 is a placeholder rect + label in the stage zone, with a `damageSinger()` hook
 for when enemies reach the stage.
 
-## Enemies / waves
+## Enemies / waves / bosses
 
-- `src/data/enemies.ts` — data-driven types: **Heckler** (standard), **Phone
-  Scroller** (slow/tanky), **Drunk Uncle** (fast/fragile, `erratic` →
-  random adjacent lane each step). Stats: hp, speed, armor, reward, damage.
-- `src/data/waves.ts` — waves as spawn groups (`type` / `count` / `delay`) +
-  `delayBeforeNext`.
-- `src/systems/Enemy.ts` — waypoint movement right→left, HP bar, `takeDamage()`
-  and `applySlow()` (slow tints the body blue and decays over time).
-- `src/systems/WaveManager.ts` — round-robin lane spawns, drives movement,
-  auto-advances waves; callbacks `onReachStage` / `onKill`.
+- `src/data/enemies.ts` — data-driven types. Standard: **Heckler**, **Phone
+  Scroller** (tanky), **Drunk Uncle** (erratic), **Stage Rusher**
+  (`bypassFirstTower` — immune to the first tower that hits it), **Critic**
+  (`criticAura` + `reviewPenalty` — cuts the reward of enemies dying nearby),
+  **Superfan** (`splitInto` — splits into 2 Hecklers on death), **VIP**
+  (`deflectChance` + big reward). Bosses (flagged with `boss`): **Heckler King**
+  (taunt freezes towers in radius), **Mic Grabber** (steals gold + resets combo
+  at the stage), **DJ Who Wouldn't Stop** (`shield` + summons Hecklers),
+  **Talent Show Judge** (multi-phase). `BOSS_CONFIG` tunes the abilities.
+- `src/data/waves.ts` — 20 waves; bosses at 5/10/15/20 (`boss()` groups set
+  `noScale`). `DIFFICULTY` / `scaledCount` scale count/hp/speed per wave.
+- `src/systems/Enemy.ts` — waypoint movement, HP + shield bars, `takeDamage()`
+  (handles deflect / first-tower bypass / shield), `applySlow()`, `rewind()`,
+  and `isBoss` / `hpRatio` for the boss bar.
+- `src/systems/WaveManager.ts` — round-robin spawns, `spawnAt()` (splits + boss
+  summons), Superfan split on death; callbacks `onReachStage` / `onKill` /
+  `onWaveCleared` / `onBossSpawn`.
+- Boss abilities + the full-width **boss health bar** are driven by `GameScene`
+  (`driveBoss`/`showBossBar`); `Tower.freeze()` + `TowerManager`
+  `attackSpeedMultiplier` back the Heckler King taunt and Talent Judge phase 3.
 
 ## Towers / combat / economy
 

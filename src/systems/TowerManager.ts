@@ -25,6 +25,8 @@ export class TowerManager {
 
   /** Global tower damage multiplier (Sound Check power-up sets this to 2). */
   damageMultiplier = 1;
+  /** Global attack-speed multiplier (Talent Judge phase 3 sets this to 0.5). */
+  attackSpeedMultiplier = 1;
 
   /** Notified when the selected tower changes (null = deselected). */
   onSelectionChange?: (tower: Tower | null) => void;
@@ -72,6 +74,7 @@ export class TowerManager {
       row,
       this.enemies,
       () => this.damageMultiplier,
+      () => this.attackSpeedMultiplier,
     );
     this.towers.set(this.key(col, row), tower);
 
@@ -113,6 +116,13 @@ export class TowerManager {
     if (this.selected === tower) this.deselect();
     this.towers.delete(this.key(tower.col, tower.row));
     tower.destroy();
+  }
+
+  /** Freeze every tower within `radiusPx` of a point (Heckler King taunt). */
+  freezeTowersInRadius(x: number, y: number, radiusPx: number, seconds: number): void {
+    for (const tower of this.towers.values()) {
+      if (Math.hypot(tower.x - x, tower.y - y) <= radiusPx) tower.freeze(seconds);
+    }
   }
 
   // --- Build overlay -------------------------------------------------------

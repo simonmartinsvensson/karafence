@@ -91,7 +91,7 @@ export const TOWER_LIST: TowerType[] = [
   TOWER_TYPES.keyboardist,
 ];
 
-export const STARTING_GOLD = 150;
+export const STARTING_GOLD = 220;
 
 // --- Upgrades --------------------------------------------------------------
 
