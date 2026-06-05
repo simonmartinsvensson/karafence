@@ -1,14 +1,12 @@
 import Phaser from 'phaser';
+import { GAME_WIDTH, GAME_HEIGHT, COLORS } from './config';
 import { BootScene } from './scenes/BootScene';
-
-// Logical resolution: 16:9, deliberately wide to show a TD lane grid.
-export const GAME_WIDTH = 480;
-export const GAME_HEIGHT = 270;
+import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'game',
-  backgroundColor: '#0b0b12',
+  backgroundColor: COLORS.background,
   pixelArt: true,
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
@@ -16,7 +14,7 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene],
+  scene: [BootScene, GameScene],
 };
 
 // eslint-disable-next-line no-new

@@ -54,11 +54,32 @@ Defined in `src/main.ts`:
 ## Scene flow
 
 ```
-BootScene  → (future) PreloadScene → MenuScene → GameScene → GameOverScene
+BootScene  →  GameScene  →  (future) MenuScene / GameOverScene
 ```
 
-Currently only **BootScene** exists. It logs `"boot"` and draws a colored
-rectangle to confirm Phaser is rendering. No game systems are implemented yet.
+- **BootScene** logs `"boot"` and immediately starts `GameScene`. Asset
+  preloading will live here later.
+- **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid and the
+  stage. It reads a data-driven map and lays it out to fit the canvas. No game
+  systems (enemies, towers, waves) are wired up yet.
+
+## Map / lanes
+
+Maps are **data-driven**. A level is authored as ASCII rows + a legend and
+parsed into a `MapDefinition`:
+
+- `src/types/map.ts` — `TileType` (`stage` / `aisle` / `build`) and
+  `MapDefinition` (grid, lane rows, spawn/stage columns).
+- `src/data/level1.ts` — "The Open Mic": 16×11 grid, **5 aisles** running
+  right→left toward the stage, separated by buildable rows so a tower between
+  two aisles can cover both. Edit the ASCII to author a new map.
+
+`GameScene` fits the whole map below a HUD strip and centers it; with
+`Scale.FIT` this scales as a unit — fits to width on portrait phones, fills
+cleanly centered on landscape desktop. Tile colors are flat placeholders:
+stage (purple), aisle (carpet brown), buildable seats/floor (teal). The singer
+is a placeholder rect + label in the stage zone, with a `damageSinger()` hook
+for when enemies reach the stage.
 
 ## NPM scripts
 
