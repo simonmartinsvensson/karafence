@@ -21,6 +21,20 @@ export interface WaveDef {
   delayBeforeNext: number;
 }
 
+/**
+ * Per-wave difficulty scaling (wave index w, 0-based): each later wave spawns
+ * more, faster, tougher enemies.
+ */
+export const DIFFICULTY = {
+  hpPerWave: 0.18,
+  speedPerWave: 0.06,
+  countPerWave: 0.25,
+};
+
+export function scaledCount(base: number, waveIndex: number): number {
+  return Math.round(base * (1 + DIFFICULTY.countPerWave * waveIndex));
+}
+
 export const WAVES: WaveDef[] = [
   // Wave 1 — easy intro.
   {

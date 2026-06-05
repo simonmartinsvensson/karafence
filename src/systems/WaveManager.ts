@@ -3,13 +3,15 @@ import type { MapDefinition } from '../types/map';
 import type { GridLayout } from './grid';
 import { Enemy } from './Enemy';
 import { ENEMY_TYPES, type EnemyTypeKey } from '../data/enemies';
-import { WAVES } from '../data/waves';
+import { WAVES, DIFFICULTY, scaledCount } from '../data/waves';
 
 export interface WaveManagerCallbacks {
   /** An enemy reached the stage. */
   onReachStage: (enemy: Enemy) => void;
-  /** An enemy was killed (used once towers exist). */
+  /** An enemy was killed. */
   onKill?: (enemy: Enemy) => void;
+  /** The current wave was fully cleared (drives intermission + interest). */
+  onWaveCleared?: () => void;
 }
 
 /**
@@ -31,6 +33,8 @@ export class WaveManager {
   private waveActive = false;
   private stopped = false;
   private timers: Phaser.Time.TimerEvent[] = [];
+  private hpScale = 1;
+  private speedScale = 1;
 
   constructor(
     scene: Phaser.Scene,
@@ -57,29 +61,40 @@ export class WaveManager {
     return this.toSpawn + this.enemies.size;
   }
 
+  get hasNextWave(): boolean {
+    return this.waveIndex < WAVES.length - 1;
+  }
+
   get finished(): boolean {
-    return (
-      this.waveIndex >= WAVES.length - 1 &&
-      !this.waveActive &&
-      this.enemiesRemaining === 0
-    );
+    return !this.hasNextWave && !this.waveActive && this.enemiesRemaining === 0;
   }
 
   start(): void {
     this.startWave(0);
   }
 
+  /** Begin the next wave (called by GameScene when intermission ends). */
+  startNextWave(): void {
+    if (this.hasNextWave) this.startWave(this.waveIndex + 1);
+  }
+
   private startWave(index: number): void {
     if (this.stopped || index >= WAVES.length) return;
     this.waveIndex = index;
     this.waveActive = true;
+    this.hpScale = 1 + DIFFICULTY.hpPerWave * index;
+    this.speedScale = 1 + DIFFICULTY.speedPerWave * index;
 
     const wave = WAVES[index];
-    this.toSpawn = wave.groups.reduce((sum, g) => sum + g.count, 0);
+    this.toSpawn = wave.groups.reduce(
+      (sum, g) => sum + scaledCount(g.count, index),
+      0,
+    );
 
     let at = 0;
     for (const group of wave.groups) {
-      for (let i = 0; i < group.count; i++) {
+      const count = scaledCount(group.count, index);
+      for (let i = 0; i < count; i++) {
         this.timers.push(
           this.scene.time.delayedCall(at, () => this.spawn(group.type)),
         );
@@ -98,6 +113,8 @@ export class WaveManager {
       this.layout,
       ENEMY_TYPES[typeKey],
       laneIndex,
+      this.hpScale,
+      this.speedScale,
     );
     this.enemies.add(enemy);
     this.toSpawn = Math.max(0, this.toSpawn - 1);
@@ -120,17 +137,10 @@ export class WaveManager {
       }
     }
 
-    // Wave fully cleared -> schedule the next one.
+    // Wave fully cleared -> hand off to GameScene (intermission + interest).
     if (this.waveActive && this.enemiesRemaining === 0) {
       this.waveActive = false;
-      const wave = WAVES[this.waveIndex];
-      if (this.waveIndex < WAVES.length - 1) {
-        this.timers.push(
-          this.scene.time.delayedCall(wave.delayBeforeNext, () =>
-            this.startWave(this.waveIndex + 1),
-          ),
-        );
-      }
+      this.callbacks.onWaveCleared?.();
     }
   }
 

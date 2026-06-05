@@ -23,6 +23,9 @@ export class TowerManager {
   private selected: Tower | null = null;
   private overlay: Phaser.GameObjects.Rectangle[] = [];
 
+  /** Global tower damage multiplier (Sound Check power-up sets this to 2). */
+  damageMultiplier = 1;
+
   /** Notified when the selected tower changes (null = deselected). */
   onSelectionChange?: (tower: Tower | null) => void;
 
@@ -68,6 +71,7 @@ export class TowerManager {
       col,
       row,
       this.enemies,
+      () => this.damageMultiplier,
     );
     this.towers.set(this.key(col, row), tower);
 

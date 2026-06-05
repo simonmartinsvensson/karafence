@@ -129,6 +129,29 @@ for when enemies reach the stage.
 - `GameScene` wires `TowerManager.onSelectionChange` → open/close the panel, and
   owns the gold spend/refund on upgrade/sell.
 
+## Combo, economy depth, pacing, shop
+
+All orchestrated by `GameScene`:
+
+- **Crowd Hype combo** — each kill within `COMBO_WINDOW` (2.5s) of the last
+  raises the combo; kills pay `reward + reward·COMBO_BONUS·combo`. A "🔥 HYPE
+  x{n}" meter shows; at x5+ a "THE CROWD GOES WILD!" screen flash fires. The
+  combo resets if no kill lands within the window.
+- **Interest** — on each wave clear, `+floor(gold / 10)` is banked (rewards
+  saving), shown as a floating "+Ng interest".
+- **Intermission** — `WaveManager` no longer auto-advances; on clear it calls
+  `onWaveCleared`, and `GameScene` runs a `INTERMISSION_SECONDS` countdown with
+  a Skip (Fast Forward) button. Building/upgrading/shopping stay enabled.
+  `WaveManager.startNextWave()` begins the next wave (countdown end or Skip).
+- **Shop** (`src/ui/ShopPanel.ts`, data in `src/data/powerups.ts`) — a
+  persistent button opens the "KaraFence Cash" modal selling one-use power-ups:
+  Security Guard (kill all on screen), Encore (`Enemy.rewind` all enemies 10s),
+  Sound Check (`TowerManager.damageMultiplier = 2` for 15s). Effects apply on
+  purchase.
+- **Difficulty scaling** (`DIFFICULTY` / `scaledCount` in `src/data/waves.ts`) —
+  each wave index raises enemy count, HP (`Enemy` `hpScale`), and speed
+  (`speedScale`) by a small per-wave factor.
+
 ## NPM scripts
 
 - `npm run dev` — start the Vite dev server.

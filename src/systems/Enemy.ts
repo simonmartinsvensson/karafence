@@ -32,6 +32,8 @@ export class Enemy {
   /** Movement speed multiplier (1 = normal). Driven by slow debuffs. */
   private slowFactor = 1;
   private slowRemaining = 0;
+  /** Per-wave difficulty multiplier applied to base movement speed. */
+  private readonly speedScale: number;
 
   private col: number;
   private laneIndex: number;
@@ -46,15 +48,18 @@ export class Enemy {
     layout: GridLayout,
     type: EnemyType,
     laneIndex: number,
+    hpScale = 1,
+    speedScale = 1,
   ) {
     this.map = map;
     this.layout = layout;
     this.type = type;
-    this.hp = type.hp;
-    this.maxHp = type.hp;
+    this.hp = Math.round(type.hp * hpScale);
+    this.maxHp = this.hp;
     this.damage = type.damage;
     this.reward = type.reward;
     this.armor = type.armor;
+    this.speedScale = speedScale;
 
     this.laneIndex = laneIndex;
     this.targetLane = laneIndex;
@@ -133,7 +138,8 @@ export class Enemy {
       }
     }
 
-    const step = this.type.speed * this.slowFactor * this.layout.tileSize * dt;
+    const step =
+      this.type.speed * this.speedScale * this.slowFactor * this.layout.tileSize * dt;
     const dx = this.targetX - this.container.x;
     const dy = this.targetY - this.container.y;
     const dist = Math.hypot(dx, dy);
@@ -169,6 +175,24 @@ export class Enemy {
     this.slowFactor = Math.min(this.slowFactor, factor);
     this.slowRemaining = Math.max(this.slowRemaining, durationSec);
     this.body.setFillStyle(0x74c0fc);
+  }
+
+  /**
+   * Encore power-up: send the enemy back toward the spawn edge by the distance
+   * it would cover in `seconds`, snapping onto its lane and re-aiming.
+   */
+  rewind(seconds: number): void {
+    if (this.arrivedAtStage || this.dead) return;
+    const ts = this.layout.tileSize;
+    const dist = this.type.speed * this.speedScale * seconds * ts;
+    const laneRow = this.map.laneRows[this.laneIndex];
+    const spawnX = tileToWorld(this.layout, this.map.spawnCol, laneRow).x;
+    const newX = Math.min(spawnX, this.container.x + dist);
+    const laneY = tileToWorld(this.layout, 0, laneRow).y;
+    this.container.setPosition(newX, laneY);
+    this.col = Math.round((newX - this.layout.offsetX - ts / 2) / ts);
+    this.targetLane = this.laneIndex;
+    this.pickNextTarget();
   }
 
   destroy(): void {

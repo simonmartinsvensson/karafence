@@ -49,6 +49,7 @@ export class Tower {
   private readonly scene: Phaser.Scene;
   private readonly layout: GridLayout;
   private readonly enemies: Iterable<Enemy>;
+  private readonly damageMultiplier: () => number;
   private readonly worldX: number;
   private readonly worldY: number;
   private readonly container: Phaser.GameObjects.Container;
@@ -68,6 +69,7 @@ export class Tower {
     col: number,
     row: number,
     enemies: Iterable<Enemy>,
+    damageMultiplier: () => number,
   ) {
     this.scene = scene;
     this.layout = layout;
@@ -75,6 +77,7 @@ export class Tower {
     this.col = col;
     this.row = row;
     this.enemies = enemies;
+    this.damageMultiplier = damageMultiplier;
     this.targeting = type.defaultTargeting;
     this.totalSpent = type.cost;
 
@@ -277,7 +280,7 @@ export class Tower {
   }
 
   private dealHit(enemy: Enemy): void {
-    enemy.takeDamage(this.stats.damage);
+    enemy.takeDamage(Math.round(this.stats.damage * this.damageMultiplier()));
     if (this.stats.slowOnHit) {
       enemy.applySlow(this.stats.slowFactor, this.stats.slowDuration);
     }
