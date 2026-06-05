@@ -25,7 +25,13 @@ export class Enemy {
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
   private readonly container: Phaser.GameObjects.Container;
+  private readonly body: Phaser.GameObjects.Rectangle;
   private readonly hpFill: Phaser.GameObjects.Rectangle;
+  private readonly baseColor: number;
+
+  /** Movement speed multiplier (1 = normal). Driven by slow debuffs. */
+  private slowFactor = 1;
+  private slowRemaining = 0;
 
   private col: number;
   private laneIndex: number;
@@ -59,7 +65,8 @@ export class Enemy {
     const start = tileToWorld(layout, this.col, map.laneRows[laneIndex]);
 
     const bodySize = Math.max(6, Math.floor(ts * type.size));
-    const body = scene.add
+    this.baseColor = type.color;
+    this.body = scene.add
       .rectangle(0, 0, bodySize, bodySize, type.color)
       .setStrokeStyle(1, 0x000000, 0.6);
 
@@ -71,7 +78,7 @@ export class Enemy {
       .setOrigin(0, 0.5);
 
     this.container = scene.add
-      .container(start.x, start.y, [body, barBg, this.hpFill])
+      .container(start.x, start.y, [this.body, barBg, this.hpFill])
       .setDepth(10);
 
     this.pickNextTarget();
@@ -83,6 +90,11 @@ export class Enemy {
 
   get y(): number {
     return this.container.y;
+  }
+
+  /** Towers should only target enemies that are alive and still in play. */
+  get isTargetable(): boolean {
+    return !this.dead && !this.arrivedAtStage;
   }
 
   /** Choose the next waypoint: one column left, possibly switching lanes. */
@@ -112,7 +124,16 @@ export class Enemy {
   update(dt: number): void {
     if (this.arrivedAtStage || this.dead) return;
 
-    const step = this.type.speed * this.layout.tileSize * dt;
+    // Tick down any active slow debuff and restore speed/color when it ends.
+    if (this.slowRemaining > 0) {
+      this.slowRemaining -= dt;
+      if (this.slowRemaining <= 0) {
+        this.slowFactor = 1;
+        this.body.setFillStyle(this.baseColor);
+      }
+    }
+
+    const step = this.type.speed * this.slowFactor * this.layout.tileSize * dt;
     const dx = this.targetX - this.container.x;
     const dy = this.targetY - this.container.y;
     const dist = Math.hypot(dx, dy);
@@ -132,12 +153,22 @@ export class Enemy {
     }
   }
 
-  /** Apply damage (used by towers later). Armor reduces it, min 1. */
+  /** Apply damage from a tower hit. Armor reduces it, min 1. */
   takeDamage(amount: number): void {
     const dealt = Math.max(1, amount - this.armor);
     this.hp = Math.max(0, this.hp - dealt);
     this.hpFill.scaleX = this.hp / this.maxHp;
     if (this.hp === 0) this.dead = true;
+  }
+
+  /**
+   * Apply a slow debuff: multiply speed by `factor` (<1) for `durationSec`.
+   * Refreshes the timer and keeps the stronger of any overlapping slows.
+   */
+  applySlow(factor: number, durationSec: number): void {
+    this.slowFactor = Math.min(this.slowFactor, factor);
+    this.slowRemaining = Math.max(this.slowRemaining, durationSec);
+    this.body.setFillStyle(0x74c0fc);
   }
 
   destroy(): void {

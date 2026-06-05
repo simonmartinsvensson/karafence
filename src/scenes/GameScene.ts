@@ -9,6 +9,9 @@ import {
 } from '../systems/grid';
 import { WaveManager } from '../systems/WaveManager';
 import type { Enemy } from '../systems/Enemy';
+import { TowerManager } from '../systems/TowerManager';
+import { BuildPanel } from '../ui/BuildPanel';
+import { STARTING_GOLD, TOWER_TYPES, type TowerTypeKey } from '../data/towers';
 
 const TILE_COLORS: Record<TileType, number> = {
   [TileType.Stage]: 0x3a2150,
@@ -27,12 +30,17 @@ export class GameScene extends Phaser.Scene {
   private readonly map: MapDefinition = level1;
   private layout!: GridLayout;
   private waves!: WaveManager;
+  private towers!: TowerManager;
+  private buildPanel!: BuildPanel;
 
   private singerHp = SINGER_MAX_HP;
+  private gold = STARTING_GOLD;
+  private buildTarget: { col: number; row: number } | null = null;
   private gameOver = false;
 
   private waveText!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
+  private goldText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('GameScene');
@@ -50,8 +58,13 @@ export class GameScene extends Phaser.Scene {
     this.drawHud();
     this.drawMap(this.layout);
 
+    this.towers = new TowerManager(this, this.map, this.layout);
+    this.buildPanel = new BuildPanel(this);
+    this.setupInput();
+
     this.waves = new WaveManager(this, this.map, this.layout, {
       onReachStage: (enemy) => this.onEnemyReachStage(enemy),
+      onKill: (enemy) => this.onEnemyKilled(enemy),
     });
     this.waves.start();
     this.refreshHud();
@@ -59,8 +72,61 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.gameOver) return;
-    this.waves.update(delta / 1000);
+    const dt = delta / 1000;
+    this.waves.update(dt);
+    this.towers.update(dt, this.waves.enemies);
     this.refreshHud();
+  }
+
+  // --- Input / placement ---------------------------------------------------
+
+  private setupInput(): void {
+    const { offsetX, offsetY, mapW, mapH } = this.layout;
+    this.add
+      .zone(offsetX, offsetY, mapW, mapH)
+      .setOrigin(0, 0)
+      .setDepth(1)
+      .setInteractive()
+      .on('pointerdown', (pointer: Phaser.Input.Pointer) =>
+        this.onMapClick(pointer),
+      );
+  }
+
+  private onMapClick(pointer: Phaser.Input.Pointer): void {
+    if (this.gameOver || this.buildPanel.isOpen) return;
+    const { offsetX, offsetY, tileSize } = this.layout;
+    const col = Math.floor((pointer.worldX - offsetX) / tileSize);
+    const row = Math.floor((pointer.worldY - offsetY) / tileSize);
+
+    // A bare map click clears any selection; on a buildable tile, open the
+    // tower picker for that tile. (Clicks on a tower are handled by the tower.)
+    this.towers.deselect();
+    if (this.towers.canPlace(col, row)) {
+      this.buildTarget = { col, row };
+      this.towers.showBuildOverlay(col, row);
+      this.buildPanel.open(
+        this.gold,
+        (type) => this.placeTower(type),
+        () => this.closeBuild(),
+      );
+    }
+  }
+
+  private placeTower(type: TowerTypeKey): void {
+    const target = this.buildTarget;
+    const cost = TOWER_TYPES[type].cost;
+    if (target && this.gold >= cost && this.towers.canPlace(target.col, target.row)) {
+      this.gold -= cost;
+      this.towers.placeTower(type, target.col, target.row);
+      this.refreshHud();
+    }
+    this.closeBuild();
+  }
+
+  private closeBuild(): void {
+    this.buildPanel.close();
+    this.towers.hideBuildOverlay();
+    this.buildTarget = null;
   }
 
   // --- Map rendering -------------------------------------------------------
@@ -138,8 +204,15 @@ export class GameScene extends Phaser.Scene {
         color: '#e84393',
       })
       .setDepth(100);
+    this.goldText = this.add
+      .text(96, 6, `Gold ${this.gold}`, {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#ffd166',
+      })
+      .setDepth(100);
     this.waveText = this.add
-      .text(GAME_WIDTH / 2, 6, '', {
+      .text(GAME_WIDTH / 2 + 28, 6, '', {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#dddddd',
@@ -157,6 +230,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshHud(): void {
+    this.goldText.setText(`Gold ${this.gold}`);
     this.waveText.setText(
       `Wave ${this.waves.currentWaveNumber}/${this.waves.totalWaves}  ·  Foes ${this.waves.enemiesRemaining}`,
     );
@@ -167,6 +241,12 @@ export class GameScene extends Phaser.Scene {
 
   private onEnemyReachStage(enemy: Enemy): void {
     this.damageSinger(enemy.damage);
+  }
+
+  /** Killed enemies pay out their reward into the gold economy. */
+  private onEnemyKilled(enemy: Enemy): void {
+    this.gold += enemy.reward;
+    this.refreshHud();
   }
 
   /** Reduce singer HP. Triggers game over at zero. */
@@ -180,6 +260,8 @@ export class GameScene extends Phaser.Scene {
   private triggerGameOver(): void {
     this.gameOver = true;
     this.waves.stop();
+    this.towers.deselect();
+    this.closeBuild();
     this.add
       .rectangle(
         GAME_WIDTH / 2,

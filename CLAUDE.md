@@ -59,9 +59,9 @@ BootScene  →  GameScene  →  (future) MenuScene / GameOverScene
 
 - **BootScene** logs `"boot"` and immediately starts `GameScene`. Asset
   preloading will live here later.
-- **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid and the
-  stage. It reads a data-driven map and lays it out to fit the canvas. No game
-  systems (enemies, towers, waves) are wired up yet.
+- **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid + stage and
+  orchestrates gameplay: waves, towers, the gold economy, the HUD, and tower
+  placement input.
 
 ## Map / lanes
 
@@ -80,6 +80,36 @@ cleanly centered on landscape desktop. Tile colors are flat placeholders:
 stage (purple), aisle (carpet brown), buildable seats/floor (teal). The singer
 is a placeholder rect + label in the stage zone, with a `damageSinger()` hook
 for when enemies reach the stage.
+
+## Enemies / waves
+
+- `src/data/enemies.ts` — data-driven types: **Heckler** (standard), **Phone
+  Scroller** (slow/tanky), **Drunk Uncle** (fast/fragile, `erratic` →
+  random adjacent lane each step). Stats: hp, speed, armor, reward, damage.
+- `src/data/waves.ts` — waves as spawn groups (`type` / `count` / `delay`) +
+  `delayBeforeNext`.
+- `src/systems/Enemy.ts` — waypoint movement right→left, HP bar, `takeDamage()`
+  and `applySlow()` (slow tints the body blue and decays over time).
+- `src/systems/WaveManager.ts` — round-robin lane spawns, drives movement,
+  auto-advances waves; callbacks `onReachStage` / `onKill`.
+
+## Towers / combat / economy
+
+- `src/data/towers.ts` — data-driven types + `STARTING_GOLD`: **Lead Singer**
+  (medium, single target), **Drummer** (short range, AoE splash pulse),
+  **Keyboardist** (long range, slow firing, applies a slow debuff). Each has
+  cost, range (tiles), damage, attack speed, and a default targeting strategy.
+- `src/systems/Tower.ts` — picks a target per its targeting strategy
+  (`first` / `last` / `strongest`, cycled by selecting the tower); single-target
+  towers fire a homing `Projectile`, splash towers pulse damage to all in range.
+  Range circle shows on hover/select.
+- `src/systems/Projectile.ts` — homing dot; applies damage (+ any slow) on hit.
+- `src/systems/TowerManager.ts` — placement validation (buildable + empty),
+  the valid/invalid build overlay, selection UI, projectile updates.
+- `src/ui/BuildPanel.ts` — modal tower picker (tap a buildable tile to open);
+  shows costs and greys out unaffordable towers.
+- **Economy:** start with `STARTING_GOLD`, earn `enemy.reward` on kill
+  (`WaveManager` `onKill`), spend gold to place towers. Gold shows in the HUD.
 
 ## NPM scripts
 
