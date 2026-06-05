@@ -92,3 +92,113 @@ export const TOWER_LIST: TowerType[] = [
 ];
 
 export const STARTING_GOLD = 150;
+
+// --- Upgrades --------------------------------------------------------------
+
+export type UpgradePathKey = 'A' | 'B';
+
+/**
+ * One purchasable tier on an upgrade path. Costs rise per tier. Each tier
+ * carries stat deltas (added) and/or flag effects (set). A `label` describes
+ * the tier for the UI.
+ */
+export interface UpgradeTier {
+  label: string;
+  cost: number;
+  // Stat deltas (added to current stats).
+  damage?: number;
+  rangeTiles?: number;
+  attackSpeed?: number;
+  // Effect setters.
+  pierce?: number; // a single-target shot hits this many enemies near impact
+  multiTarget?: number; // fire at this many distinct targets per attack
+  doubleFire?: boolean; // fire twice per attack cycle
+  slowOnHit?: { factor: number; duration: number }; // factor 0 = full stop
+  stunOnHit?: { duration: number }; // splash stun (full stop)
+}
+
+export interface UpgradePath {
+  name: string;
+  tiers: [UpgradeTier, UpgradeTier, UpgradeTier];
+}
+
+export interface UpgradeTree {
+  A: UpgradePath;
+  B: UpgradePath;
+}
+
+export const MAX_TIER = 3;
+/** Fraction of total gold spent refunded when a tower is sold. */
+export const SELL_REFUND = 0.6;
+
+/**
+ * Upgrade trees per tower. Path A is power, Path B is utility; each path's
+ * third tier is a signature effect. BTD6-style constraint (enforced in Tower):
+ * only one path may go past tier 1.
+ */
+export const UPGRADES: Record<TowerTypeKey, UpgradeTree> = {
+  leadSinger: {
+    A: {
+      name: 'Power',
+      tiers: [
+        { label: 'Louder', cost: 40, damage: 6 },
+        { label: 'Belt It Out', cost: 70, damage: 10 },
+        { label: 'Piercing Note', cost: 140, damage: 6, pierce: 3 },
+      ],
+    },
+    B: {
+      name: 'Utility',
+      tiers: [
+        { label: 'Stage Presence', cost: 35, rangeTiles: 0.8 },
+        { label: 'Big Venue', cost: 60, rangeTiles: 1.0 },
+        {
+          label: 'Crowd Control',
+          cost: 120,
+          rangeTiles: 0.5,
+          slowOnHit: { factor: 0.55, duration: 1.5 },
+        },
+      ],
+    },
+  },
+  drummer: {
+    A: {
+      name: 'Power',
+      tiers: [
+        { label: 'Bigger Kit', cost: 50, rangeTiles: 0.4, damage: 2 },
+        { label: 'Crash Cymbal', cost: 85, rangeTiles: 0.5, damage: 3 },
+        {
+          label: 'Drum Solo',
+          cost: 160,
+          damage: 3,
+          stunOnHit: { duration: 0.8 },
+        },
+      ],
+    },
+    B: {
+      name: 'Utility',
+      tiers: [
+        { label: 'Faster Hands', cost: 45, attackSpeed: 0.4 },
+        { label: 'Blast Beat', cost: 75, attackSpeed: 0.5 },
+        { label: 'Double Kick', cost: 140, attackSpeed: 0.2, doubleFire: true },
+      ],
+    },
+  },
+  keyboardist: {
+    A: {
+      name: 'Power',
+      tiers: [
+        { label: 'Sustain Pedal', cost: 40, slowOnHit: { factor: 0.4, duration: 2.2 } },
+        { label: 'Deep Chill', cost: 70, slowOnHit: { factor: 0.3, duration: 2.4 } },
+        { label: 'Freeze', cost: 150, slowOnHit: { factor: 0, duration: 1.2 } },
+      ],
+    },
+    B: {
+      name: 'Utility',
+      tiers: [
+        { label: 'Two Hands', cost: 45, damage: 4 },
+        { label: 'Power Chords', cost: 75, damage: 6 },
+        { label: 'Chord Strike', cost: 150, damage: 3, multiTarget: 3 },
+      ],
+    },
+  },
+};

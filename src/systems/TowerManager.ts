@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH } from '../config';
 import { TileType, type MapDefinition } from '../types/map';
 import { type GridLayout, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
@@ -9,25 +8,38 @@ import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
 
 /**
  * Owns all placed towers and their projectiles. Handles placement validation,
- * the valid/invalid build overlay, and selecting a tower to change its
- * targeting strategy / view its range.
+ * the valid/invalid build overlay, and selection (delegating the selection UI
+ * to GameScene via `onSelectionChange`).
  */
 export class TowerManager {
   private readonly scene: Phaser.Scene;
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
+  private readonly enemies: Iterable<Enemy>;
 
   private readonly towers = new Map<string, Tower>();
   private readonly projectiles: Projectile[] = [];
 
   private selected: Tower | null = null;
-  private selectionUi?: Phaser.GameObjects.Container;
   private overlay: Phaser.GameObjects.Rectangle[] = [];
 
-  constructor(scene: Phaser.Scene, map: MapDefinition, layout: GridLayout) {
+  /** Notified when the selected tower changes (null = deselected). */
+  onSelectionChange?: (tower: Tower | null) => void;
+
+  constructor(
+    scene: Phaser.Scene,
+    map: MapDefinition,
+    layout: GridLayout,
+    enemies: Iterable<Enemy>,
+  ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
+    this.enemies = enemies;
+  }
+
+  get selectedTower(): Tower | null {
+    return this.selected;
   }
 
   private key(col: number, row: number): string {
@@ -55,6 +67,7 @@ export class TowerManager {
       TOWER_TYPES[typeKey],
       col,
       row,
+      this.enemies,
     );
     this.towers.set(this.key(col, row), tower);
 
@@ -74,58 +87,28 @@ export class TowerManager {
     return tower;
   }
 
-  // --- Selection / targeting ----------------------------------------------
+  // --- Selection -----------------------------------------------------------
 
   select(tower: Tower): void {
-    this.deselect();
+    if (this.selected && this.selected !== tower) this.selected.showRange(false);
     this.selected = tower;
     tower.showRange(true);
-    this.buildSelectionUi(tower);
+    this.onSelectionChange?.(tower);
   }
 
   deselect(): void {
     if (this.selected) {
       this.selected.showRange(false);
       this.selected = null;
+      this.onSelectionChange?.(null);
     }
-    this.selectionUi?.destroy(true);
-    this.selectionUi = undefined;
   }
 
-  private buildSelectionUi(tower: Tower): void {
-    const w = 200;
-    const h = 16;
-    const bg = this.scene.add
-      .rectangle(0, 0, w, h, 0x14141c, 0.95)
-      .setStrokeStyle(1, tower.type.color, 0.9)
-      .setInteractive();
-    const label = this.scene.add
-      .text(-w / 2 + 6, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '8px',
-        color: '#ffffff',
-      })
-      .setOrigin(0, 0.5);
-
-    const update = () =>
-      label.setText(
-        `${tower.type.icon} ${tower.type.name}  ·  Target: ${tower.targeting}  (tap to change)`,
-      );
-    update();
-    bg.on('pointerdown', (
-      _p: Phaser.Input.Pointer,
-      _x: number,
-      _y: number,
-      ev?: Phaser.Types.Input.EventData,
-    ) => {
-      ev?.stopPropagation();
-      tower.cycleTargeting();
-      update();
-    });
-
-    this.selectionUi = this.scene.add
-      .container(GAME_WIDTH / 2, 26, [bg, label])
-      .setDepth(150);
+  /** Remove a tower from the board (selling). Frees its tile. */
+  removeTower(tower: Tower): void {
+    if (this.selected === tower) this.deselect();
+    this.towers.delete(this.key(tower.col, tower.row));
+    tower.destroy();
   }
 
   // --- Build overlay -------------------------------------------------------
@@ -156,10 +139,10 @@ export class TowerManager {
   // --- Frame update --------------------------------------------------------
 
   /** @param dt seconds since last frame */
-  update(dt: number, enemies: Iterable<Enemy>): void {
+  update(dt: number): void {
     for (const tower of this.towers.values()) {
-      const projectile = tower.update(dt, enemies);
-      if (projectile) this.projectiles.push(projectile);
+      const fired = tower.update(dt);
+      for (const p of fired) this.projectiles.push(p);
     }
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];

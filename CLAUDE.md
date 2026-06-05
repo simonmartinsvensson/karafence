@@ -111,6 +111,24 @@ for when enemies reach the stage.
 - **Economy:** start with `STARTING_GOLD`, earn `enemy.reward` on kill
   (`WaveManager` `onKill`), spend gold to place towers. Gold shows in the HUD.
 
+## Upgrades / selling
+
+- `UPGRADES` in `src/data/towers.ts` — per tower, two 3-tier paths (A = power,
+  B = utility). Each `UpgradeTier` has a `label`, `cost`, stat deltas, and/or
+  effect flags (`pierce`, `multiTarget`, `doubleFire`, `slowOnHit`, `stunOnHit`).
+  Signature (tier-3) effects: Lead Singer A=piercing shot / B=crowd-control slow;
+  Drummer A=drum-solo stun / B=double kick; Keyboardist A=freeze (full stop) /
+  B=chord strike (3 targets).
+- `Tower` recomputes effective `RuntimeStats` from base + purchased tiers, and
+  tracks `totalSpent` for the sell refund. **BTD6 constraint** (`canUpgrade`):
+  a path may pass tier 1 only if the other path is at tier ≤ 1 (so only one path
+  fully maxes). Tier pips render on the tower (red = A on top, cyan = B below).
+- `src/ui/UpgradePanel.ts` — opens on selecting a placed tower: both paths
+  (pips + next label/cost), a targeting toggle, and **Sell** (`SELL_REFUND` =
+  60% of `totalSpent`). Affordability is snapshotted when the panel is (re)built.
+- `GameScene` wires `TowerManager.onSelectionChange` → open/close the panel, and
+  owns the gold spend/refund on upgrade/sell.
+
 ## NPM scripts
 
 - `npm run dev` — start the Vite dev server.

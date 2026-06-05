@@ -10,8 +10,15 @@ import {
 import { WaveManager } from '../systems/WaveManager';
 import type { Enemy } from '../systems/Enemy';
 import { TowerManager } from '../systems/TowerManager';
+import type { Tower } from '../systems/Tower';
 import { BuildPanel } from '../ui/BuildPanel';
-import { STARTING_GOLD, TOWER_TYPES, type TowerTypeKey } from '../data/towers';
+import { UpgradePanel } from '../ui/UpgradePanel';
+import {
+  STARTING_GOLD,
+  TOWER_TYPES,
+  type TowerTypeKey,
+  type UpgradePathKey,
+} from '../data/towers';
 
 const TILE_COLORS: Record<TileType, number> = {
   [TileType.Stage]: 0x3a2150,
@@ -32,6 +39,7 @@ export class GameScene extends Phaser.Scene {
   private waves!: WaveManager;
   private towers!: TowerManager;
   private buildPanel!: BuildPanel;
+  private upgradePanel!: UpgradePanel;
 
   private singerHp = SINGER_MAX_HP;
   private gold = STARTING_GOLD;
@@ -58,14 +66,17 @@ export class GameScene extends Phaser.Scene {
     this.drawHud();
     this.drawMap(this.layout);
 
-    this.towers = new TowerManager(this, this.map, this.layout);
-    this.buildPanel = new BuildPanel(this);
-    this.setupInput();
-
     this.waves = new WaveManager(this, this.map, this.layout, {
       onReachStage: (enemy) => this.onEnemyReachStage(enemy),
       onKill: (enemy) => this.onEnemyKilled(enemy),
     });
+
+    this.towers = new TowerManager(this, this.map, this.layout, this.waves.enemies);
+    this.towers.onSelectionChange = (tower) => this.onTowerSelection(tower);
+    this.buildPanel = new BuildPanel(this);
+    this.upgradePanel = new UpgradePanel(this);
+    this.setupInput();
+
     this.waves.start();
     this.refreshHud();
   }
@@ -74,7 +85,7 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     const dt = delta / 1000;
     this.waves.update(dt);
-    this.towers.update(dt, this.waves.enemies);
+    this.towers.update(dt);
     this.refreshHud();
   }
 
@@ -127,6 +138,41 @@ export class GameScene extends Phaser.Scene {
     this.buildPanel.close();
     this.towers.hideBuildOverlay();
     this.buildTarget = null;
+  }
+
+  // --- Tower selection / upgrades / selling --------------------------------
+
+  private onTowerSelection(tower: Tower | null): void {
+    if (tower) {
+      this.openUpgradePanel(tower);
+    } else {
+      this.upgradePanel.close();
+    }
+  }
+
+  private openUpgradePanel(tower: Tower): void {
+    this.upgradePanel.open(tower, this.gold, {
+      onUpgrade: (path) => this.upgradeTower(tower, path),
+      onSell: () => this.sellTower(tower),
+      onCycleTarget: () => {
+        tower.cycleTargeting();
+        this.openUpgradePanel(tower); // rebuild to show new strategy
+      },
+    });
+  }
+
+  private upgradeTower(tower: Tower, path: UpgradePathKey): void {
+    const next = tower.nextTier(path);
+    if (!next || !tower.canUpgrade(path) || this.gold < next.cost) return;
+    this.gold -= tower.applyUpgrade(path);
+    this.refreshHud();
+    this.openUpgradePanel(tower); // rebuild with new tier / gold
+  }
+
+  private sellTower(tower: Tower): void {
+    this.gold += tower.sellValue;
+    this.towers.removeTower(tower); // deselects -> closes the upgrade panel
+    this.refreshHud();
   }
 
   // --- Map rendering -------------------------------------------------------
