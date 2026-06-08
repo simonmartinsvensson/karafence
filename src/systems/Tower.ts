@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { type GridLayout, type BoardLayers, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
+import { audio } from './audio';
 import type { TowerSave } from './storage';
 import {
   type TowerType,
@@ -173,6 +174,32 @@ export class Tower {
       this.cooldownArc.setVisible(false);
       this.readyRing.setVisible(true);
     }
+  }
+
+  /**
+   * Brief glow when the active ability resets to ready: pop the gold ready-ring
+   * and flash a fading halo in the tower's color so the player notices.
+   */
+  private pulseReady(): void {
+    this.readyRing.setVisible(true).setScale(1.7);
+    this.scene.tweens.add({
+      targets: this.readyRing,
+      scale: 1,
+      duration: 360,
+      ease: 'Back.easeOut',
+    });
+    const halo = this.scene.add
+      .circle(this.worldX, this.worldY, this.layout.tileSize * 0.5, 0xffd43b, 0.35)
+      .setStrokeStyle(2, 0xffe680, 0.9)
+      .setScale(0.6);
+    this.layers.fx.add(halo);
+    this.scene.tweens.add({
+      targets: halo,
+      scale: 2,
+      alpha: 0,
+      duration: 420,
+      onComplete: () => halo.destroy(),
+    });
   }
 
   // --- Roles / queries -----------------------------------------------------
@@ -392,7 +419,13 @@ export class Tower {
     // The active-ability cooldown always recharges (even while taunted).
     if (this.abilityRemaining > 0) {
       this.abilityRemaining -= dt;
-      this.updateAbilityVisual();
+      if (this.abilityRemaining <= 0) {
+        this.abilityRemaining = 0;
+        this.updateAbilityVisual();
+        this.pulseReady(); // glow: the ability just came off cooldown
+      } else {
+        this.updateAbilityVisual();
+      }
     }
 
     if (this.frozenRemaining > 0) {
@@ -433,6 +466,7 @@ export class Tower {
     const targets = this.selectTargets(this.stats.multiTarget);
     if (targets.length === 0) return [];
     this.cooldown = this.fireInterval();
+    audio.sfx('shoot');
     return targets.map(
       (target) =>
         new Projectile(
@@ -449,6 +483,7 @@ export class Tower {
   }
 
   private dealHit(enemy: Enemy): void {
+    audio.sfx('hit');
     enemy.takeDamage(
       Math.round(this.stats.damage * this.damageMultiplier()),
       this.id,
@@ -477,6 +512,7 @@ export class Tower {
   }
 
   private fireSplash(): void {
+    audio.sfx('shoot');
     const ring = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.35)
       .setStrokeStyle(2, this.type.color, 0.9)
@@ -497,6 +533,7 @@ export class Tower {
 
   /** Bass Player blast: a deep pulse that knocks every enemy in range back. */
   private fireBassBlast(): void {
+    audio.sfx('shoot');
     const ring = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.3)
       .setStrokeStyle(3, this.type.color, 0.9)

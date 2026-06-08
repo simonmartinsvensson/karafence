@@ -39,6 +39,7 @@ import {
   saveRun,
   clearRun,
 } from '../systems/storage';
+import { audio } from '../systems/audio';
 
 const SINGER_MAX_HP = 30;
 const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
@@ -99,6 +100,18 @@ export class GameScene extends Phaser.Scene {
   private gold = STARTING_GOLD;
   private buildTarget: { col: number; row: number } | null = null;
   private gameOver = false;
+  private paused = false;
+  private pauseUi: Phaser.GameObjects.GameObject[] = [];
+
+  // Singer (stage performer) — kept so it can bounce when nearby foes fall.
+  private singer?: Phaser.GameObjects.Container;
+  private singerTween?: Phaser.Tweens.Tween;
+
+  // Combo "Crowd Hype" meter pulse at high multipliers.
+  private comboPulse?: Phaser.Tweens.Tween;
+
+  // Boss hp last frame, so we can shake the camera in proportion to hits taken.
+  private bossPrevHp = 0;
 
   // Run scoring (for stars) + resume bookkeeping.
   private goldSpent = 0;
@@ -179,6 +192,12 @@ export class GameScene extends Phaser.Scene {
     this.gold = STARTING_GOLD;
     this.buildTarget = null;
     this.gameOver = false;
+    this.paused = false;
+    this.pauseUi = [];
+    this.singer = undefined;
+    this.singerTween = undefined;
+    this.comboPulse = undefined;
+    this.bossPrevHp = 0;
     this.goldSpent = 0;
     this.highestCombo = 0;
     this.resumeWaveIndex = 0;
@@ -206,6 +225,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#0b0b12');
+    this.cameras.main.fadeIn(350, 11, 11, 18);
     this.screen = computeScreenLayout(this.sw, this.sh);
 
     // Load meta-progression and apply its permanent modifiers to this run.
@@ -269,6 +289,7 @@ export class GameScene extends Phaser.Scene {
       this.saveRunState();
     }
     this.refreshHud();
+    audio.playMusic('inWave');
   }
 
   // --- Board container + layers -------------------------------------------
@@ -321,6 +342,7 @@ export class GameScene extends Phaser.Scene {
     if (sel) this.openUpgradePanel(sel);
 
     if (this.endState !== 'none') this.renderEndScreen();
+    if (this.paused) this.renderPauseMenu();
   }
 
   /** Effective placement cost after the Group Discount meta-upgrade. */
@@ -343,7 +365,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (this.gameOver) return;
+    if (this.gameOver || this.paused) return;
     const dt = delta / 1000;
     this.waves.update(dt);
     this.towers.update(dt);
@@ -418,7 +440,159 @@ export class GameScene extends Phaser.Scene {
 
   private quitToMenu(): void {
     if (!this.gameOver) this.saveRunState();
-    this.scene.start('MenuScene');
+    // Clear any pause so the clock/tweens resume cleanly for the next run.
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.paused = false;
+    this.fadeToScene('MenuScene');
+  }
+
+  /** Fade the camera out, then switch scenes (the target fades itself in). */
+  private fadeToScene(key: string): void {
+    this.cameras.main.fadeOut(280, 11, 11, 18);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start(key));
+  }
+
+  // --- Pause menu (with audio controls) ------------------------------------
+
+  /**
+   * Freeze the run (clock + tweens) and show an overlay with Resume, the
+   * mute/volume controls, and Quit to menu. Input still flows, so the overlay
+   * buttons stay live while everything else is held.
+   */
+  private openPauseMenu(): void {
+    if (this.gameOver || this.paused) return;
+    this.paused = true;
+    this.towers.deselect();
+    this.closeBuild();
+    this.shopPanel.close();
+    this.time.paused = true;
+    this.tweens.pauseAll();
+    this.renderPauseMenu();
+  }
+
+  private closePauseMenu(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.pauseUi.forEach((o) => o.destroy());
+    this.pauseUi = [];
+  }
+
+  /** (Re)draw the pause overlay centered on the current viewport. */
+  private renderPauseMenu(): void {
+    this.pauseUi.forEach((o) => o.destroy());
+    this.pauseUi = [];
+    if (!this.paused) return;
+    const cx = this.sw / 2;
+    const cy = this.sh / 2;
+    const track = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      this.pauseUi.push(o);
+      return o;
+    };
+
+    track(
+      this.add
+        .rectangle(cx, cy, this.sw, this.sh, 0x000000, 0.66)
+        .setDepth(DEPTH_OVERLAY)
+        .setInteractive(),
+    );
+    track(
+      this.add
+        .text(cx, cy - 120, '⏸ PAUSED', {
+          fontFamily: 'monospace',
+          fontSize: '26px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_OVERLAY + 1),
+    );
+
+    const w = Math.max(200, Math.min(300, this.sw * 0.7));
+
+    // Mute toggle.
+    this.pauseButton(cx, cy - 54, w, audio.muted ? '🔇 Sound: OFF' : '🔊 Sound: ON',
+      audio.muted ? 0xff6b6b : 0x51cf66, () => {
+        audio.toggleMuted();
+        this.renderPauseMenu();
+      });
+
+    // Volume stepper: − [ ====  ] +
+    const volPct = Math.round(audio.volume * 100);
+    track(
+      this.add
+        .text(cx, cy - 8, `Volume  ${volPct}%`, {
+          fontFamily: 'monospace',
+          fontSize: '13px',
+          color: '#cfd3dc',
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_OVERLAY + 1),
+    );
+    const stepW = TOUCH_MIN;
+    const barW = w - stepW * 2 - 16;
+    this.pauseButton(cx - barW / 2 - stepW / 2 - 4, cy + 22, stepW, '−', 0xffd166, () => {
+      audio.setVolume(audio.volume - 0.1);
+      this.renderPauseMenu();
+    });
+    this.pauseButton(cx + barW / 2 + stepW / 2 + 4, cy + 22, stepW, '+', 0xffd166, () => {
+      audio.setVolume(audio.volume + 0.1);
+      this.renderPauseMenu();
+    });
+    // Volume fill bar.
+    track(
+      this.add
+        .rectangle(cx, cy + 22, barW, 10, 0x232336)
+        .setStrokeStyle(1, 0x555566, 0.9)
+        .setDepth(DEPTH_OVERLAY + 1),
+    );
+    track(
+      this.add
+        .rectangle(cx - barW / 2, cy + 22, barW * audio.volume, 10, 0xffd166)
+        .setOrigin(0, 0.5)
+        .setDepth(DEPTH_OVERLAY + 2),
+    );
+
+    // Resume + Quit.
+    this.pauseButton(cx, cy + 66, w, '▶ Resume', 0x51cf66, () => this.closePauseMenu());
+    this.pauseButton(cx, cy + 66 + TOUCH_MIN + 10, w, '≡ Quit to menu', 0x9aa0b0, () => {
+      this.closePauseMenu();
+      this.quitToMenu();
+    });
+  }
+
+  /** A tap-friendly button tracked as part of the pause overlay. */
+  private pauseButton(
+    x: number,
+    y: number,
+    w: number,
+    label: string,
+    color: number,
+    onClick: () => void,
+  ): void {
+    const rect = this.add
+      .rectangle(x, y, w, TOUCH_MIN, 0x232336, 0.98)
+      .setStrokeStyle(2, color, 0.95)
+      .setDepth(DEPTH_OVERLAY + 1)
+      .setInteractive({ useHandCursor: true });
+    rect.on(
+      'pointerdown',
+      (
+        _p: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        ev?: Phaser.Types.Input.EventData,
+      ) => {
+        ev?.stopPropagation();
+        onClick();
+      },
+    );
+    const text = this.add
+      .text(x, y, label, { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(DEPTH_OVERLAY + 2);
+    this.pauseUi.push(rect, text);
   }
 
   // --- Tower selection / upgrades / selling --------------------------------
@@ -467,6 +641,8 @@ export class GameScene extends Phaser.Scene {
   private activateAbility(tower: Tower): void {
     if (this.gameOver || !tower.abilityReady) return;
     tower.startAbilityCooldown();
+    audio.sfx('ability');
+    this.cameras.main.shake(220, 0.008);
     const ts = this.layout.tileSize;
 
     switch (tower.type.ability.key) {
@@ -616,7 +792,10 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Placeholder singer in the stage zone on the left. */
+  /**
+   * Placeholder singer in the stage zone on the left. Built as a container so
+   * it can bounce/react (see `reactSinger`) when nearby foes are silenced.
+   */
   private drawSinger(layout: GridLayout): void {
     const { tileSize, mapH, offsetX, offsetY } = layout;
     const stageW = tileSize * (this.map.stageCol + 1);
@@ -624,23 +803,62 @@ export class GameScene extends Phaser.Scene {
     const cy = offsetY + mapH / 2;
 
     const rect = this.add
-      .rectangle(cx, cy, stageW - 6, mapH * 0.45, 0xe84393)
+      .rectangle(0, 0, stageW - 6, mapH * 0.45, 0xe84393)
       .setStrokeStyle(2, 0xffffff, 0.8);
     const note = this.add
-      .text(cx, cy - tileSize * 0.4, '♪', {
+      .text(0, -tileSize * 0.4, '♪', {
         fontFamily: 'monospace',
         fontSize: `${Math.floor(tileSize * 0.9)}px`,
         color: '#ffffff',
       })
       .setOrigin(0.5);
     const label = this.add
-      .text(cx, cy + tileSize * 0.4, 'SINGER', {
+      .text(0, tileSize * 0.4, 'SINGER', {
         fontFamily: 'monospace',
         fontSize: `${Math.floor(tileSize * 0.42)}px`,
         color: '#ffffff',
       })
       .setOrigin(0.5);
-    this.layers.tiles.add([rect, note, label]);
+    this.singer = this.add.container(cx, cy, [rect, note, label]);
+    this.layers.tiles.add(this.singer);
+  }
+
+  /**
+   * The singer cheers (a quick squash-and-stretch bounce) when a foe is
+   * silenced near the stage.
+   */
+  private reactSinger(enemyX: number): void {
+    if (!this.singer) return;
+    const ts = this.layout.tileSize;
+    const stageRight = this.layout.offsetX + ts * (this.map.stageCol + 1);
+    if (enemyX > stageRight + ts * 3.5) return; // only nearby kills
+    this.singerTween?.stop();
+    this.singer.setScale(1);
+    this.singerTween = this.tweens.add({
+      targets: this.singer,
+      scaleY: 1.2,
+      scaleX: 0.92,
+      duration: 110,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  /** A short particle burst tinted to the enemy's color, on its death. */
+  private deathBurst(x: number, y: number, color: number): void {
+    const emitter = this.add.particles(x, y, 'spark', {
+      lifespan: 480,
+      speed: { min: 30, max: 130 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 1, end: 0 },
+      tint: color,
+      blendMode: 'ADD',
+      emitting: false,
+    });
+    this.layers.fx.add(emitter);
+    emitter.explode(12);
+    this.time.delayedCall(520, () => emitter.destroy());
   }
 
   // --- HUD (screen-space top strip) ----------------------------------------
@@ -717,7 +935,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0x2a2a3a, 1)
       .setDepth(DEPTH_BAR);
-    this.menuBtn = this.barButton('≡ Menu', 0x9aa0b0, '#cfd3dc', () => this.quitToMenu());
+    this.menuBtn = this.barButton('≡ Pause', 0x9aa0b0, '#cfd3dc', () => this.openPauseMenu());
     this.shopBtn = this.barButton('🎟 Shop', 0xffd166, '#ffd166', () => this.openShop());
   }
 
@@ -779,6 +997,7 @@ export class GameScene extends Phaser.Scene {
       this.floatText(enemy.x, enemy.y, '🎤 -10g STOLEN!', '#ff6b6b');
     }
     if (enemy === this.activeBoss) this.clearBoss();
+    audio.sfx('reachStage');
     this.damageSinger(enemy.damage);
   }
 
@@ -787,6 +1006,12 @@ export class GameScene extends Phaser.Scene {
    * any Hype Man aura (+50% gold, faster combo) and Crowd Surf (triple gold).
    */
   private onEnemyKilled(enemy: Enemy): void {
+    // Death feedback: a color-matched particle burst + sound, and the stage
+    // singer cheers if the foe fell near the stage.
+    this.deathBurst(enemy.x, enemy.y, enemy.type.color);
+    audio.sfx('death');
+    this.reactSinger(enemy.x);
+
     const hype = this.towers.hypeAt(enemy.x, enemy.y);
     this.combo += hype.comboBoost ? 2 : 1; // Hype Man builds the meter faster
     this.comboTimer = this.comboWindow;
@@ -822,6 +1047,7 @@ export class GameScene extends Phaser.Scene {
       tripled ? '#ffa94d' : this.combo >= 3 ? '#ffd43b' : '#cdeac0',
     );
     this.updateComboHud(true);
+    if (this.combo >= 2) audio.sfx('comboTick', { combo: this.combo });
     if (this.combo >= 5 && this.combo % 5 === 0) this.crowdGoesWild();
     if (enemy === this.activeBoss) this.clearBoss();
     this.refreshHud();
@@ -851,7 +1077,11 @@ export class GameScene extends Phaser.Scene {
           : 0;
     this.bossPhase2 = false;
     this.bossPhase3 = false;
+    this.bossPrevHp = boss.hpRatio;
     this.showBossBar(boss);
+    audio.playMusic('boss');
+    audio.sfx('bossEntrance');
+    this.cameras.main.shake(450, 0.012);
   }
 
   private showBossBar(boss: Enemy): void {
@@ -891,8 +1121,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private clearBoss(): void {
+    const hadBoss = this.activeBoss !== null;
     this.activeBoss = null;
     this.towers.attackSpeedMultiplier = 1; // undo Talent Judge phase 3
+    // Drop back to the normal groove once the boss is gone (unless the run is
+    // ending, where the victory / game-over track takes over).
+    if (hadBoss && !this.gameOver) audio.playMusic('inWave');
     this.bossBar?.destroy(true);
     this.bossBar = undefined;
     this.bossBarFill = undefined;
@@ -909,6 +1143,15 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.updateBossBar();
+
+    // Shake the camera in proportion to damage the boss soaks this frame, so
+    // landing hits on the big foes feels weighty (capped so it never overwhelms).
+    const drop = this.bossPrevHp - boss.hpRatio;
+    if (drop > 0.0005) {
+      this.cameras.main.shake(90, Math.min(0.006, drop * 0.5));
+    }
+    this.bossPrevHp = boss.hpRatio;
+
     const ts = this.layout.tileSize;
 
     switch (boss.type.boss) {
@@ -992,14 +1235,42 @@ export class GameScene extends Phaser.Scene {
 
   private updateComboHud(pop: boolean): void {
     if (this.combo <= 0) {
+      this.stopComboPulse();
       this.comboText.setVisible(false);
       return;
     }
     this.comboText.setVisible(true).setText(`🔥 HYPE x${this.combo}`);
-    if (pop) {
-      this.comboText.setScale(1.4);
-      this.tweens.add({ targets: this.comboText, scale: 1, duration: 180 });
+    const hot = this.combo >= 5;
+    this.comboText.setColor(hot ? '#ff6bd6' : '#ffd43b');
+    if (hot) {
+      // The meter throbs continuously while the crowd is whipped up.
+      if (!this.comboPulse) {
+        this.tweens.killTweensOf(this.comboText);
+        this.comboText.setScale(1);
+        this.comboPulse = this.tweens.add({
+          targets: this.comboText,
+          scale: 1.18,
+          duration: 320,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
+    } else {
+      this.stopComboPulse();
+      if (pop) {
+        this.comboText.setScale(1.4);
+        this.tweens.add({ targets: this.comboText, scale: 1, duration: 180 });
+      }
     }
+  }
+
+  private stopComboPulse(): void {
+    if (this.comboPulse) {
+      this.comboPulse.stop();
+      this.comboPulse = undefined;
+    }
+    this.comboText.setScale(1);
   }
 
   private crowdGoesWild(): void {
@@ -1067,12 +1338,14 @@ export class GameScene extends Phaser.Scene {
     // Lifetime: count the wave just survived and persist progression.
     this.meta.lifetime.waves += 1;
     saveMeta(this.meta);
+    audio.sfx('waveClear');
 
     // Interest: +1 gold per 10 banked.
     const interest = Math.floor(this.gold / 10);
     if (interest > 0) {
       this.gold += interest;
       this.screenFloat(`+${interest}g interest`, '#69db7c');
+      audio.sfx('gold');
     }
     this.refreshHud();
 
@@ -1090,6 +1363,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionActive = true;
     this.intermissionRemaining = INTERMISSION_SECONDS;
     this.towers.deselect();
+    audio.playMusic('intermission');
 
     const label = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#ffffff' })
@@ -1164,6 +1438,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
+    audio.playMusic('inWave');
     this.waves.startNextWave();
     this.resumeWaveIndex = this.waves.currentWaveIndex;
     this.saveRunState();
@@ -1225,6 +1500,7 @@ export class GameScene extends Phaser.Scene {
   private triggerVictory(): void {
     this.gameOver = true;
     this.clearBoss();
+    audio.playMusic('victory');
 
     // Score the run: one star per goal met.
     const livesLost = SINGER_MAX_HP - this.singerHp;
@@ -1248,6 +1524,8 @@ export class GameScene extends Phaser.Scene {
   private triggerGameOver(): void {
     this.gameOver = true;
     this.waves.stop();
+    audio.playMusic('gameover');
+    this.cameras.main.shake(400, 0.01);
     this.towers.deselect();
     this.closeBuild();
     this.shopPanel.close();
@@ -1399,7 +1677,7 @@ export class GameScene extends Phaser.Scene {
         ev?: Phaser.Types.Input.EventData,
       ) => {
         ev?.stopPropagation();
-        this.scene.start('MenuScene');
+        this.fadeToScene('MenuScene');
       },
     );
     this.endOverlay.push(btn, text);

@@ -172,6 +172,14 @@ export class Enemy {
   update(dt: number): void {
     if (this.arrivedAtStage || this.dead) return;
 
+    // Smoothly animate the hp / shield bars toward their true ratios rather
+    // than snapping on each hit.
+    const ease = Math.min(1, dt * 12);
+    this.hpFill.scaleX += (this.hp / this.maxHp - this.hpFill.scaleX) * ease;
+    if (this.shieldFill) {
+      this.shieldFill.scaleX += (this.shieldRatio - this.shieldFill.scaleX) * ease;
+    }
+
     // Tick down any active slow debuff and restore speed/color when it ends.
     if (this.slowRemaining > 0) {
       this.slowRemaining -= dt;
@@ -224,18 +232,20 @@ export class Enemy {
 
     let dealt = Math.max(1, amount - this.armor);
 
-    // Shield soaks damage first; overflow carries to hp.
+    // Shield soaks damage first; overflow carries to hp. (Bars animate toward
+    // these new ratios in update().)
     if (this.shield > 0) {
       const toShield = Math.min(this.shield, dealt);
       this.shield -= toShield;
       dealt -= toShield;
-      if (this.shieldFill) this.shieldFill.scaleX = this.shieldRatio;
     }
     if (dealt <= 0) return;
 
     this.hp = Math.max(0, this.hp - dealt);
-    this.hpFill.scaleX = this.hp / this.maxHp;
-    if (this.hp === 0) this.dead = true;
+    if (this.hp === 0) {
+      this.dead = true;
+      this.hpFill.scaleX = 0; // settle instantly; the enemy is about to vanish
+    }
   }
 
   /** Brief color blip to signal a deflected / bypassed hit. */

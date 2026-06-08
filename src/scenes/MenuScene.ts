@@ -10,6 +10,7 @@ import {
   type MetaProgress,
 } from '../data/meta';
 import { loadMeta, saveMeta, hasRun, clearRun } from '../systems/storage';
+import { audio } from '../systems/audio';
 
 const STOP = (
   _p: Phaser.Input.Pointer,
@@ -53,6 +54,8 @@ export class MenuScene extends Phaser.Scene {
     this.modal = [];
     this.meta = loadMeta();
     this.cameras.main.setBackgroundColor('#0b0b12');
+    this.cameras.main.fadeIn(350, 11, 11, 18);
+    audio.playMusic('menu');
     this.rebuild();
     this.scale.on('resize', this.resizeHandler);
     this.events.once('shutdown', () => this.scale.off('resize', this.resizeHandler));
@@ -184,7 +187,11 @@ export class MenuScene extends Phaser.Scene {
 
   private startLevel(levelId: LevelId, resume: boolean): void {
     if (!resume) clearRun(levelId); // New Game wipes any saved run for this level
-    this.scene.start('GameScene', { levelId, resume });
+    // Fade out, then hand off to the game (which fades itself in).
+    this.cameras.main.fadeOut(280, 11, 11, 18);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start('GameScene', { levelId, resume });
+    });
   }
 
   private starString(n: number): string {

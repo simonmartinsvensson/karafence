@@ -239,6 +239,33 @@ All orchestrated by `GameScene`:
   each wave index raises enemy count, HP (`Enemy` `hpScale`), and speed
   (`speedScale`) by a small per-wave factor.
 
+## Audio + visual polish
+
+- **Audio engine** (`src/systems/audio.ts`) — a scene-independent singleton
+  (`audio`) built entirely on the Web Audio API, so the game ships with **no
+  audio asset files**. A look-ahead sequencer loops a procedural chiptune
+  **track per context** — `menu` / `inWave` (upbeat) / `intermission` (calmer) /
+  `boss` (intense) / `gameover` / `victory` — switched via `playMusic(name)`
+  from the scenes (MenuScene → menu; GameScene → inWave, with intermission /
+  boss / victory / gameover swaps at the matching moments). **SFX** (`sfx(name)`,
+  throttled) are one-shot synthesized blips: `shoot`, `hit`, `death`,
+  `reachStage`, `gold`, `comboTick` (pitch climbs with the combo), `bossEntrance`,
+  `ability`, `waveClear`. Master **mute + volume** persist via
+  `storage.ts` (`karafence:audio:v1`) and are exposed through the **pause menu**.
+  Audio unlocks on the first user gesture (browser autoplay policy). **To swap in
+  real tracks/samples**, replace `playMusic` / `sfx` bodies per the header
+  comment in `audio.ts` — call sites and the master bus stay unchanged.
+- **Pause menu** — the bottom-bar **≡ Pause** button freezes the run
+  (`time.paused` + `tweens.pauseAll`) and shows an overlay with a mute toggle, a
+  volume stepper, **Resume**, and **Quit to menu**; it reflows on resize.
+- **Visual polish** (mostly `GameScene`, plus `Tower` / `Enemy` / `BootScene`):
+  camera **fade** transitions between scenes; **screen shake** on boss hits
+  (scaled to damage) and ability activations; **death particle bursts** tinted to
+  the enemy's color (`spark` texture generated in `BootScene`); a **ready glow**
+  on towers when an ability comes off cooldown; the **Crowd Hype** meter pulses
+  continuously at x5+; **smoothly animated** enemy hp/shield bars; and the stage
+  **singer bounces** when a foe is silenced near the stage.
+
 ## NPM scripts
 
 - `npm run dev` — start the Vite dev server.

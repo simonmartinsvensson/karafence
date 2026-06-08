@@ -12,6 +12,7 @@ import type { TargetingStrategy, TowerTypeKey, UpgradePathKey } from '../data/to
 
 const META_KEY = 'karafence:meta:v1';
 const RUN_PREFIX = 'karafence:run:v1:';
+const AUDIO_KEY = 'karafence:audio:v1';
 
 /** One placed tower, captured for resume. */
 export interface TowerSave {
@@ -97,4 +98,23 @@ export function clearRun(levelId: LevelId): void {
 
 export function hasRun(levelId: LevelId): boolean {
   return loadRun(levelId) !== null;
+}
+
+// --- Audio settings --------------------------------------------------------
+
+/** Master mute + volume (0-1), shared by every scene's audio. */
+export interface AudioSettings {
+  muted: boolean;
+  volume: number;
+}
+
+export function loadAudio(): AudioSettings {
+  const saved = read<Partial<AudioSettings>>(AUDIO_KEY);
+  const volume =
+    typeof saved?.volume === 'number' ? Math.min(1, Math.max(0, saved.volume)) : 0.7;
+  return { muted: saved?.muted ?? false, volume };
+}
+
+export function saveAudio(settings: AudioSettings): void {
+  write(AUDIO_KEY, settings);
 }
