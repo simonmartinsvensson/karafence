@@ -15,7 +15,19 @@ export enum TileType {
   Build = 'build',
 }
 
+/** Per-level thresholds for the 0-3 star rating (one star per goal met). */
+export interface StarGoals {
+  /** Earn a star for finishing with no more than this many lives lost. */
+  maxLivesLost: number;
+  /** Earn a star for spending no more than this much gold over the run. */
+  maxGoldSpent: number;
+  /** Earn a star for reaching at least this combo at some point. */
+  minCombo: number;
+}
+
 export interface MapDefinition {
+  /** Stable id, used as the meta-progression / save key. */
+  id: string;
   name: string;
   cols: number;
   rows: number;
@@ -27,4 +39,10 @@ export interface MapDefinition {
   spawnCol: number;
   /** Column enemies march toward (the stage edge). */
   stageCol: number;
+  /** Global speed multiplier applied to this map's enemies (1 = normal). */
+  enemySpeedMultiplier: number;
+  /** Star-rating thresholds for this level. */
+  starGoals: StarGoals;
+  /** Flat placeholder tile colors that give the map its look. */
+  colors: Record<TileType, number>;
 }

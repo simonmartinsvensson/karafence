@@ -54,6 +54,11 @@ export class WaveManager {
     return Math.max(1, this.waveIndex + 1);
   }
 
+  /** 0-based index of the active (or most recent) wave; for the run save. */
+  get currentWaveIndex(): number {
+    return Math.max(0, this.waveIndex);
+  }
+
   get totalWaves(): number {
     return WAVES.length;
   }
@@ -73,6 +78,11 @@ export class WaveManager {
 
   start(): void {
     this.startWave(0);
+  }
+
+  /** Begin play at a specific wave index (used to resume a saved run). */
+  startAtWave(index: number): void {
+    this.startWave(Math.min(Math.max(0, index), WAVES.length - 1));
   }
 
   /** Begin the next wave (called by GameScene when intermission ends). */
@@ -128,6 +138,10 @@ export class WaveManager {
   ): Enemy {
     const type = ENEMY_TYPES[typeKey];
     const isBoss = type.boss !== undefined;
+    // Per-map speed multiplier applies to everyone (Grand Stage runs faster);
+    // per-wave difficulty scaling only applies to non-boss enemies.
+    const speedScale =
+      (isBoss ? 1 : this.speedScale) * this.map.enemySpeedMultiplier;
     const enemy = new Enemy(
       this.scene,
       this.map,
@@ -135,7 +149,7 @@ export class WaveManager {
       type,
       laneIndex,
       isBoss ? 1 : this.hpScale,
-      isBoss ? 1 : this.speedScale,
+      speedScale,
       startCol ?? this.map.spawnCol,
     );
     this.enemies.add(enemy);

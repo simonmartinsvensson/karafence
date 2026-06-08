@@ -21,6 +21,7 @@ export class BuildPanel {
     gold: number,
     onSelect: (type: TowerTypeKey) => void,
     onCancel: () => void,
+    costOf: (type: TowerTypeKey) => number,
   ): void {
     this.close();
 
@@ -69,7 +70,8 @@ export class BuildPanel {
     TOWER_LIST.forEach((tower, i) => {
       const cx = gridLeft + (i % cols) * (cellW + cellGap);
       const cy = gridTop + Math.floor(i / cols) * (cellH + cellGap);
-      const affordable = gold >= tower.cost;
+      const cost = costOf(tower.key);
+      const affordable = gold >= cost;
 
       const cell = this.scene.add
         .rectangle(cx, cy, cellW, cellH, affordable ? 0x232336 : 0x1a1a22)
@@ -93,7 +95,7 @@ export class BuildPanel {
       );
       parts.push(
         this.scene.add
-          .text(cx, cy + 19, `${tower.cost}g`, {
+          .text(cx, cy + 19, `${cost}g`, {
             fontFamily: 'monospace',
             fontSize: '9px',
             color: affordable ? '#ffd166' : '#888888',

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config';
-import { level1 } from '../data/level1';
-import { TileType, type MapDefinition } from '../types/map';
+import { LEVEL_BY_ID, type LevelId } from '../data/levels';
+import { type MapDefinition } from '../types/map';
 import {
   computeGridLayout,
   tileToWorld,
@@ -27,12 +27,14 @@ import {
   type PowerUpKey,
 } from '../data/powerups';
 import { BOSS_CONFIG } from '../data/enemies';
-
-const TILE_COLORS: Record<TileType, number> = {
-  [TileType.Stage]: 0x3a2150,
-  [TileType.Aisle]: 0x8a5a44,
-  [TileType.Build]: 0x24414f,
-};
+import { metaModifiers, type MetaProgress } from '../data/meta';
+import {
+  loadMeta,
+  saveMeta,
+  loadRun,
+  saveRun,
+  clearRun,
+} from '../systems/storage';
 
 const HUD_HEIGHT = 22;
 const SINGER_MAX_HP = 30;
@@ -56,7 +58,9 @@ const CROWD_SURF_KILLS = 10; // Hype Man triple-gold kills
  * towers, the gold/combo/interest economy, intermissions, and the shop.
  */
 export class GameScene extends Phaser.Scene {
-  private readonly map: MapDefinition = level1;
+  private levelId: LevelId = 'level1';
+  private resume = false;
+  private map!: MapDefinition;
   private layout!: GridLayout;
   private waves!: WaveManager;
   private towers!: TowerManager;
@@ -64,10 +68,20 @@ export class GameScene extends Phaser.Scene {
   private upgradePanel!: UpgradePanel;
   private shopPanel!: ShopPanel;
 
+  // Meta-progression (persisted): loaded fresh each run; modifiers applied below.
+  private meta!: MetaProgress;
+  private towerCostMult = 1; // Group Discount meta-upgrade
+  private comboWindow = COMBO_WINDOW; // extended by Crowd Memory meta-upgrade
+
   private singerHp = SINGER_MAX_HP;
   private gold = STARTING_GOLD;
   private buildTarget: { col: number; row: number } | null = null;
   private gameOver = false;
+
+  // Run scoring (for stars) + resume bookkeeping.
+  private goldSpent = 0;
+  private highestCombo = 0;
+  private resumeWaveIndex = 0;
 
   // Crowd Hype combo.
   private combo = 0;
@@ -107,8 +121,51 @@ export class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
+  /**
+   * Phaser reuses the scene instance across `scene.start`, so every run must
+   * reset all mutable state here (field initializers only run once).
+   */
+  init(data: { levelId?: LevelId; resume?: boolean }): void {
+    this.levelId = data.levelId ?? 'level1';
+    this.resume = data.resume ?? false;
+    this.map = LEVEL_BY_ID[this.levelId];
+
+    this.singerHp = SINGER_MAX_HP;
+    this.gold = STARTING_GOLD;
+    this.buildTarget = null;
+    this.gameOver = false;
+    this.goldSpent = 0;
+    this.highestCombo = 0;
+    this.resumeWaveIndex = 0;
+
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.crowdSurfKills = 0;
+    this.slowFields = [];
+
+    this.intermissionActive = false;
+    this.intermissionRemaining = 0;
+    this.intermissionUi = undefined;
+
+    this.activeBoss = null;
+    this.bossAbilityTimer = 0;
+    this.bossPhase2 = false;
+    this.bossPhase3 = false;
+    this.bossBar = undefined;
+    this.bossBarFill = undefined;
+    this.bossBarLabel = undefined;
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor('#0b0b12');
+
+    // Load meta-progression and apply its permanent modifiers to this run.
+    this.meta = loadMeta();
+    const mods = metaModifiers(this.meta);
+    this.gold = Math.round(STARTING_GOLD * mods.startingGoldMult);
+    this.towerCostMult = mods.towerCostMult;
+    this.comboWindow = COMBO_WINDOW + mods.comboWindowBonus;
+
     this.layout = computeGridLayout(
       this.map,
       GAME_WIDTH,
@@ -133,8 +190,41 @@ export class GameScene extends Phaser.Scene {
     this.shopPanel = new ShopPanel(this);
     this.setupInput();
 
-    this.waves.start();
+    const saved = this.resume ? loadRun(this.levelId) : null;
+    if (saved) {
+      // Resume: restore economy + towers, replay the saved wave from its start.
+      this.gold = saved.gold;
+      this.singerHp = saved.singerHp;
+      this.goldSpent = saved.goldSpent;
+      this.highestCombo = saved.highestCombo;
+      this.resumeWaveIndex = saved.resumeWaveIndex;
+      this.towers.restore(saved.towers);
+      this.waves.startAtWave(saved.resumeWaveIndex);
+    } else {
+      this.resumeWaveIndex = 0;
+      this.waves.start();
+      this.saveRunState();
+    }
     this.refreshHud();
+  }
+
+  /** Effective placement cost after the Group Discount meta-upgrade. */
+  private towerCost(type: TowerTypeKey): number {
+    return Math.round(TOWER_TYPES[type].cost * this.towerCostMult);
+  }
+
+  /** Persist the current run so the player can close and resume later. */
+  private saveRunState(): void {
+    if (this.gameOver) return;
+    saveRun({
+      levelId: this.levelId,
+      resumeWaveIndex: this.resumeWaveIndex,
+      gold: this.gold,
+      singerHp: this.singerHp,
+      goldSpent: this.goldSpent,
+      highestCombo: this.highestCombo,
+      towers: this.towers.serialize(),
+    });
   }
 
   update(_time: number, delta: number): void {
@@ -185,6 +275,35 @@ export class GameScene extends Phaser.Scene {
       ev?.stopPropagation();
       this.openShop();
     });
+
+    // Menu / quit button (run auto-saves, so leaving is safe).
+    const menuBtn = this.add
+      .rectangle(30, GAME_HEIGHT - 11, 52, 16, 0x141420, 0.95)
+      .setStrokeStyle(1, 0x9aa0b0, 0.9)
+      .setDepth(110)
+      .setInteractive({ useHandCursor: true });
+    this.add
+      .text(30, GAME_HEIGHT - 11, '≡ Menu', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#cfd3dc',
+      })
+      .setOrigin(0.5)
+      .setDepth(111);
+    menuBtn.on('pointerdown', (
+      _p: Phaser.Input.Pointer,
+      _x: number,
+      _y: number,
+      ev?: Phaser.Types.Input.EventData,
+    ) => {
+      ev?.stopPropagation();
+      this.quitToMenu();
+    });
+  }
+
+  private quitToMenu(): void {
+    if (!this.gameOver) this.saveRunState();
+    this.scene.start('MenuScene');
   }
 
   private onMapClick(pointer: Phaser.Input.Pointer): void {
@@ -203,17 +322,20 @@ export class GameScene extends Phaser.Scene {
         this.gold,
         (type) => this.placeTower(type),
         () => this.closeBuild(),
+        (type) => this.towerCost(type),
       );
     }
   }
 
   private placeTower(type: TowerTypeKey): void {
     const target = this.buildTarget;
-    const cost = TOWER_TYPES[type].cost;
+    const cost = this.towerCost(type);
     if (target && this.gold >= cost && this.towers.canPlace(target.col, target.row)) {
       this.gold -= cost;
-      this.towers.placeTower(type, target.col, target.row);
+      this.goldSpent += cost;
+      this.towers.placeTower(type, target.col, target.row, cost);
       this.refreshHud();
+      this.saveRunState();
     }
     this.closeBuild();
   }
@@ -249,8 +371,11 @@ export class GameScene extends Phaser.Scene {
   private upgradeTower(tower: Tower, path: UpgradePathKey): void {
     const next = tower.nextTier(path);
     if (!next || !tower.canUpgrade(path) || this.gold < next.cost) return;
-    this.gold -= tower.applyUpgrade(path);
+    const spent = tower.applyUpgrade(path);
+    this.gold -= spent;
+    this.goldSpent += spent;
     this.refreshHud();
+    this.saveRunState();
     this.openUpgradePanel(tower); // rebuild with new tier / gold
   }
 
@@ -258,6 +383,7 @@ export class GameScene extends Phaser.Scene {
     this.gold += tower.sellValue;
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
     this.refreshHud();
+    this.saveRunState();
   }
 
   // --- Active abilities ----------------------------------------------------
@@ -381,7 +507,7 @@ export class GameScene extends Phaser.Scene {
         const type = this.map.tiles[r][c];
         const { x, y } = tileToWorld(layout, c, r);
         this.add
-          .rectangle(x, y, tileSize, tileSize, TILE_COLORS[type])
+          .rectangle(x, y, tileSize, tileSize, this.map.colors[type])
           .setStrokeStyle(1, 0x000000, 0.35);
       }
     }
@@ -517,7 +643,13 @@ export class GameScene extends Phaser.Scene {
   private onEnemyKilled(enemy: Enemy): void {
     const hype = this.towers.hypeAt(enemy.x, enemy.y);
     this.combo += hype.comboBoost ? 2 : 1; // Hype Man builds the meter faster
-    this.comboTimer = COMBO_WINDOW;
+    this.comboTimer = this.comboWindow;
+    this.highestCombo = Math.max(this.highestCombo, this.combo);
+    this.meta.lifetime.kills += 1;
+    this.meta.lifetime.highestCombo = Math.max(
+      this.meta.lifetime.highestCombo,
+      this.combo,
+    );
 
     const reward = this.rewardAfterCritic(enemy);
     const bonus = Math.round(reward * COMBO_BONUS * this.combo);
@@ -760,6 +892,10 @@ export class GameScene extends Phaser.Scene {
   // --- Intermission + interest ---------------------------------------------
 
   private onWaveCleared(): void {
+    // Lifetime: count the wave just survived and persist progression.
+    this.meta.lifetime.waves += 1;
+    saveMeta(this.meta);
+
     // Interest: +1 gold per 10 banked.
     const interest = Math.floor(this.gold / 10);
     if (interest > 0) {
@@ -769,6 +905,9 @@ export class GameScene extends Phaser.Scene {
     this.refreshHud();
 
     if (this.waves.hasNextWave) {
+      // Resume should pick up at the upcoming wave.
+      this.resumeWaveIndex = this.waves.currentWaveIndex + 1;
+      this.saveRunState();
       this.startIntermission();
     } else {
       this.triggerVictory();
@@ -836,6 +975,8 @@ export class GameScene extends Phaser.Scene {
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
     this.waves.startNextWave();
+    this.resumeWaveIndex = this.waves.currentWaveIndex;
+    this.saveRunState();
   }
 
   // --- Shop / power-ups ----------------------------------------------------
@@ -854,9 +995,11 @@ export class GameScene extends Phaser.Scene {
     const cost = POWERUPS[key].cost;
     if (this.gold < cost) return;
     this.gold -= cost;
+    this.goldSpent += cost;
     this.refreshHud();
     this.shopPanel.close();
     this.activatePowerUp(key);
+    this.saveRunState();
   }
 
   private activatePowerUp(key: PowerUpKey): void {
@@ -888,18 +1031,98 @@ export class GameScene extends Phaser.Scene {
   private triggerVictory(): void {
     this.gameOver = true;
     this.clearBoss();
+
+    // Score the run: one star per goal met.
+    const livesLost = SINGER_MAX_HP - this.singerHp;
+    const goals = this.map.starGoals;
+    const conds = [
+      { ok: livesLost <= goals.maxLivesLost, label: `Lose ≤${goals.maxLivesLost} lives (lost ${livesLost})` },
+      { ok: this.goldSpent <= goals.maxGoldSpent, label: `Spend ≤${goals.maxGoldSpent}g (spent ${this.goldSpent})` },
+      { ok: this.highestCombo >= goals.minCombo, label: `Reach combo ${goals.minCombo} (got x${this.highestCombo})` },
+    ];
+    const stars = conds.filter((c) => c.ok).length;
+    const prev = this.meta.stars[this.levelId] ?? 0;
+    const gained = Math.max(0, stars - prev);
+    if (stars > prev) this.meta.stars[this.levelId] = stars;
+    saveMeta(this.meta);
+    clearRun(this.levelId); // run complete — no resume
+
     this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6)
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
       .setDepth(200);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'YOU SURVIVED!\nThe show goes on 🎤', {
+      .text(GAME_WIDTH / 2, 40, 'YOU SURVIVED!', {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: '#69db7c',
-        align: 'center',
       })
       .setOrigin(0.5)
       .setDepth(201);
+    this.add
+      .text(GAME_WIDTH / 2, 62, this.map.name, {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#9aa0b0',
+      })
+      .setOrigin(0.5)
+      .setDepth(201);
+    this.add
+      .text(GAME_WIDTH / 2, 92, '★'.repeat(stars) + '☆'.repeat(3 - stars), {
+        fontFamily: 'monospace',
+        fontSize: '28px',
+        color: '#ffd43b',
+      })
+      .setOrigin(0.5)
+      .setDepth(201);
+
+    conds.forEach((c, i) => {
+      this.add
+        .text(GAME_WIDTH / 2, 124 + i * 16, `${c.ok ? '✓' : '✗'} ${c.label}`, {
+          fontFamily: 'monospace',
+          fontSize: '8px',
+          color: c.ok ? '#69db7c' : '#9aa0b0',
+        })
+        .setOrigin(0.5)
+        .setDepth(201);
+    });
+
+    this.add
+      .text(
+        GAME_WIDTH / 2,
+        184,
+        gained > 0 ? `+${gained} ⭐ earned!` : 'No new stars this time',
+        { fontFamily: 'monospace', fontSize: '10px', color: gained > 0 ? '#ffd43b' : '#777f8f' },
+      )
+      .setOrigin(0.5)
+      .setDepth(201);
+
+    this.endRunButton('Continue →');
+  }
+
+  /** A "back to the level select" button shown on the end-of-run overlays. */
+  private endRunButton(label: string): void {
+    const btn = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT - 24, 150, 22, 0x232336)
+      .setStrokeStyle(2, 0x51cf66, 0.9)
+      .setDepth(201)
+      .setInteractive({ useHandCursor: true });
+    this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 24, label, {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(202);
+    btn.on('pointerdown', (
+      _p: Phaser.Input.Pointer,
+      _x: number,
+      _y: number,
+      ev?: Phaser.Types.Input.EventData,
+    ) => {
+      ev?.stopPropagation();
+      this.scene.start('MenuScene');
+    });
   }
 
   /** Reduce singer HP. Triggers game over at zero. */
@@ -922,6 +1145,11 @@ export class GameScene extends Phaser.Scene {
     this.slowFields.forEach((f) => f.visual.destroy());
     this.slowFields = [];
     this.clearBoss();
+
+    // Persist lifetime progress; the failed run is not resumable.
+    saveMeta(this.meta);
+    clearRun(this.levelId);
+
     this.add
       .rectangle(
         GAME_WIDTH / 2,
@@ -929,16 +1157,25 @@ export class GameScene extends Phaser.Scene {
         GAME_WIDTH,
         GAME_HEIGHT,
         0x000000,
-        0.6,
+        0.7,
       )
       .setDepth(200);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'GAME OVER', {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30, 'GAME OVER', {
         fontFamily: 'monospace',
         fontSize: '28px',
         color: '#ff6b6b',
       })
       .setOrigin(0.5)
       .setDepth(201);
+    this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 4, `Reached wave ${this.waves.currentWaveNumber}`, {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#9aa0b0',
+      })
+      .setOrigin(0.5)
+      .setDepth(201);
+    this.endRunButton('Back to menu');
   }
 }

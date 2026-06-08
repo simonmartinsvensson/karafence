@@ -54,32 +54,60 @@ Defined in `src/main.ts`:
 ## Scene flow
 
 ```
-BootScene  →  GameScene  →  (future) MenuScene / GameOverScene
+BootScene  →  MenuScene  ⇄  GameScene
 ```
 
-- **BootScene** logs `"boot"` and immediately starts `GameScene`. Asset
-  preloading will live here later.
+- **BootScene** logs `"boot"` and starts `MenuScene`.
+- **MenuScene** (`src/scenes/MenuScene.ts`) is the landing screen: a level-select
+  card per level (name, 0-3 star rating, **Play / New Game** and **Resume** when a
+  run is saved), a **Meta Upgrades** modal to spend earned stars, and a **Lifetime
+  Stats** modal. Reads the persisted meta fresh on each entry.
 - **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid + stage and
-  orchestrates gameplay: waves, towers, the gold economy, the HUD, and tower
-  placement input.
+  orchestrates gameplay. It takes `{ levelId, resume }` via `init()` (which also
+  resets all per-run state, since Phaser reuses the scene instance), loads the
+  map from `LEVEL_BY_ID`, applies meta modifiers, and on end-of-run returns to
+  `MenuScene`. A **≡ Menu** button leaves mid-run (the run auto-saves).
 
 ## Map / lanes
 
 Maps are **data-driven**. A level is authored as ASCII rows + a legend and
-parsed into a `MapDefinition`:
+parsed into a `MapDefinition` by the shared `parseMap` (`src/data/parseMap.ts`):
 
 - `src/types/map.ts` — `TileType` (`stage` / `aisle` / `build`) and
-  `MapDefinition` (grid, lane rows, spawn/stage columns).
-- `src/data/level1.ts` — "The Open Mic": 16×11 grid, **5 aisles** running
-  right→left toward the stage, separated by buildable rows so a tower between
-  two aisles can cover both. Edit the ASCII to author a new map.
+  `MapDefinition` (grid, lane rows, spawn/stage columns, plus `id`,
+  `enemySpeedMultiplier`, `starGoals`, and per-tile `colors`).
+- `src/data/level1.ts` — **"The Dive Bar"**: 16×11 grid, **5 aisles**, normal
+  speed. `src/data/level2.ts` — **"The Grand Stage"**: 16×9 grid (bigger tiles =
+  wider-looking lanes), **3 aisles**, `enemySpeedMultiplier: 1.35`, and a cooler
+  flat palette. `src/data/levels.ts` is the registry (`LevelId`, `LEVELS`,
+  `LEVEL_BY_ID`). Edit/add ASCII to author a map; tile colors come from the map's
+  `colors` (default palette in `parseMap`).
 
 `GameScene` fits the whole map below a HUD strip and centers it; with
-`Scale.FIT` this scales as a unit — fits to width on portrait phones, fills
-cleanly centered on landscape desktop. Tile colors are flat placeholders:
-stage (purple), aisle (carpet brown), buildable seats/floor (teal). The singer
-is a placeholder rect + label in the stage zone, with a `damageSinger()` hook
-for when enemies reach the stage.
+`Scale.FIT` this scales as a unit. The singer is a placeholder rect + label in
+the stage zone, with a `damageSinger()` hook for when enemies reach the stage.
+
+## Meta-progression / save-load
+
+- **Stars** (`src/data/meta.ts`): finishing a level scores 0-3 stars — one each
+  for losing ≤ `maxLivesLost`, spending ≤ `maxGoldSpent`, and reaching `minCombo`
+  (thresholds live in the map's `starGoals`). The **best** rating per level is
+  kept. Total stars earned across levels are a spendable currency; available =
+  earned − spent.
+- **Meta-upgrade tree** (`META_UPGRADES`): permanent, account-wide, bought with
+  stars — *Opening Act Budget* (+5%/tier starting gold), *Group Discount*
+  (−5%/tier tower cost), *Crowd Memory* (+0.5s/tier combo window). `metaModifiers`
+  turns purchased tiers into the run modifiers `GameScene` applies (starting gold,
+  `towerCost()`, `comboWindow`).
+- **Lifetime stats**: total kills, waves survived, highest combo — incremented in
+  `GameScene` and persisted at wave-clear / run-end.
+- **Persistence** (`src/systems/storage.ts`, localStorage, hardened with
+  try/catch): the **meta** slot (`karafence:meta`) holds stars/upgrades/lifetime;
+  a separate **run** slot per level (`karafence:run:<id>`) holds an in-progress
+  run (resume wave, gold, lives, scoring, and serialized towers via
+  `TowerManager.serialize/restore` + `Tower.toSave/restore`). The run auto-saves
+  on tower/economy changes and wave boundaries, and resumes by replaying the saved
+  wave from its start; it's cleared on victory or game over.
 
 ## Enemies / waves / bosses
 

@@ -5,6 +5,7 @@ import type { Enemy } from './Enemy';
 import { Tower } from './Tower';
 import { Projectile } from './Projectile';
 import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
+import type { TowerSave } from './storage';
 
 /**
  * Owns all placed towers and their projectiles. Handles placement validation,
@@ -67,7 +68,12 @@ export class TowerManager {
     );
   }
 
-  placeTower(typeKey: TowerTypeKey, col: number, row: number): Tower {
+  placeTower(
+    typeKey: TowerTypeKey,
+    col: number,
+    row: number,
+    placementCost?: number,
+  ): Tower {
     const tower = new Tower(
       this.scene,
       this.layout,
@@ -77,6 +83,7 @@ export class TowerManager {
       this.enemies,
       () => this.damageMultiplier,
       () => this.attackSpeedMultiplier * this.abilitySpeedMultiplier,
+      placementCost,
     );
     this.towers.set(this.key(col, row), tower);
 
@@ -94,6 +101,21 @@ export class TowerManager {
       },
     );
     return tower;
+  }
+
+  // --- Save / restore ------------------------------------------------------
+
+  /** Snapshot every placed tower for the run save. */
+  serialize(): TowerSave[] {
+    return [...this.towers.values()].map((t) => t.toSave());
+  }
+
+  /** Recreate towers from a run save (placement cost already paid). */
+  restore(saves: TowerSave[]): void {
+    for (const save of saves) {
+      const tower = this.placeTower(save.type, save.col, save.row, save.totalSpent);
+      tower.restore(save);
+    }
   }
 
   // --- Selection -----------------------------------------------------------

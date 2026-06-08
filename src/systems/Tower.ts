@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { type GridLayout, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
+import type { TowerSave } from './storage';
 import {
   type TowerType,
   type TargetingStrategy,
@@ -84,6 +85,7 @@ export class Tower {
     enemies: Iterable<Enemy>,
     damageMultiplier: () => number,
     attackSpeedMultiplier: () => number,
+    placementCost: number = type.cost,
   ) {
     this.scene = scene;
     this.layout = layout;
@@ -95,7 +97,7 @@ export class Tower {
     this.damageMultiplier = damageMultiplier;
     this.attackSpeedMultiplier = attackSpeedMultiplier;
     this.targeting = type.defaultTargeting;
-    this.totalSpent = type.cost;
+    this.totalSpent = placementCost;
 
     const ts = layout.tileSize;
     const pos = tileToWorld(layout, col, row);
@@ -315,6 +317,29 @@ export class Tower {
 
   get sellValue(): number {
     return Math.floor(this.totalSpent * SELL_REFUND);
+  }
+
+  // --- Save / restore ------------------------------------------------------
+
+  /** Snapshot for the run save. */
+  toSave(): TowerSave {
+    return {
+      type: this.type.key,
+      col: this.col,
+      row: this.row,
+      tiers: { A: this.tiers.A, B: this.tiers.B },
+      targeting: this.targeting,
+      totalSpent: this.totalSpent,
+    };
+  }
+
+  /** Re-apply a saved tower's purchased tiers / targeting / spend (no cost). */
+  restore(save: TowerSave): void {
+    this.tiers.A = save.tiers.A;
+    this.tiers.B = save.tiers.B;
+    this.targeting = save.targeting;
+    this.totalSpent = save.totalSpent;
+    this.recompute();
   }
 
   // --- Selection helpers ---------------------------------------------------
