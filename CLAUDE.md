@@ -239,6 +239,34 @@ All orchestrated by `GameScene`:
   each wave index raises enemy count, HP (`Enemy` `hpScale`), and speed
   (`speedScale`) by a small per-wave factor.
 
+## Procedural art (generated textures)
+
+All in-game sprites are **drawn in code at boot** — there are **no image asset
+files**. `src/systems/textures.ts` is the single source of art:
+`generateTextures(scene)` (called once from `BootScene.preload`) draws every
+texture with `Phaser.GameObjects.Graphics` + `generateTexture(key, w, h)` and is
+idempotent. Game logic only ever references the string **keys** (`TX.*` and the
+`towerTextureKey` / `enemyTextureKey` helpers), so the placeholder art can be
+swapped for real imported textures later by changing only what
+`generateTextures` produces for a key — no scene/system changes.
+
+- **Tiles** (`TX.tileStage/tileAisle/tileBuild`) and **enemies**
+  (`enemyTextureKey`) are drawn in **grayscale** and tinted at use-time — tiles
+  to the map's palette in `GameScene.drawMap`, enemies to their type color in
+  `Enemy` (so the slow/deflect `setTint` flashes still work). Bosses add a
+  separate pulsing **aura** circle (color per `BOSS_AURA`) behind the silhouette.
+- **Towers** (`towerTextureKey`) are instrument/performer silhouettes on a dark
+  base; `Tower.body` is now a `Sprite` (freeze tints it; the ability-ready ring
+  has a golden shimmer). **Projectiles** are spun textures (note / music-wave),
+  with the drummer's drumsticks + bass pulse rings drawn in `Tower`.
+- **Stage**: a curtain backdrop, spotlight cone and singer figure
+  (`TX.curtain/spotlight/singer`) composed in `GameScene.drawSinger`.
+- **HUD icons + gradient** (`TX.coin/mic/spotIcon/hpFill`) sit in an otherwise
+  graphics-drawn HUD (the resizing bars/borders stay as reflowed rects).
+- Resolution: textures are generated larger than their on-screen logic size
+  (e.g. a 40px tile is drawn at 64px) so they stay crisp when the board scales
+  up, sampled NEAREST under `pixelArt: true`.
+
 ## Audio + visual polish
 
 - **Audio engine** (`src/systems/audio.ts`) — a scene-independent singleton

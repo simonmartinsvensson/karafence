@@ -3,11 +3,12 @@ import type { Enemy } from './Enemy';
 
 /**
  * A homing visual projectile fired by a single-target tower. It tracks its
- * target each frame; on contact it invokes `onHit`. If the target dies or
- * leaves play mid-flight, the projectile simply fizzles.
+ * target each frame and spins as it flies; on contact it invokes `onHit`. If
+ * the target dies or leaves play mid-flight, the projectile simply fizzles.
+ * The sprite is a drawn texture (musical note / music-wave), referenced by key.
  */
 export class Projectile {
-  private readonly dot: Phaser.GameObjects.Arc;
+  private readonly sprite: Phaser.GameObjects.Image;
   private finished = false;
 
   constructor(
@@ -15,13 +16,15 @@ export class Projectile {
     x: number,
     y: number,
     private readonly target: Enemy,
-    color: number,
+    textureKey: string,
     private readonly speed: number, // pixels per second
     private readonly onHit: (target: Enemy) => void,
     parent: Phaser.GameObjects.Container,
+    size = 16,
+    private readonly spin = 9, // radians per second
   ) {
-    this.dot = scene.add.circle(x, y, 3, color);
-    parent.add(this.dot);
+    this.sprite = scene.add.image(x, y, textureKey).setDisplaySize(size, size);
+    parent.add(this.sprite);
   }
 
   get isDone(): boolean {
@@ -35,22 +38,24 @@ export class Projectile {
       return;
     }
 
-    const dx = this.target.x - this.dot.x;
-    const dy = this.target.y - this.dot.y;
+    this.sprite.rotation += this.spin * dt;
+
+    const dx = this.target.x - this.sprite.x;
+    const dy = this.target.y - this.sprite.y;
     const dist = Math.hypot(dx, dy);
     const step = this.speed * dt;
 
     if (dist <= step || dist === 0) {
       this.end(true);
     } else {
-      this.dot.x += (dx / dist) * step;
-      this.dot.y += (dy / dist) * step;
+      this.sprite.x += (dx / dist) * step;
+      this.sprite.y += (dy / dist) * step;
     }
   }
 
   private end(hit: boolean): void {
     if (hit) this.onHit(this.target);
-    this.dot.destroy();
+    this.sprite.destroy();
     this.finished = true;
   }
 }

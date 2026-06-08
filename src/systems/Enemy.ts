@@ -1,7 +1,16 @@
 import Phaser from 'phaser';
 import type { MapDefinition } from '../types/map';
-import type { EnemyType } from '../data/enemies';
+import type { BossKind, EnemyType } from '../data/enemies';
 import { type GridLayout, tileToWorld } from './grid';
+import { enemyTextureKey } from './textures';
+
+/** Per-boss aura glow color (independent of the tinted body silhouette). */
+const BOSS_AURA: Record<BossKind, number> = {
+  hecklerKing: 0xc0152e, // dark red
+  micGrabber: 0x37b24d, // green
+  djWontStop: 0x22b8cf, // blue/cyan
+  talentJudge: 0xffd43b, // gold
+};
 
 /**
  * A single enemy walking up an aisle toward the stage. Movement is waypoint
@@ -26,7 +35,8 @@ export class Enemy {
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
   private readonly container: Phaser.GameObjects.Container;
-  private readonly body: Phaser.GameObjects.Rectangle;
+  private readonly body: Phaser.GameObjects.Sprite;
+  private auraTween?: Phaser.Tweens.Tween;
   private readonly hpFill: Phaser.GameObjects.Rectangle;
   private readonly shieldFill?: Phaser.GameObjects.Rectangle;
   private readonly baseColor: number;
@@ -84,9 +94,30 @@ export class Enemy {
 
     const bodySize = Math.max(6, Math.floor(ts * type.size));
     this.baseColor = type.color;
+    // Drawn character silhouette, tinted to the enemy's color.
     this.body = scene.add
-      .rectangle(0, 0, bodySize, bodySize, type.color)
-      .setStrokeStyle(1, type.boss ? 0xffffff : 0x000000, type.boss ? 0.9 : 0.6);
+      .sprite(0, 0, enemyTextureKey(type.key))
+      .setDisplaySize(bodySize, bodySize)
+      .setTint(type.color);
+
+    const children: Phaser.GameObjects.GameObject[] = [];
+
+    // Bosses get a soft pulsing aura behind the silhouette in their own color.
+    if (type.boss) {
+      const aura = scene.add
+        .circle(0, 0, bodySize * 0.78, BOSS_AURA[type.boss], 0.45)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      children.push(aura);
+      this.auraTween = scene.tweens.add({
+        targets: aura,
+        scale: { from: 0.85, to: 1.15 },
+        alpha: { from: 0.55, to: 0.25 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
 
     const barWidth = Math.floor(ts * 0.7);
     const barY = -bodySize / 2 - 5;
@@ -95,7 +126,7 @@ export class Enemy {
       .rectangle(-barWidth / 2, barY, barWidth, 3, 0x51cf66)
       .setOrigin(0, 0.5);
 
-    const children: Phaser.GameObjects.GameObject[] = [this.body, barBg, this.hpFill];
+    children.push(this.body, barBg, this.hpFill);
     if (this.maxShield > 0) {
       this.shieldFill = scene.add
         .rectangle(-barWidth / 2, barY - 4, barWidth, 3, 0x74c0fc)
@@ -185,7 +216,7 @@ export class Enemy {
       this.slowRemaining -= dt;
       if (this.slowRemaining <= 0) {
         this.slowFactor = 1;
-        this.body.setFillStyle(this.baseColor);
+        this.body.setTint(this.baseColor);
       }
     }
 
@@ -250,9 +281,9 @@ export class Enemy {
 
   /** Brief color blip to signal a deflected / bypassed hit. */
   private flash(color: number): void {
-    this.body.setFillStyle(color);
+    this.body.setTint(color);
     this.scene.time.delayedCall(80, () => {
-      if (this.slowRemaining <= 0) this.body.setFillStyle(this.baseColor);
+      if (this.slowRemaining <= 0) this.body.setTint(this.baseColor);
     });
   }
 
@@ -263,7 +294,7 @@ export class Enemy {
   applySlow(factor: number, durationSec: number): void {
     this.slowFactor = Math.min(this.slowFactor, factor);
     this.slowRemaining = Math.max(this.slowRemaining, durationSec);
-    this.body.setFillStyle(0x74c0fc);
+    this.body.setTint(0x74c0fc);
   }
 
   /**
@@ -294,6 +325,7 @@ export class Enemy {
   }
 
   destroy(): void {
+    this.auraTween?.stop();
     this.container.destroy();
   }
 }
