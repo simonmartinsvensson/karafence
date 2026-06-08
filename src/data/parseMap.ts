@@ -17,8 +17,11 @@ const LEGEND: Record<string, TileType> = {
 /** Default tile palette (Level 1 look); maps can override per tile. */
 export const DEFAULT_COLORS: Record<TileType, number> = {
   [TileType.Stage]: 0x3a2150,
-  [TileType.Aisle]: 0x8a5a44,
-  [TileType.Build]: 0x24414f,
+  // Aisle: a darker, more saturated red-brown carpet so the walkable path is
+  // unmistakable. Build: a dark slate/charcoal with a faint green cast so the
+  // buildable seating reads as a distinct, cooler surface.
+  [TileType.Aisle]: 0x8f3a26,
+  [TileType.Build]: 0x33403a,
 };
 
 export interface MapOptions {
