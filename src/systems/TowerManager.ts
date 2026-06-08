@@ -27,6 +27,8 @@ export class TowerManager {
   damageMultiplier = 1;
   /** Global attack-speed multiplier (Talent Judge phase 3 sets this to 0.5). */
   attackSpeedMultiplier = 1;
+  /** Ability-driven global attack-speed multiplier (Choir Boost sets this to 2). */
+  abilitySpeedMultiplier = 1;
 
   /** Notified when the selected tower changes (null = deselected). */
   onSelectionChange?: (tower: Tower | null) => void;
@@ -74,7 +76,7 @@ export class TowerManager {
       row,
       this.enemies,
       () => this.damageMultiplier,
-      () => this.attackSpeedMultiplier,
+      () => this.attackSpeedMultiplier * this.abilitySpeedMultiplier,
     );
     this.towers.set(this.key(col, row), tower);
 
@@ -118,6 +120,41 @@ export class TowerManager {
     tower.destroy();
   }
 
+  // --- Support auras -------------------------------------------------------
+
+  /**
+   * Recompute the Backup Singer attack-speed aura: every attacking tower picks
+   * up the strongest buff among the Backup Singers covering it (no stacking).
+   */
+  private applySupportBuffs(): void {
+    for (const tower of this.towers.values()) tower.setSupportBuff(1);
+    for (const source of this.towers.values()) {
+      const buff = source.type.buffAttackSpeed;
+      if (!buff) continue;
+      for (const tower of this.towers.values()) {
+        if (tower === source || !tower.attacks) continue;
+        if (source.coversPoint(tower.x, tower.y)) {
+          tower.setSupportBuff(Math.max(tower.supportBuff, buff));
+        }
+      }
+    }
+  }
+
+  /**
+   * Hype Man aura at a world point: the gold multiplier (best of any covering
+   * Hype Man) and whether a kill there should build the combo faster.
+   */
+  hypeAt(x: number, y: number): { goldMult: number; comboBoost: boolean } {
+    let goldMult = 1;
+    let comboBoost = false;
+    for (const tower of this.towers.values()) {
+      if (!tower.coversPoint(x, y)) continue;
+      if (tower.type.goldBoost) goldMult = Math.max(goldMult, tower.type.goldBoost);
+      if (tower.type.comboBoost) comboBoost = true;
+    }
+    return { goldMult, comboBoost };
+  }
+
   /** Freeze every tower within `radiusPx` of a point (Heckler King taunt). */
   freezeTowersInRadius(x: number, y: number, radiusPx: number, seconds: number): void {
     for (const tower of this.towers.values()) {
@@ -154,6 +191,7 @@ export class TowerManager {
 
   /** @param dt seconds since last frame */
   update(dt: number): void {
+    this.applySupportBuffs();
     for (const tower of this.towers.values()) {
       const fired = tower.update(dt);
       for (const p of fired) this.projectiles.push(p);

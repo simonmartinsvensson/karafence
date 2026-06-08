@@ -40,6 +40,17 @@ const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
 const COMBO_BONUS = 0.15; // gold bonus per combo step
 const INTERMISSION_SECONDS = 12;
 
+// Active-ability tuning.
+const POWER_NOTE_DAMAGE = 400; // Lead Singer single-target nuke
+const DRUM_ROLL_RADIUS_TILES = 2.6; // Drummer stun blast radius
+const DRUM_ROLL_STUN = 3; // seconds
+const CHORD_BOMB_RADIUS_TILES = 2.5; // Keyboardist slow field radius
+const CHORD_BOMB_DURATION = 10; // seconds the field persists
+const CHORD_BOMB_SLOW = 0.4; // speed multiplier inside the field
+const CHOIR_BOOST_DURATION_MS = 10000; // Backup Singer 2x attack-speed window
+const DROP_THE_BASS_TILES = 5; // Bass Player screen-wide knockback
+const CROWD_SURF_KILLS = 10; // Hype Man triple-gold kills
+
 /**
  * GameScene renders the lane grid + stage and runs the whole game loop: waves,
  * towers, the gold/combo/interest economy, intermissions, and the shop.
@@ -61,6 +72,16 @@ export class GameScene extends Phaser.Scene {
   // Crowd Hype combo.
   private combo = 0;
   private comboTimer = 0;
+
+  // Active-ability state.
+  private crowdSurfKills = 0; // remaining triple-gold kills (Crowd Surf)
+  private slowFields: {
+    x: number;
+    y: number;
+    radius: number;
+    remaining: number;
+    visual: Phaser.GameObjects.Arc;
+  }[] = []; // active Chord Bomb fields
 
   // Intermission between waves.
   private intermissionActive = false;
@@ -122,6 +143,7 @@ export class GameScene extends Phaser.Scene {
     this.waves.update(dt);
     this.towers.update(dt);
     this.tickCombo(dt);
+    this.tickSlowFields(dt);
     this.tickIntermission(dt);
     this.driveBoss(dt);
     this.refreshHud();
@@ -220,6 +242,7 @@ export class GameScene extends Phaser.Scene {
         tower.cycleTargeting();
         this.openUpgradePanel(tower); // rebuild to show new strategy
       },
+      onActivate: () => this.activateAbility(tower),
     });
   }
 
@@ -235,6 +258,117 @@ export class GameScene extends Phaser.Scene {
     this.gold += tower.sellValue;
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
     this.refreshHud();
+  }
+
+  // --- Active abilities ----------------------------------------------------
+
+  /** Fire the selected tower's active ability if it's off cooldown. */
+  private activateAbility(tower: Tower): void {
+    if (this.gameOver || !tower.abilityReady) return;
+    tower.startAbilityCooldown();
+    const ts = this.layout.tileSize;
+
+    switch (tower.type.ability.key) {
+      case 'powerNote': {
+        // Nuke the single strongest enemy on screen.
+        let target: Enemy | null = null;
+        for (const e of this.waves.enemies) {
+          if (!e.isTargetable) continue;
+          if (!target || e.hp > target.hp) target = e;
+        }
+        if (target) {
+          target.takeDamage(POWER_NOTE_DAMAGE);
+          this.abilityRing(target.x, target.y, ts * 1.4, 0xfff3bf);
+          this.floatText(target.x, target.y, '💥 POWER NOTE!', '#fff3bf');
+        }
+        break;
+      }
+      case 'drumRoll': {
+        const radius = DRUM_ROLL_RADIUS_TILES * ts;
+        for (const e of this.waves.enemies) {
+          if (Math.hypot(e.x - tower.x, e.y - tower.y) <= radius) {
+            e.applySlow(0, DRUM_ROLL_STUN); // factor 0 = full stop
+          }
+        }
+        this.abilityRing(tower.x, tower.y, radius, 0xff922b);
+        this.floatText(tower.x, tower.y, '🥁 DRUM ROLL!', '#ffd8a8');
+        break;
+      }
+      case 'chordBomb': {
+        const radius = CHORD_BOMB_RADIUS_TILES * ts;
+        const visual = this.add
+          .circle(tower.x, tower.y, radius, 0x66d9e8, 0.18)
+          .setStrokeStyle(2, 0x66d9e8, 0.6)
+          .setDepth(9);
+        this.slowFields.push({
+          x: tower.x,
+          y: tower.y,
+          radius,
+          remaining: CHORD_BOMB_DURATION,
+          visual,
+        });
+        this.floatText(tower.x, tower.y, '🧊 CHORD BOMB!', '#c5f6fa');
+        break;
+      }
+      case 'choirBoost': {
+        this.towers.abilitySpeedMultiplier = 2;
+        this.showStatus(`🎶 CHOIR BOOST: 2x fire ${CHOIR_BOOST_DURATION_MS / 1000}s`);
+        this.time.delayedCall(CHOIR_BOOST_DURATION_MS, () => {
+          this.towers.abilitySpeedMultiplier = 1;
+          if (this.statusText.text.startsWith('🎶')) this.statusText.setVisible(false);
+        });
+        this.abilityRing(tower.x, tower.y, ts * 2, 0xb197fc);
+        this.floatText(tower.x, tower.y, '🎶 CHOIR BOOST!', '#d0bfff');
+        break;
+      }
+      case 'dropTheBass': {
+        for (const e of this.waves.enemies) e.knockback(DROP_THE_BASS_TILES);
+        this.abilityRing(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH / 2, 0x7048e8);
+        this.floatText(GAME_WIDTH / 2, GAME_HEIGHT / 2, '🔊 DROP THE BASS!', '#d0bfff');
+        break;
+      }
+      case 'crowdSurf': {
+        this.crowdSurfKills = CROWD_SURF_KILLS;
+        this.showStatus(`🏄 CROWD SURF: 3x gold ×${this.crowdSurfKills}`);
+        this.floatText(tower.x, tower.y, '🏄 CROWD SURF!', '#ffd8a8');
+        break;
+      }
+    }
+
+    this.openUpgradePanel(tower); // rebuild so the button shows the cooldown
+  }
+
+  /** Expanding ring used as the visual punch for an activated ability. */
+  private abilityRing(x: number, y: number, radius: number, color: number): void {
+    const ring = this.add
+      .circle(x, y, radius, color, 0.22)
+      .setStrokeStyle(3, color, 0.9)
+      .setScale(0.15)
+      .setDepth(19);
+    this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0,
+      duration: 420,
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /** Chord Bomb slow fields: re-slow enemies inside them, expire after 10s. */
+  private tickSlowFields(dt: number): void {
+    for (let i = this.slowFields.length - 1; i >= 0; i--) {
+      const f = this.slowFields[i];
+      f.remaining -= dt;
+      for (const e of this.waves.enemies) {
+        if (Math.hypot(e.x - f.x, e.y - f.y) <= f.radius) {
+          e.applySlow(CHORD_BOMB_SLOW, 0.3); // short, continually refreshed
+        }
+      }
+      if (f.remaining <= 0) {
+        f.visual.destroy();
+        this.slowFields.splice(i, 1);
+      }
+    }
   }
 
   // --- Map rendering -------------------------------------------------------
@@ -376,20 +510,38 @@ export class GameScene extends Phaser.Scene {
     this.damageSinger(enemy.damage);
   }
 
-  /** Killed enemies pay out their reward plus a combo (Crowd Hype) bonus. */
+  /**
+   * Killed enemies pay out their reward plus a combo (Crowd Hype) bonus, then
+   * any Hype Man aura (+50% gold, faster combo) and Crowd Surf (triple gold).
+   */
   private onEnemyKilled(enemy: Enemy): void {
-    this.combo += 1;
+    const hype = this.towers.hypeAt(enemy.x, enemy.y);
+    this.combo += hype.comboBoost ? 2 : 1; // Hype Man builds the meter faster
     this.comboTimer = COMBO_WINDOW;
+
     const reward = this.rewardAfterCritic(enemy);
     const bonus = Math.round(reward * COMBO_BONUS * this.combo);
-    const gain = reward + bonus;
+    let gain = reward + bonus;
+    if (hype.goldMult > 1) gain = Math.round(gain * hype.goldMult);
+
+    let tripled = false;
+    if (this.crowdSurfKills > 0) {
+      gain *= 3;
+      this.crowdSurfKills -= 1;
+      tripled = true;
+      if (this.crowdSurfKills > 0) {
+        this.showStatus(`🏄 CROWD SURF: 3x gold ×${this.crowdSurfKills}`);
+      } else {
+        this.statusText.setVisible(false);
+      }
+    }
     this.gold += gain;
 
     this.floatText(
       enemy.x,
       enemy.y,
       `+${gain}`,
-      this.combo >= 3 ? '#ffd43b' : '#cdeac0',
+      tripled ? '#ffa94d' : this.combo >= 3 ? '#ffd43b' : '#cdeac0',
     );
     this.updateComboHud(true);
     if (this.combo >= 5 && this.combo % 5 === 0) this.crowdGoesWild();
@@ -767,6 +919,8 @@ export class GameScene extends Phaser.Scene {
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
+    this.slowFields.forEach((f) => f.visual.destroy());
+    this.slowFields = [];
     this.clearBoss();
     this.add
       .rectangle(

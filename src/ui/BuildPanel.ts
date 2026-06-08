@@ -30,8 +30,16 @@ export class BuildPanel {
       .setInteractive();
     this.backdrop.on('pointerdown', () => onCancel());
 
-    const panelW = 234;
-    const panelH = 84;
+    // Grid of towers: 3 per row, as many rows as needed (2 for six towers).
+    const cols = 3;
+    const rows = Math.ceil(TOWER_LIST.length / cols);
+    const cellW = 96;
+    const cellH = 54;
+    const cellGap = 6;
+    const headerH = 16;
+    const pad = 8;
+    const panelW = cols * cellW + (cols - 1) * cellGap + pad * 2;
+    const panelH = headerH + rows * cellH + (rows - 1) * cellGap + pad * 2;
     const parts: Phaser.GameObjects.GameObject[] = [];
 
     const bg = this.scene.add
@@ -56,34 +64,36 @@ export class BuildPanel {
         .setOrigin(0.5),
     );
 
-    const colW = panelW / TOWER_LIST.length;
+    const gridLeft = -panelW / 2 + pad + cellW / 2;
+    const gridTop = -panelH / 2 + headerH + pad + cellH / 2;
     TOWER_LIST.forEach((tower, i) => {
-      const cx = -panelW / 2 + colW * (i + 0.5);
+      const cx = gridLeft + (i % cols) * (cellW + cellGap);
+      const cy = gridTop + Math.floor(i / cols) * (cellH + cellGap);
       const affordable = gold >= tower.cost;
 
       const cell = this.scene.add
-        .rectangle(cx, 6, colW - 8, panelH - 26, affordable ? 0x232336 : 0x1a1a22)
+        .rectangle(cx, cy, cellW, cellH, affordable ? 0x232336 : 0x1a1a22)
         .setStrokeStyle(1, affordable ? 0x51cf66 : 0x555555, 0.9);
       parts.push(cell);
       parts.push(
         this.scene.add
-          .text(cx, -8, tower.icon, { fontFamily: 'sans-serif', fontSize: '18px' })
+          .text(cx, cy - 16, tower.icon, { fontFamily: 'sans-serif', fontSize: '16px' })
           .setOrigin(0.5),
       );
       parts.push(
         this.scene.add
-          .text(cx, 11, tower.name, {
+          .text(cx, cy + 4, tower.name, {
             fontFamily: 'monospace',
             fontSize: '7px',
             color: affordable ? '#ffffff' : '#888888',
             align: 'center',
-            wordWrap: { width: colW - 12 },
+            wordWrap: { width: cellW - 8 },
           })
           .setOrigin(0.5),
       );
       parts.push(
         this.scene.add
-          .text(cx, 26, `${tower.cost}g`, {
+          .text(cx, cy + 19, `${tower.cost}g`, {
             fontFamily: 'monospace',
             fontSize: '9px',
             color: affordable ? '#ffd166' : '#888888',
@@ -106,7 +116,7 @@ export class BuildPanel {
     });
 
     this.container = this.scene.add
-      .container(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 58, parts)
+      .container(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30, parts)
       .setDepth(300);
   }
 

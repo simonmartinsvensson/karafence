@@ -256,21 +256,30 @@ export class Enemy {
   }
 
   /**
-   * Encore power-up: send the enemy back toward the spawn edge by the distance
-   * it would cover in `seconds`, snapping onto its lane and re-aiming.
+   * Push the enemy back toward the spawn edge by `tiles` tiles along its lane,
+   * snapping onto the lane and re-aiming. Clamped at the spawn column so it
+   * never slides off the board. Used by the Bass Player's bass blast and its
+   * "Drop the Bass" ability.
    */
-  rewind(seconds: number): void {
-    if (this.arrivedAtStage || this.dead) return;
+  knockback(tiles: number): void {
+    if (this.arrivedAtStage || this.dead || tiles <= 0) return;
     const ts = this.layout.tileSize;
-    const dist = this.type.speed * this.speedScale * seconds * ts;
     const laneRow = this.map.laneRows[this.laneIndex];
     const spawnX = tileToWorld(this.layout, this.map.spawnCol, laneRow).x;
-    const newX = Math.min(spawnX, this.container.x + dist);
+    const newX = Math.min(spawnX, this.container.x + tiles * ts);
     const laneY = tileToWorld(this.layout, 0, laneRow).y;
     this.container.setPosition(newX, laneY);
     this.col = Math.round((newX - this.layout.offsetX - ts / 2) / ts);
     this.targetLane = this.laneIndex;
     this.pickNextTarget();
+  }
+
+  /**
+   * Encore power-up: send the enemy back toward the spawn edge by the distance
+   * it would cover in `seconds`.
+   */
+  rewind(seconds: number): void {
+    this.knockback(this.type.speed * this.speedScale * seconds);
   }
 
   destroy(): void {

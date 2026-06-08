@@ -106,14 +106,35 @@ for when enemies reach the stage.
 
 ## Towers / combat / economy
 
-- `src/data/towers.ts` — data-driven types + `STARTING_GOLD`: **Lead Singer**
-  (medium, single target), **Drummer** (short range, AoE splash pulse),
-  **Keyboardist** (long range, slow firing, applies a slow debuff). Each has
-  cost, range (tiles), damage, attack speed, and a default targeting strategy.
+- `src/data/towers.ts` — data-driven types + `STARTING_GOLD`. Attackers:
+  **Lead Singer** (medium, single target), **Drummer** (short range, AoE splash
+  pulse), **Keyboardist** (long range, slow firing, applies a slow debuff),
+  **Bass Player** (medium range, low-frequency "bass blast" that knocks every
+  enemy in range back `knockbackTiles`). Support (`attacks: false`, no upgrade
+  tree): **Backup Singer** (short range, `buffAttackSpeed` aura speeds up nearby
+  attacking towers), **Hype Man** (wide range, `goldBoost` +50% gold and
+  `comboBoost` faster combo for kills in range). Each has cost, range (tiles),
+  damage, attack speed, a default targeting strategy, and an `ability` (see
+  below).
 - `src/systems/Tower.ts` — picks a target per its targeting strategy
   (`first` / `last` / `strongest`, cycled by selecting the tower); single-target
-  towers fire a homing `Projectile`, splash towers pulse damage to all in range.
+  towers fire a homing `Projectile`, splash towers pulse damage to all in range,
+  Bass Players pulse a knockback (`Enemy.knockback`), support towers don't fire.
   Range circle shows on hover/select.
+
+### Active abilities
+
+Every tower has one cooldown-gated active ability (`TowerAbility` in
+`towers.ts`), triggered from the **Activate** button in the upgrade panel:
+Lead Singer **Power Note** (single-target nuke), Drummer **Drum Roll** (3s stun
+AoE), Keyboardist **Chord Bomb** (10s slow field), Backup Singer **Choir Boost**
+(10s 2x fire for all towers), Bass Player **Drop the Bass** (knock all enemies
+back 5 tiles), Hype Man **Crowd Surf** (next 10 kills pay 3x gold). `Tower`
+tracks the cooldown and draws it on the sprite (a shrinking dark wedge + a gold
+"ready" ring). The effects live in `GameScene.activateAbility`; `TowerManager`
+holds `abilitySpeedMultiplier` (Choir Boost), `applySupportBuffs` (Backup Singer
+aura), and `hypeAt` (Hype Man gold/combo aura), and Chord Bomb fields are ticked
+by `GameScene.tickSlowFields`.
 - `src/systems/Projectile.ts` — homing dot; applies damage (+ any slow) on hit.
 - `src/systems/TowerManager.ts` — placement validation (buildable + empty),
   the valid/invalid build overlay, selection UI, projectile updates.

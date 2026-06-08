@@ -7,6 +7,7 @@ export interface UpgradePanelCallbacks {
   onUpgrade: (path: UpgradePathKey) => void;
   onSell: () => void;
   onCycleTarget: () => void;
+  onActivate: () => void;
 }
 
 const ABSORB = (
@@ -17,9 +18,11 @@ const ABSORB = (
 ) => ev?.stopPropagation();
 
 /**
- * Non-modal panel shown when a placed tower is selected. Lists the two upgrade
- * paths (current tier as pips, next-tier label + cost), a targeting toggle, and
- * a Sell button. Rebuilt on every change by re-calling open().
+ * Non-modal panel shown when a placed tower is selected. Shows the active
+ * ability (with a large Activate / cooldown button), the two upgrade paths
+ * (current tier as pips, next-tier label + cost) for towers that have them, a
+ * targeting toggle for attacking towers, and a Sell button. The panel height
+ * adapts to which rows apply. Rebuilt on every change by re-calling open().
  */
 export class UpgradePanel {
   private container?: Phaser.GameObjects.Container;
@@ -33,9 +36,15 @@ export class UpgradePanel {
   open(tower: Tower, gold: number, cb: UpgradePanelCallbacks): void {
     this.close();
     const w = 320;
-    const h = 86;
-    const parts: Phaser.GameObjects.GameObject[] = [];
+    const rowH = 16;
+    const gap = 4;
+    const headerH = 16;
+    const showUpgrades = tower.hasUpgrades;
+    // Rows below the header: ability + (two upgrade paths) + sell.
+    const bodyRows = 1 + (showUpgrades ? 2 : 0) + 1;
+    const h = 12 + headerH + bodyRows * (rowH + gap);
 
+    const parts: Phaser.GameObjects.GameObject[] = [];
     const bg = this.scene.add
       .rectangle(0, 0, w, h, 0x14141c, 0.97)
       .setStrokeStyle(2, tower.type.color, 0.9)
@@ -43,9 +52,10 @@ export class UpgradePanel {
     bg.on('pointerdown', ABSORB);
     parts.push(bg);
 
+    const top = -h / 2;
     parts.push(
       this.scene.add
-        .text(-w / 2 + 8, -h / 2 + 7, `${tower.type.icon} ${tower.type.name}`, {
+        .text(-w / 2 + 8, top + 8, `${tower.type.icon} ${tower.type.name}`, {
           fontFamily: 'monospace',
           fontSize: '9px',
           color: '#ffffff',
@@ -53,37 +63,47 @@ export class UpgradePanel {
         .setOrigin(0, 0.5),
     );
 
-    // Targeting toggle (top-right).
-    const targBtn = this.scene.add
-      .rectangle(w / 2 - 70, -h / 2 + 8, 130, 13, 0x232336)
-      .setStrokeStyle(1, 0xffd166, 0.8)
-      .setInteractive({ useHandCursor: true });
-    targBtn.on('pointerdown', (
-      _p: Phaser.Input.Pointer,
-      _x: number,
-      _y: number,
-      ev?: Phaser.Types.Input.EventData,
-    ) => {
-      ev?.stopPropagation();
-      cb.onCycleTarget();
-    });
-    parts.push(targBtn);
-    parts.push(
-      this.scene.add
-        .text(w / 2 - 70, -h / 2 + 8, `Target: ${tower.targeting} (tap)`, {
-          fontFamily: 'monospace',
-          fontSize: '8px',
-          color: '#ffd166',
-        })
-        .setOrigin(0.5),
-    );
+    // Targeting toggle (top-right) — only meaningful for attacking towers.
+    if (tower.attacks) {
+      const targBtn = this.scene.add
+        .rectangle(w / 2 - 70, top + 8, 130, 13, 0x232336)
+        .setStrokeStyle(1, 0xffd166, 0.8)
+        .setInteractive({ useHandCursor: true });
+      targBtn.on('pointerdown', (
+        _p: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        ev?: Phaser.Types.Input.EventData,
+      ) => {
+        ev?.stopPropagation();
+        cb.onCycleTarget();
+      });
+      parts.push(targBtn);
+      parts.push(
+        this.scene.add
+          .text(w / 2 - 70, top + 8, `Target: ${tower.targeting} (tap)`, {
+            fontFamily: 'monospace',
+            fontSize: '8px',
+            color: '#ffd166',
+          })
+          .setOrigin(0.5),
+      );
+    }
 
-    parts.push(...this.pathRow(tower, 'A', gold, -8, w, cb));
-    parts.push(...this.pathRow(tower, 'B', gold, 9, w, cb));
+    // Body rows, stacked from just under the header.
+    let y = top + headerH + gap + rowH / 2;
+    parts.push(...this.abilityRow(tower, y, w, cb));
+    y += rowH + gap;
+    if (showUpgrades) {
+      parts.push(...this.pathRow(tower, 'A', gold, y, w, cb));
+      y += rowH + gap;
+      parts.push(...this.pathRow(tower, 'B', gold, y, w, cb));
+      y += rowH + gap;
+    }
 
     // Sell button.
     const sell = this.scene.add
-      .rectangle(0, h / 2 - 12, w - 16, 15, 0x3a1a1a)
+      .rectangle(0, y, w - 16, rowH - 1, 0x3a1a1a)
       .setStrokeStyle(1, 0xff6b6b, 0.9)
       .setInteractive({ useHandCursor: true });
     sell.on('pointerdown', (
@@ -98,7 +118,7 @@ export class UpgradePanel {
     parts.push(sell);
     parts.push(
       this.scene.add
-        .text(0, h / 2 - 12, `SELL  +${tower.sellValue}g`, {
+        .text(0, y, `SELL  +${tower.sellValue}g`, {
           fontFamily: 'monospace',
           fontSize: '9px',
           color: '#ff8787',
@@ -107,8 +127,45 @@ export class UpgradePanel {
     );
 
     this.container = this.scene.add
-      .container(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 55, parts)
+      .container(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, parts)
       .setDepth(300);
+  }
+
+  /** Big, tap-friendly Activate button — or the remaining cooldown. */
+  private abilityRow(
+    tower: Tower,
+    y: number,
+    w: number,
+    cb: UpgradePanelCallbacks,
+  ): Phaser.GameObjects.GameObject[] {
+    const ability = tower.type.ability;
+    const ready = tower.abilityReady;
+    const row = this.scene.add
+      .rectangle(0, y, w - 16, 17, ready ? 0x3a2150 : 0x232336)
+      .setStrokeStyle(2, ready ? 0xd0bfff : 0x444455, ready ? 1 : 0.9);
+    if (ready) {
+      row.setInteractive({ useHandCursor: true });
+      row.on('pointerdown', (
+        _p: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        ev?: Phaser.Types.Input.EventData,
+      ) => {
+        ev?.stopPropagation();
+        cb.onActivate();
+      });
+    }
+    const text = ready
+      ? `⚡ ${ability.name} — ACTIVATE`
+      : `⏳ ${ability.name} — ${tower.abilityCooldownLeft}s`;
+    const label = this.scene.add
+      .text(0, y, text, {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: ready ? '#e5dbff' : '#9aa0b0',
+      })
+      .setOrigin(0.5);
+    return [row, label];
   }
 
   private pathRow(

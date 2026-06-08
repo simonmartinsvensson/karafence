@@ -10,7 +10,32 @@ export const TARGETING_STRATEGIES: TargetingStrategy[] = [
   'strongest',
 ];
 
-export type TowerTypeKey = 'leadSinger' | 'drummer' | 'keyboardist';
+export type TowerTypeKey =
+  | 'leadSinger'
+  | 'drummer'
+  | 'keyboardist'
+  | 'backupSinger'
+  | 'bassPlayer'
+  | 'hypeMan';
+
+/** Identifier for each tower's one active (cooldown-gated) ability. */
+export type AbilityKey =
+  | 'powerNote'
+  | 'drumRoll'
+  | 'chordBomb'
+  | 'choirBoost'
+  | 'dropTheBass'
+  | 'crowdSurf';
+
+/** An active ability triggered from the tower's upgrade panel. */
+export interface TowerAbility {
+  key: AbilityKey;
+  name: string;
+  /** One-line description for the activate button. */
+  description: string;
+  /** Cooldown in seconds before it can fire again. */
+  cooldown: number;
+}
 
 export interface TowerType {
   key: TowerTypeKey;
@@ -36,6 +61,21 @@ export interface TowerType {
   /** Placeholder icon. */
   icon: string;
   defaultTargeting: TargetingStrategy;
+  /** This tower's active ability. */
+  ability: TowerAbility;
+  /**
+   * If false, the tower never targets/fires at enemies — it's a support tower
+   * whose value is its aura (Backup Singer, Hype Man). Defaults to true.
+   */
+  attacks?: boolean;
+  /** Bass Player: each "bass blast" knocks every enemy in range back this many tiles. */
+  knockbackTiles?: number;
+  /** Backup Singer: multiplies the attack speed of attacking towers in range. */
+  buffAttackSpeed?: number;
+  /** Hype Man: multiplies gold earned from kills inside its range (e.g. 1.5). */
+  goldBoost?: number;
+  /** Hype Man: kills inside its range build the combo meter faster. */
+  comboBoost?: boolean;
 }
 
 export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
@@ -52,6 +92,12 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xfff3bf,
     icon: '🎤',
     defaultTargeting: 'first',
+    ability: {
+      key: 'powerNote',
+      name: 'Power Note',
+      description: 'Massive single-target nuke',
+      cooldown: 18,
+    },
   },
   // Short range, AoE splash damage.
   drummer: {
@@ -66,6 +112,12 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xffd8a8,
     icon: '🥁',
     defaultTargeting: 'first',
+    ability: {
+      key: 'drumRoll',
+      name: 'Drum Roll',
+      description: '3s stun blast around the drummer',
+      cooldown: 20,
+    },
   },
   // Long range, slow firing, applies a slow debuff.
   keyboardist: {
@@ -82,6 +134,78 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xc5f6fa,
     icon: '🎹',
     defaultTargeting: 'first',
+    ability: {
+      key: 'chordBomb',
+      name: 'Chord Bomb',
+      description: 'Drops a 10s slow field',
+      cooldown: 22,
+    },
+  },
+  // Short range support: buffs the attack speed of nearby attacking towers.
+  backupSinger: {
+    key: 'backupSinger',
+    name: 'Backup Singer',
+    cost: 60,
+    range: 1.9,
+    damage: 0,
+    attackSpeed: 0,
+    splash: false,
+    color: 0xb197fc,
+    projectileColor: 0xd0bfff,
+    icon: '🎙️',
+    defaultTargeting: 'first',
+    attacks: false,
+    buffAttackSpeed: 1.4,
+    ability: {
+      key: 'choirBoost',
+      name: 'Choir Boost',
+      description: 'All towers fire 2x for 10s',
+      cooldown: 25,
+    },
+  },
+  // Medium range: a low-frequency bass blast that knocks enemies back.
+  bassPlayer: {
+    key: 'bassPlayer',
+    name: 'Bass Player',
+    cost: 85,
+    range: 2.4,
+    damage: 4,
+    attackSpeed: 0.5,
+    splash: false,
+    knockbackTiles: 2,
+    color: 0x7048e8,
+    projectileColor: 0xb197fc,
+    icon: '🎸',
+    defaultTargeting: 'first',
+    ability: {
+      key: 'dropTheBass',
+      name: 'Drop the Bass',
+      description: 'Knock ALL enemies back 5 tiles',
+      cooldown: 20,
+    },
+  },
+  // Wide range support: boosts gold + combo for kills in range.
+  hypeMan: {
+    key: 'hypeMan',
+    name: 'Hype Man',
+    cost: 90,
+    range: 3.8,
+    damage: 0,
+    attackSpeed: 0,
+    splash: false,
+    color: 0xffa94d,
+    projectileColor: 0xffd8a8,
+    icon: '📣',
+    defaultTargeting: 'first',
+    attacks: false,
+    goldBoost: 1.5,
+    comboBoost: true,
+    ability: {
+      key: 'crowdSurf',
+      name: 'Crowd Surf',
+      description: 'Next 10 kills pay triple gold',
+      cooldown: 28,
+    },
   },
 };
 
@@ -89,6 +213,9 @@ export const TOWER_LIST: TowerType[] = [
   TOWER_TYPES.leadSinger,
   TOWER_TYPES.drummer,
   TOWER_TYPES.keyboardist,
+  TOWER_TYPES.backupSinger,
+  TOWER_TYPES.bassPlayer,
+  TOWER_TYPES.hypeMan,
 ];
 
 export const STARTING_GOLD = 220;
@@ -134,9 +261,10 @@ export const SELL_REFUND = 0.6;
 /**
  * Upgrade trees per tower. Path A is power, Path B is utility; each path's
  * third tier is a signature effect. BTD6-style constraint (enforced in Tower):
- * only one path may go past tier 1.
+ * only one path may go past tier 1. Towers without an entry (the support
+ * towers) simply can't be upgraded — their value is their aura + ability.
  */
-export const UPGRADES: Record<TowerTypeKey, UpgradeTree> = {
+export const UPGRADES: Partial<Record<TowerTypeKey, UpgradeTree>> = {
   leadSinger: {
     A: {
       name: 'Power',

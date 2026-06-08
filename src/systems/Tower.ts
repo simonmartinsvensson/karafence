@@ -67,6 +67,14 @@ export class Tower {
   private frozenRemaining = 0;
   private totalSpent: number;
 
+  /** Remaining cooldown on the active ability (0 = ready). */
+  private abilityRemaining = 0;
+  /** Attack-speed multiplier from a Backup Singer aura (1 = none). */
+  private supportSpeedBuff = 1;
+  /** Cooldown sweep (shrinking dark wedge) + ready ring, drawn on the sprite. */
+  private cooldownArc!: Phaser.GameObjects.Arc;
+  private readyRing!: Phaser.GameObjects.Arc;
+
   constructor(
     scene: Phaser.Scene,
     layout: GridLayout,
@@ -117,7 +125,78 @@ export class Tower {
       .setDepth(15);
     this.body.setInteractive({ useHandCursor: true });
 
+    // Ability cooldown sweep (a shrinking dark wedge over the icon) and a gold
+    // "ready" ring. Both sit just above the tower sprite.
+    const arcR = Math.floor(ts * 0.46);
+    this.cooldownArc = scene.add
+      .arc(this.worldX, this.worldY, arcR, -90, -90, false, 0x000000, 0.55)
+      .setDepth(17)
+      .setVisible(false);
+    this.readyRing = scene.add
+      .circle(this.worldX, this.worldY, ts * 0.52, 0xffffff, 0)
+      .setStrokeStyle(2, 0xffd43b, 0.95)
+      .setDepth(17)
+      .setVisible(false);
+
     this.recompute();
+    this.updateAbilityVisual();
+  }
+
+  // --- Active ability ------------------------------------------------------
+
+  get abilityReady(): boolean {
+    return this.abilityRemaining <= 0;
+  }
+
+  /** Whole seconds of cooldown left, for the panel button. */
+  get abilityCooldownLeft(): number {
+    return Math.max(0, Math.ceil(this.abilityRemaining));
+  }
+
+  /** Put the ability on cooldown (caller checks `abilityReady` first). */
+  startAbilityCooldown(): void {
+    this.abilityRemaining = this.type.ability.cooldown;
+    this.updateAbilityVisual();
+  }
+
+  /** Sweep the cooldown wedge / show the ready ring on the sprite. */
+  private updateAbilityVisual(): void {
+    if (this.abilityRemaining > 0) {
+      this.readyRing.setVisible(false);
+      const frac = this.abilityRemaining / this.type.ability.cooldown;
+      this.cooldownArc.setVisible(true).setEndAngle(-90 + 360 * frac);
+    } else {
+      this.cooldownArc.setVisible(false);
+      this.readyRing.setVisible(true);
+    }
+  }
+
+  // --- Roles / queries -----------------------------------------------------
+
+  /** Support towers (Backup Singer, Hype Man) never fire at enemies. */
+  get attacks(): boolean {
+    return this.type.attacks !== false;
+  }
+
+  get knockbackTiles(): number {
+    return this.type.knockbackTiles ?? 0;
+  }
+
+  get hasUpgrades(): boolean {
+    return UPGRADES[this.type.key] !== undefined;
+  }
+
+  /** Is a world point within this tower's range? (auras / support buffs) */
+  coversPoint(x: number, y: number): boolean {
+    return Math.hypot(x - this.worldX, y - this.worldY) <= this.rangePx;
+  }
+
+  get supportBuff(): number {
+    return this.supportSpeedBuff;
+  }
+
+  setSupportBuff(value: number): void {
+    this.supportSpeedBuff = value;
   }
 
   // --- Upgrades / economy --------------------------------------------------
@@ -161,8 +240,10 @@ export class Tower {
   private recompute(): void {
     const s = this.baseStats();
     const tree = UPGRADES[this.type.key];
-    for (let i = 0; i < this.tiers.A; i++) this.applyTier(s, tree.A.tiers[i]);
-    for (let i = 0; i < this.tiers.B; i++) this.applyTier(s, tree.B.tiers[i]);
+    if (tree) {
+      for (let i = 0; i < this.tiers.A; i++) this.applyTier(s, tree.A.tiers[i]);
+      for (let i = 0; i < this.tiers.B; i++) this.applyTier(s, tree.B.tiers[i]);
+    }
     this.stats = s;
     this.rangePx = s.rangeTiles * this.layout.tileSize;
 
@@ -196,17 +277,20 @@ export class Tower {
   }
 
   nextTier(path: UpgradePathKey): UpgradeTier | null {
+    const tree = UPGRADES[this.type.key];
+    if (!tree) return null;
     const tier = this.tiers[path];
     if (tier >= MAX_TIER) return null;
-    return UPGRADES[this.type.key][path].tiers[tier];
+    return tree[path].tiers[tier];
   }
 
   pathName(path: UpgradePathKey): string {
-    return UPGRADES[this.type.key][path].name;
+    return UPGRADES[this.type.key]?.[path].name ?? '';
   }
 
   /** BTD6 rule: a path can pass tier 1 only if the other path is at tier <= 1. */
   canUpgrade(path: UpgradePathKey): boolean {
+    if (!UPGRADES[this.type.key]) return false;
     const tier = this.tiers[path];
     if (tier >= MAX_TIER) return false;
     if (tier === 0) return true;
@@ -261,9 +345,15 @@ export class Tower {
 
   // --- Combat --------------------------------------------------------------
 
-  /** Seconds between shots, including the global attack-speed multiplier. */
+  /**
+   * Seconds between shots, including the global attack-speed multiplier and any
+   * Backup Singer aura buff.
+   */
   private fireInterval(): number {
-    return 1 / (this.stats.attackSpeed * this.attackSpeedMultiplier());
+    return (
+      1 /
+      (this.stats.attackSpeed * this.attackSpeedMultiplier() * this.supportSpeedBuff)
+    );
   }
 
   /**
@@ -272,14 +362,33 @@ export class Tower {
    * @param dt seconds since last frame
    */
   update(dt: number): Projectile[] {
+    // The active-ability cooldown always recharges (even while taunted).
+    if (this.abilityRemaining > 0) {
+      this.abilityRemaining -= dt;
+      this.updateAbilityVisual();
+    }
+
     if (this.frozenRemaining > 0) {
       this.frozenRemaining -= dt;
       if (this.frozenRemaining <= 0) this.body.setStrokeStyle(2, 0xffffff, 0.85);
       return [];
     }
+
+    // Support towers (Backup Singer, Hype Man) never fire; their aura is
+    // applied by TowerManager / GameScene.
+    if (!this.attacks) return [];
+
     if (this.cooldown > 0) {
       this.cooldown -= dt;
       if (this.cooldown > 0) return [];
+    }
+
+    // Bass Player: a periodic blast that knocks everything in range back.
+    if (this.knockbackTiles > 0) {
+      if (this.enemiesInRange().length === 0) return [];
+      this.cooldown = this.fireInterval();
+      this.fireBassBlast();
+      return [];
     }
 
     if (this.stats.splash) {
@@ -358,6 +467,31 @@ export class Tower {
     }
   }
 
+  /** Bass Player blast: a deep pulse that knocks every enemy in range back. */
+  private fireBassBlast(): void {
+    const ring = this.scene.add
+      .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.3)
+      .setStrokeStyle(3, this.type.color, 0.9)
+      .setDepth(18)
+      .setScale(0.15);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0,
+      duration: 320,
+      onComplete: () => ring.destroy(),
+    });
+    for (const enemy of this.enemiesInRange()) {
+      if (this.stats.damage > 0) {
+        enemy.takeDamage(
+          Math.round(this.stats.damage * this.damageMultiplier()),
+          this.id,
+        );
+      }
+      enemy.knockback(this.knockbackTiles);
+    }
+  }
+
   private inRange(enemy: Enemy): boolean {
     return Math.hypot(enemy.x - this.worldX, enemy.y - this.worldY) <= this.rangePx;
   }
@@ -391,6 +525,8 @@ export class Tower {
   destroy(): void {
     this.container.destroy();
     this.rangeCircle.destroy();
+    this.cooldownArc.destroy();
+    this.readyRing.destroy();
     this.pips.forEach((p) => p.destroy());
   }
 }
