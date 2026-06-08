@@ -32,14 +32,20 @@ import {
 } from '../data/powerups';
 import { BOSS_CONFIG } from '../data/enemies';
 import { metaModifiers, type MetaProgress } from '../data/meta';
+import type { GameMode } from '../data/modes';
+import { beatsAfterWave, nextChapter } from '../data/story';
 import {
   loadMeta,
   saveMeta,
   loadRun,
   saveRun,
   clearRun,
+  saveEndlessBest,
+  loadStoryProgress,
+  saveStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { DialogueOverlay } from '../ui/DialogueOverlay';
 import { TX } from '../systems/textures';
 import { TileType } from '../types/map';
 
@@ -92,6 +98,7 @@ const DEPTH_OVERLAY = 200;
  * so the game is fully playable in portrait and landscape.
  */
 export class GameScene extends Phaser.Scene {
+  private mode: GameMode = 'story';
   private levelId: LevelId = 'level1';
   private resume = false;
   private map!: MapDefinition;
@@ -102,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   private buildPanel!: BuildPanel;
   private upgradePanel!: UpgradePanel;
   private shopPanel!: ShopPanel;
+  private dialogue!: DialogueOverlay; // story-mode between-wave dialogue
 
   // Board container + its ordered z-layers (see grid.ts BoardLayers).
   private board!: Phaser.GameObjects.Container;
@@ -134,6 +142,9 @@ export class GameScene extends Phaser.Scene {
   private goldSpent = 0;
   private highestCombo = 0;
   private resumeWaveIndex = 0;
+  // This-run tallies (endless "you survived" screen).
+  private runKills = 0;
+  private goldEarned = 0;
 
   // Crowd Hype combo.
   private combo = 0;
@@ -185,10 +196,12 @@ export class GameScene extends Phaser.Scene {
   private menuBtn!: BarButton;
   private shopBtn!: BarButton;
 
-  // Terminal-state overlay (victory / game over), re-rendered on resize.
-  private endState: 'none' | 'victory' | 'gameover' = 'none';
+  // Terminal-state overlay (victory / game over / chapter), re-rendered on resize.
+  private endState: 'none' | 'victory' | 'gameover' | 'chapter' = 'none';
   private endStars = 0;
   private endGained = 0;
+  private endBestWave = 0; // endless: best wave after this run
+  private nextChapterId: LevelId | null = null; // story: chapter to advance to
   private endOverlay: Phaser.GameObjects.GameObject[] = [];
 
   private resizeHandler = () => this.relayout();
@@ -208,13 +221,16 @@ export class GameScene extends Phaser.Scene {
    * Phaser reuses the scene instance across `scene.start`, so every run must
    * reset all mutable state here (field initializers only run once).
    */
-  init(data: { levelId?: LevelId; resume?: boolean }): void {
+  init(data: { mode?: GameMode; levelId?: LevelId; resume?: boolean }): void {
+    this.mode = data.mode ?? 'story';
     this.levelId = data.levelId ?? 'level1';
     this.resume = data.resume ?? false;
     this.map = LEVEL_BY_ID[this.levelId];
 
     this.singerHp = SINGER_MAX_HP;
     this.gold = STARTING_GOLD;
+    this.runKills = 0;
+    this.goldEarned = 0;
     this.buildTarget = null;
     this.gameOver = false;
     this.paused = false;
@@ -247,6 +263,8 @@ export class GameScene extends Phaser.Scene {
     this.bossBarLabel = undefined;
 
     this.endState = 'none';
+    this.endBestWave = 0;
+    this.nextChapterId = null;
     this.endOverlay = [];
   }
 
@@ -281,6 +299,7 @@ export class GameScene extends Phaser.Scene {
         onBossSpawn: (enemy) => this.onBossSpawn(enemy),
       },
       this.layers.enemies,
+      this.mode === 'endless',
     );
 
     this.towers = new TowerManager(
@@ -294,13 +313,14 @@ export class GameScene extends Phaser.Scene {
     this.buildPanel = new BuildPanel(this);
     this.upgradePanel = new UpgradePanel(this);
     this.shopPanel = new ShopPanel(this);
+    this.dialogue = new DialogueOverlay(this);
     this.setupInput();
 
     this.relayout(); // size board + chrome to the current viewport
     this.scale.on('resize', this.resizeHandler);
     this.events.once('shutdown', () => this.scale.off('resize', this.resizeHandler));
 
-    const saved = this.resume ? loadRun(this.levelId) : null;
+    const saved = this.resume ? loadRun(this.mode, this.levelId) : null;
     if (saved) {
       // Resume: restore economy + towers, replay the saved wave from its start.
       this.gold = saved.gold;
@@ -312,8 +332,15 @@ export class GameScene extends Phaser.Scene {
       this.waves.startAtWave(saved.resumeWaveIndex);
     } else {
       this.resumeWaveIndex = 0;
-      this.waves.start();
       this.saveRunState();
+      // Story chapters open with their `waveAfter: 0` intro beat (a fresh start
+      // only) — wave 1 begins once the player taps through it.
+      const intro = this.mode === 'story' ? beatsAfterWave(this.levelId, 0) : [];
+      if (intro.length > 0) {
+        this.dialogue.show(intro, () => this.waves.start());
+      } else {
+        this.waves.start();
+      }
     }
     this.refreshHud();
     audio.playMusic('inWave');
@@ -370,6 +397,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.endState !== 'none') this.renderEndScreen();
     if (this.paused) this.renderPauseMenu();
+    this.dialogue?.relayout();
   }
 
   /** Effective placement cost after the Group Discount meta-upgrade. */
@@ -381,6 +409,7 @@ export class GameScene extends Phaser.Scene {
   private saveRunState(): void {
     if (this.gameOver) return;
     saveRun({
+      mode: this.mode,
       levelId: this.levelId,
       resumeWaveIndex: this.resumeWaveIndex,
       gold: this.gold,
@@ -1064,8 +1093,13 @@ export class GameScene extends Phaser.Scene {
 
   private refreshHud(): void {
     this.goldText.setText(`${this.gold}`);
+    const wave = this.waves.currentWaveNumber;
+    const foes = this.waves.enemiesRemaining;
+    // Make the mode legible: endless counts up with no cap; story shows /20.
     this.waveText.setText(
-      `Wave ${this.waves.currentWaveNumber}/${this.waves.totalWaves} · Foes ${this.waves.enemiesRemaining}`,
+      this.mode === 'endless'
+        ? `ENDLESS · Wave ${wave} · Foes ${foes}`
+        : `STORY · Wave ${wave}/${this.waves.totalWaves} · Foes ${foes}`,
     );
     // Anchor the spotlight icon just left of the (variable-width) wave readout.
     this.waveIcon.setPosition(
@@ -1200,6 +1234,7 @@ export class GameScene extends Phaser.Scene {
     this.combo += hype.comboBoost ? 2 : 1; // Hype Man builds the meter faster
     this.comboTimer = this.comboWindow;
     this.highestCombo = Math.max(this.highestCombo, this.combo);
+    this.runKills += 1;
     this.meta.lifetime.kills += 1;
     this.meta.lifetime.highestCombo = Math.max(
       this.meta.lifetime.highestCombo,
@@ -1223,6 +1258,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.gold += gain;
+    this.goldEarned += gain;
 
     this.floatText(
       enemy.x,
@@ -1528,6 +1564,7 @@ export class GameScene extends Phaser.Scene {
   // --- Intermission + interest ---------------------------------------------
 
   private onWaveCleared(): void {
+    const clearedWave = this.waves.currentWaveNumber;
     // Lifetime: count the wave just survived and persist progression.
     this.meta.lifetime.waves += 1;
     saveMeta(this.meta);
@@ -1537,19 +1574,93 @@ export class GameScene extends Phaser.Scene {
     const interest = Math.floor(this.gold / 10);
     if (interest > 0) {
       this.gold += interest;
+      this.goldEarned += interest;
       this.screenFloat(`+${interest}g interest`, '#69db7c');
       audio.sfx('gold');
     }
     this.refreshHud();
+    if (this.mode === 'story') this.recordStoryWave(clearedWave);
 
     if (this.waves.hasNextWave) {
       // Resume should pick up at the upcoming wave.
       this.resumeWaveIndex = this.waves.currentWaveIndex + 1;
       this.saveRunState();
       this.startIntermission();
+      // Story: any beats for the wave just cleared play now (the intermission
+      // timer is paused while the dialogue is open — see tickIntermission).
+      if (this.mode === 'story') {
+        const beats = beatsAfterWave(this.levelId, clearedWave);
+        if (beats.length > 0) this.dialogue.show(beats, () => undefined);
+      }
     } else {
-      this.triggerVictory();
+      // Only story reaches here (endless always has a next wave).
+      this.storyChapterComplete(clearedWave);
     }
+  }
+
+  /** Persist how far the campaign has reached on the current chapter. */
+  private recordStoryWave(waveNumber: number): void {
+    const prog = loadStoryProgress() ?? {
+      levelId: this.levelId,
+      completedChapters: [],
+      wavesCleared: 0,
+    };
+    prog.levelId = this.levelId;
+    prog.wavesCleared = Math.max(prog.wavesCleared, waveNumber);
+    saveStoryProgress(prog);
+  }
+
+  /**
+   * Story: the chapter's final authored wave (20) is cleared. Score stars, mark
+   * the chapter done, play its closing beats, then either advance to the next
+   * chapter or roll the final victory screen.
+   */
+  private storyChapterComplete(clearedWave: number): void {
+    this.gameOver = true; // stop spawns / the update loop
+    this.clearBoss();
+    const { stars, gained } = this.scoreStars();
+    this.endStars = stars;
+    this.endGained = gained;
+
+    const prog = loadStoryProgress() ?? {
+      levelId: this.levelId,
+      completedChapters: [],
+      wavesCleared: 0,
+    };
+    if (!prog.completedChapters.includes(this.levelId)) {
+      prog.completedChapters.push(this.levelId);
+    }
+    const next = nextChapter(this.levelId);
+    prog.levelId = next ?? this.levelId;
+    prog.wavesCleared = clearedWave;
+    saveStoryProgress(prog);
+    clearRun('story', this.levelId);
+    this.nextChapterId = next;
+
+    audio.playMusic('victory');
+    const beats = beatsAfterWave(this.levelId, clearedWave);
+    const after = () => {
+      this.endState = next ? 'chapter' : 'victory';
+      this.renderEndScreen();
+    };
+    if (beats.length > 0) this.dialogue.show(beats, after);
+    else after();
+  }
+
+  /** Score the run: one star per goal met; bank the best per level. */
+  private scoreStars(): { stars: number; gained: number } {
+    const livesLost = SINGER_MAX_HP - this.singerHp;
+    const goals = this.map.starGoals;
+    const stars = [
+      livesLost <= goals.maxLivesLost,
+      this.goldSpent <= goals.maxGoldSpent,
+      this.highestCombo >= goals.minCombo,
+    ].filter(Boolean).length;
+    const prev = this.meta.stars[this.levelId] ?? 0;
+    const gained = Math.max(0, stars - prev);
+    if (stars > prev) this.meta.stars[this.levelId] = stars;
+    saveMeta(this.meta);
+    return { stars, gained };
   }
 
   private startIntermission(): void {
@@ -1609,6 +1720,8 @@ export class GameScene extends Phaser.Scene {
 
   private tickIntermission(dt: number): void {
     if (!this.intermissionActive) return;
+    // Hold the countdown while a between-wave story beat is on screen.
+    if (this.dialogue?.isOpen) return;
     this.intermissionRemaining -= dt;
     if (this.intermissionRemaining <= 0) {
       this.endIntermission();
@@ -1622,7 +1735,7 @@ export class GameScene extends Phaser.Scene {
       | Phaser.GameObjects.Text
       | undefined;
     label?.setText(
-      `Next wave in ${Math.ceil(this.intermissionRemaining)}s · Build / shop now`,
+      `Wave ${this.waves.currentWaveNumber} complete — next wave in ${Math.ceil(this.intermissionRemaining)}s`,
     );
   }
 
@@ -1690,30 +1803,6 @@ export class GameScene extends Phaser.Scene {
 
   // --- End of run (victory / game over) ------------------------------------
 
-  private triggerVictory(): void {
-    this.gameOver = true;
-    this.clearBoss();
-    audio.playMusic('victory');
-
-    // Score the run: one star per goal met.
-    const livesLost = SINGER_MAX_HP - this.singerHp;
-    const goals = this.map.starGoals;
-    const stars = [
-      livesLost <= goals.maxLivesLost,
-      this.goldSpent <= goals.maxGoldSpent,
-      this.highestCombo >= goals.minCombo,
-    ].filter(Boolean).length;
-    const prev = this.meta.stars[this.levelId] ?? 0;
-    this.endGained = Math.max(0, stars - prev);
-    if (stars > prev) this.meta.stars[this.levelId] = stars;
-    saveMeta(this.meta);
-    clearRun(this.levelId); // run complete — no resume
-
-    this.endStars = stars;
-    this.endState = 'victory';
-    this.renderEndScreen();
-  }
-
   private triggerGameOver(): void {
     this.gameOver = true;
     this.waves.stop();
@@ -1722,6 +1811,7 @@ export class GameScene extends Phaser.Scene {
     this.towers.deselect();
     this.closeBuild();
     this.shopPanel.close();
+    this.dialogue.close();
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
@@ -1731,7 +1821,11 @@ export class GameScene extends Phaser.Scene {
 
     // Persist lifetime progress; the failed run is not resumable.
     saveMeta(this.meta);
-    clearRun(this.levelId);
+    clearRun(this.mode, this.levelId);
+    // Endless: bank the best wave reached.
+    if (this.mode === 'endless') {
+      this.endBestWave = saveEndlessBest(this.waves.currentWaveNumber);
+    }
 
     this.endState = 'gameover';
     this.renderEndScreen();
@@ -1747,45 +1841,35 @@ export class GameScene extends Phaser.Scene {
       this.endOverlay.push(o);
       return o;
     };
+    const line = (dy: number, str: string, size: number, color: string): void => {
+      add(
+        this.add
+          .text(cx, cy + dy, str, { fontFamily: 'monospace', fontSize: `${size}px`, color })
+          .setOrigin(0.5)
+          .setDepth(DEPTH_OVERLAY + 1),
+      );
+    };
 
     add(
       this.add
-        .rectangle(cx, cy, this.sw, this.sh, 0x000000, this.endState === 'victory' ? 0.72 : 0.7)
+        .rectangle(cx, cy, this.sw, this.sh, 0x000000, this.endState === 'gameover' ? 0.7 : 0.72)
         .setDepth(DEPTH_OVERLAY),
     );
 
-    if (this.endState === 'victory') {
-      add(
-        this.add
-          .text(cx, cy - 90, 'YOU SURVIVED!', {
-            fontFamily: 'monospace',
-            fontSize: '26px',
-            color: '#69db7c',
-          })
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
+    if (this.endState === 'gameover' && this.mode === 'endless') {
+      this.renderEndlessSurvived(line);
+    } else if (this.endState === 'gameover') {
+      line(-30, 'GAME OVER', 30, '#ff6b6b');
+      line(6, `Reached wave ${this.waves.currentWaveNumber}`, 13, '#9aa0b0');
+      this.overlayButton('Back to menu', cx, this.endButtonY(), 0x51cf66, () =>
+        this.fadeToScene('MenuScene'),
       );
-      add(
-        this.add
-          .text(cx, cy - 64, this.map.name, {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: '#9aa0b0',
-          })
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
-      );
-      add(
-        this.add
-          .text(
-            cx,
-            cy - 30,
-            '★'.repeat(this.endStars) + '☆'.repeat(3 - this.endStars),
-            { fontFamily: 'monospace', fontSize: '34px', color: '#ffd43b' },
-          )
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
-      );
+    } else {
+      // Story chapter complete or final victory — both show the star result.
+      const final = this.endState === 'victory';
+      line(-90, final ? 'YOU SURVIVED!' : 'CHAPTER COMPLETE', final ? 26 : 22, '#69db7c');
+      line(-64, this.map.name, 12, '#9aa0b0');
+      line(-30, '★'.repeat(this.endStars) + '☆'.repeat(3 - this.endStars), 34, '#ffd43b');
 
       const livesLost = SINGER_MAX_HP - this.singerHp;
       const goals = this.map.starGoals;
@@ -1794,71 +1878,80 @@ export class GameScene extends Phaser.Scene {
         { ok: this.goldSpent <= goals.maxGoldSpent, label: `Spend ≤${goals.maxGoldSpent}g (spent ${this.goldSpent})` },
         { ok: this.highestCombo >= goals.minCombo, label: `Reach combo ${goals.minCombo} (got x${this.highestCombo})` },
       ];
-      conds.forEach((c, i) => {
-        add(
-          this.add
-            .text(cx, cy + 8 + i * 18, `${c.ok ? '✓' : '✗'} ${c.label}`, {
-              fontFamily: 'monospace',
-              fontSize: '11px',
-              color: c.ok ? '#69db7c' : '#9aa0b0',
-            })
-            .setOrigin(0.5)
-            .setDepth(DEPTH_OVERLAY + 1),
+      conds.forEach((c, i) =>
+        line(8 + i * 18, `${c.ok ? '✓' : '✗'} ${c.label}`, 11, c.ok ? '#69db7c' : '#9aa0b0'),
+      );
+      line(
+        70,
+        this.endGained > 0 ? `+${this.endGained} ⭐ earned!` : 'No new stars this time',
+        13,
+        this.endGained > 0 ? '#ffd43b' : '#777f8f',
+      );
+
+      if (final) {
+        this.overlayButton('Continue →', cx, this.endButtonY(), 0x51cf66, () =>
+          this.fadeToScene('MenuScene'),
         );
-      });
-      add(
-        this.add
-          .text(
-            cx,
-            cy + 70,
-            this.endGained > 0 ? `+${this.endGained} ⭐ earned!` : 'No new stars this time',
-            {
-              fontFamily: 'monospace',
-              fontSize: '13px',
-              color: this.endGained > 0 ? '#ffd43b' : '#777f8f',
-            },
-          )
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
-      );
-      this.endRunButton('Continue →');
-    } else {
-      add(
-        this.add
-          .text(cx, cy - 30, 'GAME OVER', {
-            fontFamily: 'monospace',
-            fontSize: '30px',
-            color: '#ff6b6b',
-          })
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
-      );
-      add(
-        this.add
-          .text(cx, cy + 6, `Reached wave ${this.waves.currentWaveNumber}`, {
-            fontFamily: 'monospace',
-            fontSize: '13px',
-            color: '#9aa0b0',
-          })
-          .setOrigin(0.5)
-          .setDepth(DEPTH_OVERLAY + 1),
-      );
-      this.endRunButton('Back to menu');
+      } else {
+        const next = this.nextChapterId;
+        const nextName = next ? LEVEL_BY_ID[next].name : '';
+        line(94, `Next up: ${nextName}`, 12, '#cfd3dc');
+        this.overlayButton('On to the next stage →', cx, this.endButtonY(), 0x4dabf7, () => {
+          if (next) this.restartScene({ mode: 'story', levelId: next, resume: false });
+          else this.fadeToScene('MenuScene');
+        });
+      }
     }
   }
 
-  /** A big "back to the level select" button on the end-of-run overlays. */
-  private endRunButton(label: string): void {
+  /** Endless "you survived" results — wave reached, run stats, best, 2 buttons. */
+  private renderEndlessSurvived(line: (dy: number, s: string, sz: number, c: string) => void): void {
     const cx = this.sw / 2;
-    const y = this.sh - this.screen.barH - TOUCH_MIN;
-    const w = Math.max(180, Math.min(260, this.sw * 0.6));
+    const reached = this.waves.currentWaveNumber;
+    const newRecord = reached >= this.endBestWave && this.endBestWave > 0;
+    line(-104, 'YOU SURVIVED', 22, '#4dd2ff');
+    line(-70, `${reached} WAVES`, 34, '#ffd43b');
+    line(-26, `Enemies silenced: ${this.runKills}`, 13, '#cdeac0');
+    line(-6, `Gold earned: ${this.goldEarned}g`, 13, '#ffd166');
+    line(14, `Highest combo: x${this.highestCombo}`, 13, '#ff9ed8');
+    line(
+      44,
+      newRecord ? `🏆 New best — wave ${this.endBestWave}!` : `Best: wave ${this.endBestWave}`,
+      13,
+      newRecord ? '#ffd43b' : '#777f8f',
+    );
+    const y = this.endButtonY();
+    const gap = 12;
+    const bw = Math.min(170, (this.sw - 24 - gap) / 2);
+    this.overlayButton('↻ Try Again', cx - (bw + gap) / 2, y, 0x51cf66, () =>
+      this.restartScene({ mode: 'endless', levelId: 'level1', resume: false }), bw,
+    );
+    this.overlayButton('Menu', cx + (bw + gap) / 2, y, 0x74c0fc, () =>
+      this.fadeToScene('MenuScene'), bw,
+    );
+  }
+
+  private endButtonY(): number {
+    return this.sh - this.screen.barH - TOUCH_MIN;
+  }
+
+  /** A tap-friendly button on an end-of-run overlay. */
+  private overlayButton(
+    label: string,
+    x: number,
+    y: number,
+    color: number,
+    onClick: () => void,
+    width?: number,
+  ): void {
+    const w = width ?? Math.max(150, Math.min(240, this.sw * 0.5));
     const btn = this.add
-      .rectangle(cx, y, w, TOUCH_MIN, 0x232336, 0.98)
-      .setStrokeStyle(2, 0x51cf66, 0.95)
+      .rectangle(x, y, w, TOUCH_MIN, 0x232336, 0.98)
+      .setStrokeStyle(2, color, 0.95)
       .setDepth(DEPTH_OVERLAY + 1)
       .setInteractive({ useHandCursor: true });
     const text = this.add
-      .text(cx, y, label, { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' })
+      .text(x, y, label, { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' })
       .setOrigin(0.5)
       .setDepth(DEPTH_OVERLAY + 2);
     btn.on(
@@ -1870,10 +1963,16 @@ export class GameScene extends Phaser.Scene {
         ev?: Phaser.Types.Input.EventData,
       ) => {
         ev?.stopPropagation();
-        this.fadeToScene('MenuScene');
+        onClick();
       },
     );
     this.endOverlay.push(btn, text);
+  }
+
+  /** Fade out, then restart the GameScene with new mode/level data. */
+  private restartScene(data: { mode: GameMode; levelId: LevelId; resume: boolean }): void {
+    this.cameras.main.fadeOut(280, 11, 11, 18);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.restart(data));
   }
 
   /** Reduce singer HP. Triggers game over at zero. */

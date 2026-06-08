@@ -1,4 +1,4 @@
-import type { EnemyTypeKey } from './enemies';
+import type { BossKind, EnemyTypeKey } from './enemies';
 
 /**
  * Data-driven wave definitions. Each wave is a sequence of spawn groups; each
@@ -36,6 +36,38 @@ export const DIFFICULTY = {
 export function scaledCount(base: number, waveIndex: number): number {
   return Math.round(base * (1 + DIFFICULTY.countPerWave * waveIndex));
 }
+
+/**
+ * Endless-mode tuning (used by `WaveManager.generateWave` once play runs past
+ * the authored waves). Data-driven so the survival curve is easy to tune:
+ *   enemyCount = baseCount + floor(waveIndex * countPerWave)
+ *   hpScale    = 1 + waveIndex * hpPerWave
+ *   speedScale = min(speedCap, 1 + waveIndex * speedPerWave)
+ *   a boss every `bossEvery` waves, rotating through `BOSS_ROTATION` and
+ *   gaining `bossHpPerCycle` extra HP each time the rotation comes back around.
+ * (`waveIndex` is 0-based, matching the authored-wave indexing.)
+ */
+export const ENDLESS = {
+  baseCount: 6,
+  countPerWave: 1.4,
+  hpPerWave: 0.12,
+  speedPerWave: 0.04,
+  speedCap: 2.5,
+  bossEvery: 5,
+  bossHpPerCycle: 0.15,
+  /** Standard enemies endless waves draw from (rotated by wave). */
+  enemyPool: [
+    'heckler',
+    'phoneScroller',
+    'drunkUncle',
+    'stageRusher',
+    'critic',
+    'superfan',
+    'vip',
+  ] as EnemyTypeKey[],
+  /** Boss personas cycled through on each boss wave. */
+  bossRotation: ['hecklerKing', 'micGrabber', 'djWontStop', 'talentJudge'] as BossKind[],
+};
 
 /** A boss group never scales (one boss, fixed stats). */
 const boss = (type: EnemyTypeKey): SpawnGroup => ({

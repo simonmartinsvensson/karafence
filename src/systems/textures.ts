@@ -33,6 +33,7 @@ export const TX = {
   aisleArrow: 'kf-aisle-arrow', // gold left-chevron + cream lane dividers
   buildPlus: 'kf-build-plus', // green "+" + tower-base shadow on a faint green wash
   lanePill: 'kf-lane-pill', // dark rounded badge behind a lane number
+  portrait: 'kf-portrait', // grayscale VN bust, tinted to a story character
   curtain: 'kf-curtain',
   spotlight: 'kf-spotlight',
   singer: 'kf-singer',
@@ -59,6 +60,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TX.tileStage)) return;
   generateTileTextures(scene);
   generateTileAccentTextures(scene);
+  generatePortraitTexture(scene);
   generateStageTextures(scene);
   generateTowerTextures(scene);
   generateEnemyTextures(scene);
@@ -204,6 +206,37 @@ function generateTileAccentTextures(scene: Phaser.Scene): void {
   g.strokeRoundedRect(0.5, 0.5, 35, 25, 9);
   g.generateTexture(TX.lanePill, 36, 26);
 
+  g.destroy();
+}
+
+// --- Section 1c: story dialogue portrait -----------------------------------
+//
+// A grayscale head-and-shoulders bust drawn light so `setTint(character.color)`
+// in the DialogueOverlay renders it as that character's silhouette (visual-novel
+// style). One texture serves the whole cast.
+
+function generatePortraitTexture(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const W = 96;
+  const H = 112;
+  const cx = W / 2;
+  g.clear();
+  // Shoulders / torso (rounded, rising from the bottom edge).
+  g.fillStyle(0xd2d2d2, 1);
+  g.fillRoundedRect(cx - 38, H - 42, 76, 60, 22);
+  // Neck.
+  g.fillRect(cx - 9, H - 56, 18, 18);
+  // Head.
+  g.fillCircle(cx, H - 66, 24);
+  // Hair / brow shadow (darker, reads as a backlit silhouette detail).
+  g.fillStyle(0x8f8f8f, 1);
+  g.fillEllipse(cx, H - 80, 50, 30);
+  g.fillRect(cx - 25, H - 84, 50, 10);
+  // Soft lit highlight along one cheek + shoulder so it isn't a flat blob.
+  g.fillStyle(0xf2f2f2, 0.55);
+  g.fillCircle(cx - 8, H - 70, 9);
+  g.fillRoundedRect(cx - 34, H - 38, 16, 22, 8);
+  g.generateTexture(TX.portrait, W, H);
   g.destroy();
 }
 

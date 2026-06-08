@@ -86,15 +86,48 @@ BootScene  →  MenuScene  ⇄  GameScene
 ```
 
 - **BootScene** logs `"boot"` and starts `MenuScene`.
-- **MenuScene** (`src/scenes/MenuScene.ts`) is the landing screen: a level-select
-  card per level (name, 0-3 star rating, **Play / New Game** and **Resume** when a
-  run is saved), a **Meta Upgrades** modal to spend earned stars, and a **Lifetime
-  Stats** modal. Reads the persisted meta fresh on each entry.
+- **MenuScene** (`src/scenes/MenuScene.ts`) is the **mode-select** landing screen
+  (see "Game modes"): a neon **KARAFENCE** wordmark and two large mode cards
+  (**Endless** / **Story**, each with **Play / New Game** + **Resume** when a run
+  is saved), a **Meta Upgrades** modal to spend earned stars, and a **Records**
+  modal (lifetime stats + best endless wave). Reads the persisted meta fresh on
+  each entry; `startMode()` persists the chosen mode and hands the right
+  `{ mode, levelId, resume }` to the GameScene.
 - **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid + stage and
-  orchestrates gameplay. It takes `{ levelId, resume }` via `init()` (which also
-  resets all per-run state, since Phaser reuses the scene instance), loads the
-  map from `LEVEL_BY_ID`, applies meta modifiers, and on end-of-run returns to
-  `MenuScene`. A **≡ Menu** button leaves mid-run (the run auto-saves).
+  orchestrates gameplay. It takes `{ mode, levelId, resume }` via `init()` (which
+  also resets all per-run state, since Phaser reuses the scene instance), loads
+  the map from `LEVEL_BY_ID`, applies meta modifiers, and on end-of-run returns
+  to `MenuScene` (or, in story mode, advances to the next chapter via
+  `scene.restart`). A **≡ Menu** button leaves mid-run (the run auto-saves).
+
+## Game modes
+
+Two modes, picked on the mode-select screen and persisted (`karafence:mode`);
+`GameMode` lives in `src/data/modes.ts` (`MODES` also drives the menu cards).
+
+- **Endless** (`src/data/modes.ts`, `ENDLESS` in `src/data/waves.ts`) — survival
+  on The Dive Bar. After the 20 authored waves, `WaveManager.generateWave(index)`
+  builds waves procedurally: `count = baseCount + floor(index·1.4)`, `hp = 1 +
+  index·0.12`, `speed = min(2.5, 1 + index·0.04)`, a rotating boss every 5 waves
+  that gets tougher each cycle (`bossHpScale`). No win condition / no stars; game
+  over shows a **"YOU SURVIVED X WAVES"** screen (run kills / gold / combo, best
+  wave) with **Try Again** + **Menu**, and banks the best to `karafence:endless:best`.
+- **Story** (`src/data/story.ts`) — a campaign across both maps (Dive Bar →
+  Grand Stage) with character dialogue. Star ratings still apply per chapter.
+  After a wave clears, `GameScene` looks up `beatsAfterWave(levelId, n)` and plays
+  any matching beats through the **DialogueOverlay** (`src/ui/DialogueOverlay.ts`)
+  during the intermission (the countdown holds while a beat is on screen); the
+  `waveAfter: 0` beat plays at chapter start (wave 1 is deferred until it's
+  dismissed). Clearing wave 20 scores stars, shows a **Chapter Complete** screen
+  and `scene.restart`s into the next chapter — or, on the last chapter, the final
+  **victory** screen. Progress persists to `karafence:story:progress`
+  (`{ levelId, completedChapters, wavesCleared }`).
+- **HUD**: the wave counter shows `ENDLESS · Wave X` (no cap) or
+  `STORY · Wave X/20` so the active mode is always legible.
+- **Dialogue content** is 100% data in `src/data/story.ts` — `CHARACTERS` (ALEX,
+  VY, MAX, THE JUDGE; name + portrait tint) and `STORY_BEATS` keyed by `LevelId`
+  (`{ waveAfter, character, lines }[]`). The portrait is one grayscale
+  `TX.portrait` bust tinted per character (visual-novel style).
 
 ## Map / lanes
 
@@ -132,9 +165,12 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   `GameScene` and persisted at wave-clear / run-end.
 - **Persistence** (`src/systems/storage.ts`, localStorage, hardened with
   try/catch): the **meta** slot (`karafence:meta`) holds stars/upgrades/lifetime;
-  a separate **run** slot per level (`karafence:run:<id>`) holds an in-progress
+  a separate **run** slot per **mode+level** (`karafence:run:<mode>:<id>` — so an
+  endless run and a story run on the same map don't collide) holds an in-progress
   run (resume wave, gold, lives, scoring, and serialized towers via
-  `TowerManager.serialize/restore` + `Tower.toSave/restore`). The run auto-saves
+  `TowerManager.serialize/restore` + `Tower.toSave/restore`). Plus the mode slots:
+  `karafence:mode` (last-selected), `karafence:endless:best` (best endless wave),
+  `karafence:story:progress` (campaign chapter/waves). The run auto-saves
   on tower/economy changes and wave boundaries, and resumes by replaying the saved
   wave from its start; it's cleared on victory or game over.
 
