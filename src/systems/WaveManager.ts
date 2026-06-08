@@ -28,6 +28,7 @@ export class WaveManager {
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
   private readonly callbacks: WaveManagerCallbacks;
+  private readonly enemyLayer: Phaser.GameObjects.Container;
 
   private waveIndex = -1;
   private toSpawn = 0; // enemies not yet spawned in the current wave
@@ -43,11 +44,13 @@ export class WaveManager {
     map: MapDefinition,
     layout: GridLayout,
     callbacks: WaveManagerCallbacks,
+    enemyLayer: Phaser.GameObjects.Container,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.callbacks = callbacks;
+    this.enemyLayer = enemyLayer;
   }
 
   get currentWaveNumber(): number {
@@ -151,6 +154,7 @@ export class WaveManager {
       isBoss ? 1 : this.hpScale,
       speedScale,
       startCol ?? this.map.spawnCol,
+      this.enemyLayer,
     );
     this.enemies.add(enemy);
     if (isBoss) this.callbacks.onBossSpawn?.(enemy);

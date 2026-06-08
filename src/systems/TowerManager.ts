@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TileType, type MapDefinition } from '../types/map';
-import { type GridLayout, tileToWorld } from './grid';
+import { type GridLayout, type BoardLayers, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Tower } from './Tower';
 import { Projectile } from './Projectile';
@@ -16,6 +16,7 @@ export class TowerManager {
   private readonly scene: Phaser.Scene;
   private readonly map: MapDefinition;
   private readonly layout: GridLayout;
+  private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
 
   private readonly towers = new Map<string, Tower>();
@@ -39,11 +40,13 @@ export class TowerManager {
     map: MapDefinition,
     layout: GridLayout,
     enemies: Iterable<Enemy>,
+    layers: BoardLayers,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.enemies = enemies;
+    this.layers = layers;
   }
 
   get selectedTower(): Tower | null {
@@ -83,6 +86,7 @@ export class TowerManager {
       this.enemies,
       () => this.damageMultiplier,
       () => this.attackSpeedMultiplier * this.abilitySpeedMultiplier,
+      this.layers,
       placementCost,
     );
     this.towers.set(this.key(col, row), tower);
@@ -196,8 +200,8 @@ export class TowerManager {
         const isTarget = c === targetCol && r === targetRow;
         const { x, y } = tileToWorld(this.layout, c, r);
         const rect = this.scene.add
-          .rectangle(x, y, ts - 1, ts - 1, ok ? 0x51cf66 : 0xff6b6b, ok ? 0.28 : 0.2)
-          .setDepth(260);
+          .rectangle(x, y, ts - 1, ts - 1, ok ? 0x51cf66 : 0xff6b6b, ok ? 0.28 : 0.2);
+        this.layers.fx.add(rect);
         if (isTarget) rect.setStrokeStyle(2, 0xffffff, 1).setFillStyle(0x51cf66, 0.5);
         this.overlay.push(rect);
       }

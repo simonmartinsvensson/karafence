@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { type GridLayout, tileToWorld } from './grid';
+import { type GridLayout, type BoardLayers, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
 import type { TowerSave } from './storage';
@@ -52,6 +52,7 @@ export class Tower {
 
   private readonly scene: Phaser.Scene;
   private readonly layout: GridLayout;
+  private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
   private readonly damageMultiplier: () => number;
   private readonly attackSpeedMultiplier: () => number;
@@ -85,10 +86,12 @@ export class Tower {
     enemies: Iterable<Enemy>,
     damageMultiplier: () => number,
     attackSpeedMultiplier: () => number,
+    layers: BoardLayers,
     placementCost: number = type.cost,
   ) {
     this.scene = scene;
     this.layout = layout;
+    this.layers = layers;
     this.type = type;
     this.col = col;
     this.row = row;
@@ -109,8 +112,8 @@ export class Tower {
     this.rangeCircle = scene.add
       .circle(this.worldX, this.worldY, 0, type.color, 0.1)
       .setStrokeStyle(1, type.color, 0.6)
-      .setDepth(8)
       .setVisible(false);
+    this.layers.range.add(this.rangeCircle);
 
     const size = Math.floor(ts * 0.82);
     this.body = scene.add
@@ -122,9 +125,8 @@ export class Tower {
         fontSize: `${Math.floor(ts * 0.55)}px`,
       })
       .setOrigin(0.5);
-    this.container = scene.add
-      .container(this.worldX, this.worldY, [this.body, icon])
-      .setDepth(15);
+    this.container = scene.add.container(this.worldX, this.worldY, [this.body, icon]);
+    this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
     // Ability cooldown sweep (a shrinking dark wedge over the icon) and a gold
@@ -132,13 +134,13 @@ export class Tower {
     const arcR = Math.floor(ts * 0.46);
     this.cooldownArc = scene.add
       .arc(this.worldX, this.worldY, arcR, -90, -90, false, 0x000000, 0.55)
-      .setDepth(17)
       .setVisible(false);
+    this.layers.towers.add(this.cooldownArc);
     this.readyRing = scene.add
       .circle(this.worldX, this.worldY, ts * 0.52, 0xffffff, 0)
       .setStrokeStyle(2, 0xffd43b, 0.95)
-      .setDepth(17)
       .setVisible(false);
+    this.layers.towers.add(this.readyRing);
 
     this.recompute();
     this.updateAbilityVisual();
@@ -254,8 +256,8 @@ export class Tower {
     this.rangeCircle = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.color, 0.1)
       .setStrokeStyle(1, this.type.color, 0.6)
-      .setDepth(8)
       .setVisible(wasVisible);
+    this.layers.range.add(this.rangeCircle);
 
     this.updatePips();
   }
@@ -269,9 +271,9 @@ export class Tower {
       for (let i = 0; i < count; i++) {
         const px = this.worldX - 6 + i * 6;
         const py = this.worldY + (topEdge ? -half - 2 : half + 2);
-        this.pips.push(
-          this.scene.add.rectangle(px, py, 4, 3, color).setDepth(16),
-        );
+        const pip = this.scene.add.rectangle(px, py, 4, 3, color);
+        this.layers.towers.add(pip);
+        this.pips.push(pip);
       }
     };
     drawRow(this.tiers.A, 0xff6b6b, true); // power pips on top
@@ -441,6 +443,7 @@ export class Tower {
           this.type.projectileColor,
           this.projectileSpeed,
           (t) => this.onProjectileHit(t),
+          this.layers.projectiles,
         ),
     );
   }
@@ -477,8 +480,8 @@ export class Tower {
     const ring = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.35)
       .setStrokeStyle(2, this.type.color, 0.9)
-      .setDepth(18)
       .setScale(0.15);
+    this.layers.fx.add(ring);
     this.scene.tweens.add({
       targets: ring,
       scale: 1,
@@ -497,8 +500,8 @@ export class Tower {
     const ring = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.3)
       .setStrokeStyle(3, this.type.color, 0.9)
-      .setDepth(18)
       .setScale(0.15);
+    this.layers.fx.add(ring);
     this.scene.tweens.add({
       targets: ring,
       scale: 1,

@@ -59,6 +59,7 @@ export class Enemy {
     hpScale = 1,
     speedScale = 1,
     startCol = map.spawnCol,
+    parent?: Phaser.GameObjects.Container,
   ) {
     this.scene = scene;
     this.map = map;
@@ -102,9 +103,9 @@ export class Enemy {
       children.push(this.shieldFill);
     }
 
-    this.container = scene.add
-      .container(start.x, start.y, children)
-      .setDepth(type.boss ? 12 : 10);
+    this.container = scene.add.container(start.x, start.y, children);
+    if (parent) parent.add(this.container);
+    else this.container.setDepth(type.boss ? 12 : 10);
 
     this.pickNextTarget();
   }

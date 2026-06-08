@@ -18,8 +18,10 @@ export class Projectile {
     color: number,
     private readonly speed: number, // pixels per second
     private readonly onHit: (target: Enemy) => void,
+    parent: Phaser.GameObjects.Container,
   ) {
-    this.dot = scene.add.circle(x, y, 3, color).setDepth(20);
+    this.dot = scene.add.circle(x, y, 3, color);
+    parent.add(this.dot);
   }
 
   get isDone(): boolean {

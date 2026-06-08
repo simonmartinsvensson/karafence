@@ -46,10 +46,36 @@ karafence/
 Defined in `src/main.ts`:
 
 - `pixelArt: true` — crisp scaling for pixel-art assets.
-- Logical resolution **480×270** (16:9, deliberately wide to fit a TD lane grid).
-- `Phaser.Scale.FIT` + `Phaser.Scale.CENTER_BOTH` — scales to the viewport,
-  letterboxed and centered.
+- `Phaser.Scale.RESIZE` — the canvas always fills the `#game` element (the full
+  viewport), so **1 game unit == 1 CSS pixel** and the scenes lay themselves out
+  responsively per orientation rather than being letterboxed.
+- `disableContextMenu: true` — no long-press menu on the canvas. `index.html`
+  also sets `touch-action: none`, `user-scalable=no`, etc. and `main.ts`
+  preventDefaults pinch/double-tap so native mobile gestures never fire.
 - Dark background (`#0b0b12`).
+
+## Responsive layout (mobile portrait + landscape)
+
+The whole game is playable on Android Chrome in both orientations.
+
+- `computeScreenLayout(vw, vh)` (`src/systems/grid.ts`) splits the live viewport
+  into a top **HUD strip**, a bottom **control bar** (the one-thumb Menu / Shop /
+  Fast Forward buttons), and the **board region** between them.
+- **Board container**: the lane grid is built once at a fixed board-local tile
+  size (`BOARD_TILE` in `config.ts`) into a `board` container with ordered
+  z-`layers` (`BoardLayers`: tiles/range/enemies/towers/projectiles/fx). Every
+  board object (tiles, towers, enemies, projectiles, FX) is added to a layer, so
+  `fitBoard()` reflows the entire board on resize/rotation with a single
+  scale+position transform — no per-object relayout, and layer order preserves
+  the old depth stacking. Pointer taps are converted to board-local coords via
+  `pointerToBoard()`.
+- **Screen furniture** (HUD, control bar, boss bar, combo/status text, panels,
+  end overlays) lives in scene root in viewport coordinates and reflows in
+  `GameScene.relayout()` / `MenuScene.rebuild()` on every `resize` event.
+- **Touch targets**: `TOUCH_MIN` (44px) is the floor for every interactive
+  control; the build/upgrade/shop panels (`src/ui/*`) and both scenes size their
+  buttons/rows to at least that and center on the viewport. The UpgradePanel is
+  anchored just above the control bar so Activate stays within thumb reach.
 
 ## Scene flow
 
@@ -83,9 +109,10 @@ parsed into a `MapDefinition` by the shared `parseMap` (`src/data/parseMap.ts`):
   `LEVEL_BY_ID`). Edit/add ASCII to author a map; tile colors come from the map's
   `colors` (default palette in `parseMap`).
 
-`GameScene` fits the whole map below a HUD strip and centers it; with
-`Scale.FIT` this scales as a unit. The singer is a placeholder rect + label in
-the stage zone, with a `damageSinger()` hook for when enemies reach the stage.
+`GameScene` builds the map into the board container at the fixed `BOARD_TILE`
+size, then `fitBoard()` scales + centers that container into the board region
+(see "Responsive layout"). The singer is a placeholder rect + label in the stage
+zone, with a `damageSinger()` hook for when enemies reach the stage.
 
 ## Meta-progression / save-load
 

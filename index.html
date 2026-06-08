@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>KaraFence</title>
     <style>
       html,
@@ -12,10 +17,24 @@
         height: 100%;
         background: #0b0b12;
         overflow: hidden;
+        /* Kill native mobile gestures: scroll, pinch-zoom, double-tap zoom. */
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        /* Suppress the iOS/Android long-press callout + tap highlight. */
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
       }
       #game {
-        width: 100%;
-        height: 100%;
+        /* Fill the viewport edge-to-edge; dvh tracks the mobile URL bar. */
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+      }
+      #game canvas {
+        display: block;
+        touch-action: none;
       }
     </style>
   </head>

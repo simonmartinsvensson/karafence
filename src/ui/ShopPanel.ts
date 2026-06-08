@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { TOUCH_MIN } from '../config';
 import { POWERUP_LIST, type PowerUpKey } from '../data/powerups';
 
 /**
  * Modal "KaraFence Cash" shop. Lists the one-use power-ups with costs;
  * unaffordable ones are greyed out. Buying applies the effect immediately.
+ * Sized in CSS pixels and centered on the viewport, with rows above the 44px
+ * touch-target minimum.
  */
 export class ShopPanel {
   private backdrop?: Phaser.GameObjects.Rectangle;
@@ -22,16 +24,23 @@ export class ShopPanel {
     onClose: () => void,
   ): void {
     this.close();
+    const vw = this.scene.scale.width;
+    const vh = this.scene.scale.height;
 
     this.backdrop = this.scene.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.5)
+      .rectangle(vw / 2, vh / 2, vw, vh, 0x000000, 0.5)
       .setDepth(250)
       .setInteractive();
     this.backdrop.on('pointerdown', () => onClose());
 
-    const w = 300;
-    const h = 150;
+    const w = Math.min(vw - 16, 380);
+    const headerH = 34;
+    const rowH = TOUCH_MIN + 14;
+    const gap = 6;
+    const pad = 12;
+    const h = headerH + POWERUP_LIST.length * (rowH + gap) + pad;
     const parts: Phaser.GameObjects.GameObject[] = [];
+
     const bg = this.scene.add
       .rectangle(0, 0, w, h, 0x141420, 0.98)
       .setStrokeStyle(2, 0xffd166, 0.9)
@@ -45,20 +54,19 @@ export class ShopPanel {
     parts.push(bg);
     parts.push(
       this.scene.add
-        .text(0, -h / 2 + 11, '🎟  KaraFence Cash', {
+        .text(0, -h / 2 + 16, '🎟  KaraFence Cash', {
           fontFamily: 'monospace',
-          fontSize: '11px',
+          fontSize: '15px',
           color: '#ffd166',
         })
         .setOrigin(0.5),
     );
 
-    const rowH = 34;
     POWERUP_LIST.forEach((p, i) => {
-      const y = -h / 2 + 30 + i * rowH;
+      const y = -h / 2 + headerH + rowH / 2 + i * (rowH + gap);
       const affordable = gold >= p.cost;
       const row = this.scene.add
-        .rectangle(0, y, w - 18, rowH - 4, affordable ? 0x232336 : 0x1a1a22)
+        .rectangle(0, y, w - 18, rowH, affordable ? 0x232336 : 0x1a1a22)
         .setStrokeStyle(1, affordable ? 0x51cf66 : 0x555555, 0.9);
       if (affordable) {
         row.setInteractive({ useHandCursor: true });
@@ -75,36 +83,35 @@ export class ShopPanel {
       parts.push(row);
       parts.push(
         this.scene.add
-          .text(-w / 2 + 12, y - 6, `${p.icon} ${p.name}`, {
+          .text(-w / 2 + 16, y - rowH * 0.22, `${p.icon} ${p.name}`, {
             fontFamily: 'monospace',
-            fontSize: '9px',
+            fontSize: '12px',
             color: affordable ? '#ffffff' : '#888888',
           })
           .setOrigin(0, 0.5),
       );
       parts.push(
         this.scene.add
-          .text(-w / 2 + 12, y + 7, p.desc, {
+          .text(-w / 2 + 16, y + rowH * 0.24, p.desc, {
             fontFamily: 'monospace',
-            fontSize: '7px',
+            fontSize: '9px',
             color: '#aaaaaa',
+            wordWrap: { width: w - 80 },
           })
           .setOrigin(0, 0.5),
       );
       parts.push(
         this.scene.add
-          .text(w / 2 - 12, y, `${p.cost}g`, {
+          .text(w / 2 - 16, y, `${p.cost}g`, {
             fontFamily: 'monospace',
-            fontSize: '10px',
+            fontSize: '13px',
             color: affordable ? '#ffd166' : '#888888',
           })
           .setOrigin(1, 0.5),
       );
     });
 
-    this.container = this.scene.add
-      .container(GAME_WIDTH / 2, GAME_HEIGHT / 2, parts)
-      .setDepth(300);
+    this.container = this.scene.add.container(vw / 2, vh / 2, parts).setDepth(300);
   }
 
   close(): void {
