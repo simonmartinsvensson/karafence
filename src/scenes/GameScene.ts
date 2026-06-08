@@ -43,6 +43,13 @@ import { audio } from '../systems/audio';
 import { TX } from '../systems/textures';
 import { TileType } from '../types/map';
 
+/** A venue-signage control-bar button: neon glow + framed rect + label. */
+interface BarButton {
+  glow: Phaser.GameObjects.Rectangle;
+  rect: Phaser.GameObjects.Rectangle;
+  text: Phaser.GameObjects.Text;
+}
+
 /** Map each tile type to its generated (grayscale, tinted at use) texture key. */
 const TILE_TEXTURE: Record<TileType, string> = {
   [TileType.Stage]: TX.tileStage,
@@ -158,17 +165,25 @@ export class GameScene extends Phaser.Scene {
 
   // HUD strip (screen-space).
   private hudBg!: Phaser.GameObjects.Rectangle;
+  private hudBorder!: Phaser.GameObjects.Rectangle; // neon bottom edge
   private titleText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private waveIcon!: Phaser.GameObjects.Image; // spotlight motif
   private hpText!: Phaser.GameObjects.Text;
+  private hpIcon!: Phaser.GameObjects.Image; // mic
+  private hpBarBg!: Phaser.GameObjects.Rectangle;
+  private hpBarFill!: Phaser.GameObjects.Image; // red→pink energy gradient
+  private hpBarW = 0;
   private goldText!: Phaser.GameObjects.Text;
+  private goldIcon!: Phaser.GameObjects.Image; // coin
   private comboText!: Phaser.GameObjects.Text;
+  private eqBars: Phaser.GameObjects.Rectangle[] = []; // crowd-energy EQ meter
   private statusText!: Phaser.GameObjects.Text;
 
   // Bottom control bar (screen-space).
   private barBg!: Phaser.GameObjects.Rectangle;
-  private menuBtn!: { rect: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text };
-  private shopBtn!: { rect: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text };
+  private menuBtn!: BarButton;
+  private shopBtn!: BarButton;
 
   // Terminal-state overlay (victory / game over), re-rendered on resize.
   private endState: 'none' | 'victory' | 'gameover' = 'none';
@@ -208,6 +223,7 @@ export class GameScene extends Phaser.Scene {
     this.singerFigure = undefined;
     this.singerTween = undefined;
     this.comboPulse = undefined;
+    this.eqBars = [];
     this.bossPrevHp = 0;
     this.goldSpent = 0;
     this.highestCombo = 0;
@@ -877,27 +893,56 @@ export class GameScene extends Phaser.Scene {
       .rectangle(0, 0, 10, 10, 0x14141c, 0.92)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
+    // Neon underline along the bottom edge of the HUD strip.
+    this.hudBorder = this.add
+      .rectangle(0, 0, 10, 2, 0xe84393, 0.9)
+      .setOrigin(0, 1)
+      .setDepth(DEPTH_HUD + 1);
     this.titleText = this.add
       .text(0, 0, 'KaraFence', { fontFamily: 'monospace', color: '#e84393' })
       .setOrigin(0, 0.5)
       .setDepth(DEPTH_HUD + 1);
+    this.goldIcon = this.add.image(0, 0, TX.coin).setDepth(DEPTH_HUD + 1);
     this.goldText = this.add
-      .text(0, 0, `Gold ${this.gold}`, { fontFamily: 'monospace', color: '#ffd166' })
+      .text(0, 0, `${this.gold}`, { fontFamily: 'monospace', color: '#ffd166' })
       .setOrigin(0, 0.5)
       .setDepth(DEPTH_HUD + 1);
+    this.waveIcon = this.add.image(0, 0, TX.spotIcon).setDepth(DEPTH_HUD + 1);
     this.waveText = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#dddddd' })
       .setOrigin(0.5, 0.5)
       .setDepth(DEPTH_HUD + 1);
-    this.hpText = this.add
-      .text(0, 0, `♥ ${this.singerHp}`, { fontFamily: 'monospace', color: '#ffffff' })
-      .setOrigin(1, 0.5)
+    // Singer "performance energy" bar (mic + red→pink gradient fill).
+    this.hpIcon = this.add.image(0, 0, TX.mic).setDepth(DEPTH_HUD + 1);
+    this.hpBarBg = this.add
+      .rectangle(0, 0, 10, 10, 0x2a1622, 0.95)
+      .setStrokeStyle(1, 0xff8fb1, 0.8)
       .setDepth(DEPTH_HUD + 1);
+    this.hpBarFill = this.add.image(0, 0, TX.hpFill).setOrigin(0, 0.5).setDepth(DEPTH_HUD + 2);
+    this.hpText = this.add
+      .text(0, 0, `${this.singerHp}`, {
+        fontFamily: 'monospace',
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH_HUD + 3);
     this.comboText = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#ffd43b' })
       .setOrigin(0.5)
       .setDepth(DEPTH_BOSSBAR)
       .setVisible(false);
+    // Crowd-energy EQ meter (5 bars) shown alongside the combo readout.
+    this.eqBars = [];
+    for (let i = 0; i < 5; i++) {
+      this.eqBars.push(
+        this.add
+          .rectangle(0, 0, 3, 4, 0x51cf66, 1)
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH_BOSSBAR)
+          .setVisible(false),
+      );
+    }
     this.statusText = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#69db7c' })
       .setOrigin(0.5, 0)
@@ -908,32 +953,85 @@ export class GameScene extends Phaser.Scene {
   private positionHud(): void {
     const { vw, hudH, portrait } = this.screen;
     this.hudBg.setPosition(0, 0).setSize(vw, hudH);
+    this.hudBorder.setPosition(0, hudH).setSize(vw, 2);
     const cy = hudH / 2;
     const font = Math.round(Phaser.Math.Clamp(hudH * 0.32, 12, 18));
+    const iconSz = Math.round(Phaser.Math.Clamp(hudH * 0.4, 14, 22));
     const small = `${font}px`;
     // On narrow portrait screens the title would crowd the readouts.
     const showTitle = !portrait || vw >= 460;
     this.titleText.setVisible(showTitle).setFontSize(font).setPosition(8, cy);
-    const goldX = showTitle ? Math.min(vw * 0.32, 120) : 8;
-    this.goldText.setFontSize(font).setPosition(goldX, cy);
-    // The wave/foes readout is the longest string; on narrow screens shrink it
-    // and bias it toward the right so it never collides with Gold or HP.
+    // Gold: coin icon + number.
+    const goldX = showTitle ? Math.min(vw * 0.34, 130) : 8;
+    this.goldIcon.setDisplaySize(iconSz, iconSz).setPosition(goldX + iconSz / 2, cy);
+    this.goldText.setFontSize(font).setPosition(goldX + iconSz + 4, cy);
+
+    // Singer energy bar on the right: mic + gradient fill + overlaid number.
+    this.hpBarW = Math.round(Phaser.Math.Clamp(vw * 0.16, 48, 84));
+    const barH = Math.round(Phaser.Math.Clamp(hudH * 0.36, 10, 16));
+    const barCx = vw - 8 - this.hpBarW / 2;
+    const barLeft = vw - 8 - this.hpBarW;
+    this.hpBarBg.setSize(this.hpBarW, barH).setPosition(barCx, cy);
+    this.hpBarFill.setPosition(barLeft + 1, cy).setDisplaySize(this.hpBarW - 2, barH - 4);
+    this.hpIcon.setDisplaySize(iconSz, iconSz).setPosition(barLeft - iconSz / 2 - 4, cy);
+    this.hpText.setFontSize(`${Math.round(font * 0.82)}px`).setPosition(barCx, cy);
+
+    // The wave/foes readout (longest string) sits between gold and the energy
+    // bar, with a small spotlight icon at its left.
     const waveFont = Math.round(font * (vw < 460 ? 0.72 : 0.85));
-    const waveX = Math.min(vw * 0.62, vw - 70);
+    const waveX = Math.min(vw * 0.6, barLeft - iconSz - 60);
+    this.waveIcon.setDisplaySize(iconSz, iconSz);
     this.waveText.setFontSize(`${waveFont}px`).setPosition(waveX, cy);
-    this.hpText.setFontSize(font).setPosition(vw - 8, cy);
+
     this.comboText
       .setFontSize(`${Math.round(font * 1.3)}px`)
-      .setPosition(vw / 2, hudH + Math.round(font * 1.1));
+      .setPosition(vw / 2, hudH + Math.round(font * 1.4));
     this.statusText.setFontSize(small).setPosition(vw / 2, hudH + 4);
+    this.refreshHud();
+    this.positionEq();
   }
 
   private refreshHud(): void {
-    this.goldText.setText(`Gold ${this.gold}`);
+    this.goldText.setText(`${this.gold}`);
     this.waveText.setText(
       `Wave ${this.waves.currentWaveNumber}/${this.waves.totalWaves} · Foes ${this.waves.enemiesRemaining}`,
     );
-    this.hpText.setText(`♥ ${this.singerHp}`);
+    // Anchor the spotlight icon just left of the (variable-width) wave readout.
+    this.waveIcon.setPosition(
+      this.waveText.x - this.waveText.width / 2 - this.waveIcon.displayWidth / 2 - 4,
+      this.waveText.y,
+    );
+    this.hpText.setText(`${this.singerHp}`);
+    const ratio = Math.max(0, this.singerHp / SINGER_MAX_HP);
+    this.hpBarFill.displayWidth = Math.max(0, this.hpBarW - 2) * ratio;
+  }
+
+  /** Lay out + size the crowd-energy EQ bars beside the combo readout. */
+  private positionEq(): void {
+    if (!this.eqBars.length) return;
+    const show = this.combo > 0 && this.comboText.visible;
+    if (!show) {
+      this.eqBars.forEach((b) => b.setVisible(false));
+      return;
+    }
+    const maxH = this.comboText.height * 0.8;
+    const level = Math.min(1, this.combo / 8);
+    const pattern = [0.5, 0.85, 1, 0.7, 0.55];
+    const bw = 3;
+    const gap = 2;
+    const baseY = this.comboText.y + this.comboText.height * 0.35;
+    // Stack the bars to the left of the combo text.
+    let x = this.comboText.x - this.comboText.width / 2 - 8;
+    for (let i = this.eqBars.length - 1; i >= 0; i--) {
+      const bar = this.eqBars[i];
+      const h = Math.max(3, maxH * (0.25 + 0.75 * level) * pattern[i]);
+      bar
+        .setVisible(true)
+        .setSize(bw, h)
+        .setPosition(x, baseY)
+        .setFillStyle(level > 0.6 ? 0xffd43b : 0x51cf66, 1);
+      x -= bw + gap;
+    }
   }
 
   // --- Bottom control bar (screen-space) -----------------------------------
@@ -948,16 +1046,19 @@ export class GameScene extends Phaser.Scene {
     this.shopBtn = this.barButton('🎟 Shop', 0xffd166, '#ffd166', () => this.openShop());
   }
 
-  /** A bar button (rect + centered label), positioned later by the layout. */
+  /** A venue-signage bar button (neon glow + framed rect + label). */
   private barButton(
     label: string,
     stroke: number,
     color: string,
     onClick: () => void,
-  ): { rect: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text } {
+  ): BarButton {
+    const glow = this.add
+      .rectangle(0, 0, TOUCH_MIN, TOUCH_MIN, stroke, 0.22)
+      .setDepth(DEPTH_BAR);
     const rect = this.add
-      .rectangle(0, 0, TOUCH_MIN, TOUCH_MIN, 0x232336, 0.98)
-      .setStrokeStyle(2, stroke, 0.9)
+      .rectangle(0, 0, TOUCH_MIN, TOUCH_MIN, 0x1b1b27, 0.98)
+      .setStrokeStyle(2.5, stroke, 1)
       .setDepth(DEPTH_BAR + 1)
       .setInteractive({ useHandCursor: true });
     rect.on(
@@ -976,7 +1077,7 @@ export class GameScene extends Phaser.Scene {
       .text(0, 0, label, { fontFamily: 'monospace', color })
       .setOrigin(0.5)
       .setDepth(DEPTH_BAR + 2);
-    return { rect, text };
+    return { glow, rect, text };
   }
 
   private positionControlBar(): void {
@@ -989,10 +1090,13 @@ export class GameScene extends Phaser.Scene {
     const btnW = Math.max(TOUCH_MIN, Math.min(160, vw * 0.34));
     const margin = Math.max(10, vw * 0.03);
 
-    this.menuBtn.rect.setSize(btnW, btnH).setPosition(margin + btnW / 2, cy);
-    this.menuBtn.text.setFontSize(font).setPosition(margin + btnW / 2, cy);
-    this.shopBtn.rect.setSize(btnW, btnH).setPosition(vw - margin - btnW / 2, cy);
-    this.shopBtn.text.setFontSize(font).setPosition(vw - margin - btnW / 2, cy);
+    const place = (btn: BarButton, cx: number) => {
+      btn.glow.setSize(btnW + 8, btnH + 8).setPosition(cx, cy);
+      btn.rect.setSize(btnW, btnH).setPosition(cx, cy);
+      btn.text.setFontSize(font).setPosition(cx, cy);
+    };
+    place(this.menuBtn, margin + btnW / 2);
+    place(this.shopBtn, vw - margin - btnW / 2);
   }
 
   // --- Game flow -----------------------------------------------------------
@@ -1095,11 +1199,18 @@ export class GameScene extends Phaser.Scene {
 
   private showBossBar(boss: Enemy): void {
     this.bossBar?.destroy(true);
-    const bg = this.add.rectangle(0, 0, 10, 9, 0x2a0e16, 0.95).setStrokeStyle(1, 0xffffff, 0.5);
-    this.bossBarFill = this.add.rectangle(0, 0, 10, 9, 0xff5070).setOrigin(0, 0.5);
+    // Dramatic dark frame with a neon-red border and a bold, shadowed name.
+    const bg = this.add.rectangle(0, 0, 10, 9, 0x140509, 0.97).setStrokeStyle(2, 0xff3355, 0.95);
+    this.bossBarFill = this.add.rectangle(0, 0, 10, 9, 0xff2d55).setOrigin(0, 0.5);
     this.bossBarLabel = this.add
-      .text(0, 0, boss.type.name, { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' })
-      .setOrigin(0.5);
+      .text(0, 0, boss.type.name, {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setShadow(0, 1, '#000000', 2);
     this.bossBar = this.add
       .container(0, 0, [bg, this.bossBarFill, this.bossBarLabel])
       .setDepth(DEPTH_BOSSBAR);
@@ -1125,7 +1236,7 @@ export class GameScene extends Phaser.Scene {
     if (!boss || !this.bossBarFill || !this.bossBarLabel) return;
     const shielded = boss.shieldRatio > 0;
     this.bossBarFill.scaleX = shielded ? boss.shieldRatio : boss.hpRatio;
-    this.bossBarFill.fillColor = shielded ? 0x74c0fc : 0xff5070;
+    this.bossBarFill.fillColor = shielded ? 0x74c0fc : 0xff2d55;
     this.bossBarLabel.setText(boss.type.name + (shielded ? '  [SHIELD]' : ''));
   }
 
@@ -1246,11 +1357,13 @@ export class GameScene extends Phaser.Scene {
     if (this.combo <= 0) {
       this.stopComboPulse();
       this.comboText.setVisible(false);
+      this.positionEq();
       return;
     }
     this.comboText.setVisible(true).setText(`🔥 HYPE x${this.combo}`);
     const hot = this.combo >= 5;
     this.comboText.setColor(hot ? '#ff6bd6' : '#ffd43b');
+    this.positionEq();
     if (hot) {
       // The meter throbs continuously while the crowd is whipped up.
       if (!this.comboPulse) {

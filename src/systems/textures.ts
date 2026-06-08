@@ -34,6 +34,10 @@ export const TX = {
   projNote: 'kf-proj-note',
   projStaff: 'kf-proj-staff',
   drumstick: 'kf-drumstick',
+  coin: 'kf-coin',
+  mic: 'kf-mic',
+  spotIcon: 'kf-spot-icon',
+  hpFill: 'kf-hp-fill',
 } as const;
 
 /** Texture key for a tower type's drawn sprite. */
@@ -53,6 +57,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   generateTowerTextures(scene);
   generateEnemyTextures(scene);
   generateProjectileTextures(scene);
+  generateUiTextures(scene);
 }
 
 // --- Section 1: tiles ------------------------------------------------------
@@ -668,6 +673,64 @@ function generateProjectileTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xfff0db, 0.9);
   g.fillRoundedRect(3, 9, 8, 1.5, 1); // highlight
   g.generateTexture(TX.drumstick, 22, 22);
+
+  g.destroy();
+}
+
+// --- Section 6: UI / HUD ---------------------------------------------------
+//
+// Small HUD icons + a gradient fill, used by GameScene's restyled HUD (coin by
+// the gold count, mic on the singer-energy bar, spotlight by the wave counter,
+// red→pink gradient for the energy fill). Bars/borders that resize live in
+// GameScene as Graphics/rects; only the fixed-size icons are textures here.
+
+function generateUiTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+
+  // Gold coin with a 4-point sparkle.
+  g.clear();
+  g.fillStyle(0xd9a020, 1);
+  g.fillCircle(12, 12, 10);
+  g.fillStyle(0xffe680, 1);
+  g.fillCircle(12, 12, 7.5);
+  g.fillStyle(0xb37400, 1);
+  g.fillTriangle(12, 5, 10, 12, 14, 12);
+  g.fillTriangle(12, 19, 10, 12, 14, 12);
+  g.fillTriangle(5, 12, 12, 10, 12, 14);
+  g.fillTriangle(19, 12, 12, 10, 12, 14);
+  g.generateTexture(TX.coin, 24, 24);
+
+  // Microphone (for the singer-energy bar).
+  g.clear();
+  g.fillStyle(0xe6e9f0, 1);
+  g.fillRoundedRect(8, 3, 8, 11, 4); // head
+  g.lineStyle(1, 0x6e6e6e, 1);
+  g.beginPath();
+  g.moveTo(9, 6);
+  g.lineTo(15, 6);
+  g.moveTo(9, 9);
+  g.lineTo(15, 9);
+  g.strokePath(); // grille
+  g.fillStyle(0x9aa0b0, 1);
+  g.fillRect(11, 13, 2, 7); // handle
+  g.fillRoundedRect(9, 19, 6, 2, 1); // base
+  g.generateTexture(TX.mic, 24, 24);
+
+  // Spotlight lamp + beam (for the wave counter).
+  g.clear();
+  g.fillStyle(0xfff2c0, 0.4);
+  g.fillTriangle(8, 11, 16, 11, 12, 22); // beam
+  g.fillStyle(0x2b2b3a, 1);
+  g.fillRoundedRect(7, 4, 10, 7, 2); // housing
+  g.fillStyle(0xffe680, 1);
+  g.fillEllipse(12, 11, 8, 3); // lens
+  g.generateTexture(TX.spotIcon, 24, 24);
+
+  // Red→pink horizontal gradient for the singer-energy fill (scaled at use).
+  g.clear();
+  g.fillGradientStyle(0xff2d55, 0xff8fb1, 0xff2d55, 0xff8fb1, 1);
+  g.fillRect(0, 0, 64, 8);
+  g.generateTexture(TX.hpFill, 64, 8);
 
   g.destroy();
 }
