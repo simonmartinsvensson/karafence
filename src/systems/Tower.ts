@@ -3,6 +3,7 @@ import { type GridLayout, type BoardLayers, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
 import { audio } from './audio';
+import { towerTextureKey } from './textures';
 import type { TowerSave } from './storage';
 import {
   type TowerType,
@@ -43,7 +44,7 @@ export class Tower {
   readonly col: number;
   readonly row: number;
   targeting: TargetingStrategy;
-  readonly body: Phaser.GameObjects.Rectangle;
+  readonly body: Phaser.GameObjects.Sprite;
 
   /** Purchased tier per path (0-3). */
   readonly tiers: Record<UpgradePathKey, number> = { A: 0, B: 0 };
@@ -77,6 +78,8 @@ export class Tower {
   /** Cooldown sweep (shrinking dark wedge) + ready ring, drawn on the sprite. */
   private cooldownArc!: Phaser.GameObjects.Arc;
   private readyRing!: Phaser.GameObjects.Arc;
+  /** Continuous shimmer on the ready ring while the ability is off cooldown. */
+  private readyShimmer?: Phaser.Tweens.Tween;
 
   constructor(
     scene: Phaser.Scene,
@@ -116,17 +119,12 @@ export class Tower {
       .setVisible(false);
     this.layers.range.add(this.rangeCircle);
 
-    const size = Math.floor(ts * 0.82);
+    const size = Math.floor(ts * 0.9);
+    // Drawn tower sprite (instrument/performer silhouette on a dark base).
     this.body = scene.add
-      .rectangle(0, 0, size, size, type.color)
-      .setStrokeStyle(2, 0xffffff, 0.85);
-    const icon = scene.add
-      .text(0, 0, type.icon, {
-        fontFamily: 'sans-serif',
-        fontSize: `${Math.floor(ts * 0.55)}px`,
-      })
-      .setOrigin(0.5);
-    this.container = scene.add.container(this.worldX, this.worldY, [this.body, icon]);
+      .sprite(0, 0, towerTextureKey(type.key))
+      .setDisplaySize(size, size);
+    this.container = scene.add.container(this.worldX, this.worldY, [this.body]);
     this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
@@ -167,12 +165,37 @@ export class Tower {
   /** Sweep the cooldown wedge / show the ready ring on the sprite. */
   private updateAbilityVisual(): void {
     if (this.abilityRemaining > 0) {
+      this.stopReadyShimmer();
       this.readyRing.setVisible(false);
       const frac = this.abilityRemaining / this.type.ability.cooldown;
       this.cooldownArc.setVisible(true).setEndAngle(-90 + 360 * frac);
     } else {
       this.cooldownArc.setVisible(false);
       this.readyRing.setVisible(true);
+      this.startReadyShimmer();
+    }
+  }
+
+  /** A gentle golden shimmer (alpha + scale) loop while the ability is ready. */
+  private startReadyShimmer(): void {
+    if (this.readyShimmer) return;
+    this.readyShimmer = this.scene.tweens.add({
+      targets: this.readyRing,
+      alpha: { from: 0.5, to: 1 },
+      scaleX: { from: 1, to: 1.1 },
+      scaleY: { from: 1, to: 1.1 },
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  private stopReadyShimmer(): void {
+    if (this.readyShimmer) {
+      this.readyShimmer.stop();
+      this.readyShimmer = undefined;
+      this.readyRing.setAlpha(1).setScale(1);
     }
   }
 
@@ -181,13 +204,6 @@ export class Tower {
    * and flash a fading halo in the tower's color so the player notices.
    */
   private pulseReady(): void {
-    this.readyRing.setVisible(true).setScale(1.7);
-    this.scene.tweens.add({
-      targets: this.readyRing,
-      scale: 1,
-      duration: 360,
-      ease: 'Back.easeOut',
-    });
     const halo = this.scene.add
       .circle(this.worldX, this.worldY, this.layout.tileSize * 0.5, 0xffd43b, 0.35)
       .setStrokeStyle(2, 0xffe680, 0.9)
@@ -394,7 +410,7 @@ export class Tower {
   /** Heckler King taunt: silence the tower for `seconds`. */
   freeze(seconds: number): void {
     this.frozenRemaining = Math.max(this.frozenRemaining, seconds);
-    this.body.setStrokeStyle(2, 0x74c0fc, 1);
+    this.body.setTint(0x74c0fc); // frozen blue wash
   }
 
   // --- Combat --------------------------------------------------------------
@@ -430,7 +446,7 @@ export class Tower {
 
     if (this.frozenRemaining > 0) {
       this.frozenRemaining -= dt;
-      if (this.frozenRemaining <= 0) this.body.setStrokeStyle(2, 0xffffff, 0.85);
+      if (this.frozenRemaining <= 0) this.body.clearTint();
       return [];
     }
 
@@ -588,6 +604,7 @@ export class Tower {
   }
 
   destroy(): void {
+    this.stopReadyShimmer();
     this.container.destroy();
     this.rangeCircle.destroy();
     this.cooldownArc.destroy();

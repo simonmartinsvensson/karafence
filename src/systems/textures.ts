@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
 
 /**
  * Procedural art for KaraFence. Every sprite the game draws is generated here
@@ -32,6 +33,9 @@ export const TX = {
   singer: 'kf-singer',
 } as const;
 
+/** Texture key for a tower type's drawn sprite. */
+export const towerTextureKey = (key: TowerTypeKey): string => `kf-tower-${key}`;
+
 /**
  * Generate every texture once. Idempotent: re-running (e.g. if Boot re-enters)
  * is a no-op once the first key exists.
@@ -40,6 +44,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TX.tileStage)) return;
   generateTileTextures(scene);
   generateStageTextures(scene);
+  generateTowerTextures(scene);
 }
 
 // --- Section 1: tiles ------------------------------------------------------
@@ -218,6 +223,149 @@ function generateStageTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x55555f, 0.9);
   g.fillCircle(cx - 1, H * 0.26, 1.5);
   g.generateTexture(TX.singer, W, H);
+
+  g.destroy();
+}
+
+// --- Section 3: towers -----------------------------------------------------
+//
+// Each tower is a distinct instrument/performer silhouette on a dark rounded
+// tile base bordered in the tower's color, drawn at TOWER_RES so it stays
+// readable scaled down to ~33px on the board. Replaces the colored-rectangle +
+// emoji body in Tower.ts (kept readable at small sizes via bold silhouettes).
+
+const TOWER_RES = 64;
+
+function generateTowerTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const R = TOWER_RES;
+
+  const base = (color: number) => {
+    g.clear();
+    g.fillStyle(0x14141c, 1);
+    g.fillRoundedRect(2, 2, R - 4, R - 4, 11);
+    g.fillStyle(0x262631, 1);
+    g.fillRoundedRect(4, 4, R - 8, R * 0.6, 9); // lighter upper face
+    g.fillStyle(0xffffff, 0.06);
+    g.fillRoundedRect(7, 6, R - 14, 9, 6); // top sheen
+    g.lineStyle(3, color, 0.95);
+    g.strokeRoundedRect(2, 2, R - 4, R - 4, 11);
+  };
+
+  // Lead Singer: figure + mic under a small spotlight.
+  base(TOWER_TYPES.leadSinger.color);
+  g.fillStyle(0xfff2c0, 0.13);
+  g.beginPath();
+  g.moveTo(32, 8);
+  g.lineTo(20, 52);
+  g.lineTo(44, 52);
+  g.closePath();
+  g.fillPath();
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(30, 26, 6);
+  g.fillRoundedRect(24, 32, 12, 20, 4);
+  g.fillStyle(0xdddddd, 1);
+  g.fillRect(37, 28, 2, 18);
+  g.fillStyle(0x222228, 1);
+  g.fillCircle(38, 28, 3.5);
+  g.generateTexture(towerTextureKey('leadSinger'), R, R);
+
+  // Drummer: bass drum + snare + hi-hat + crossed sticks.
+  base(TOWER_TYPES.drummer.color);
+  g.fillStyle(0xffd8a8, 1);
+  g.fillEllipse(18, 36, 13, 6); // snare
+  g.fillStyle(0xcccccc, 1);
+  g.fillRect(47, 28, 2, 16); // hi-hat stand
+  g.fillEllipse(48, 28, 13, 3); // hi-hat cymbal
+  g.fillStyle(TOWER_TYPES.drummer.color, 1);
+  g.fillCircle(32, 42, 14); // bass drum
+  g.fillStyle(0x14141c, 1);
+  g.fillCircle(32, 42, 7);
+  g.lineStyle(2, 0xffe0b0, 1);
+  g.strokeCircle(32, 42, 14);
+  g.beginPath(); // sticks up
+  g.moveTo(26, 22);
+  g.lineTo(33, 9);
+  g.moveTo(39, 22);
+  g.lineTo(31, 9);
+  g.strokePath();
+  g.generateTexture(towerTextureKey('drummer'), R, R);
+
+  // Keyboardist: keyboard with black keys + player head behind.
+  base(TOWER_TYPES.keyboardist.color);
+  g.fillStyle(TOWER_TYPES.keyboardist.color, 1);
+  g.fillCircle(32, 17, 6); // head behind
+  g.fillStyle(0xeeeeee, 1);
+  g.fillRoundedRect(13, 31, 38, 18, 3); // white keys
+  g.fillStyle(0x1a1a22, 1);
+  for (let i = 0; i < 6; i++) g.fillRect(18 + i * 6, 31, 3, 10); // black keys
+  g.lineStyle(2, TOWER_TYPES.keyboardist.color, 1);
+  g.strokeRoundedRect(13, 31, 38, 18, 3);
+  g.generateTexture(towerTextureKey('keyboardist'), R, R);
+
+  // Bass Player: bass-guitar body + neck + tuning pegs (distinct from keyboard).
+  base(TOWER_TYPES.bassPlayer.color);
+  g.lineStyle(4, 0x9b78ff, 1);
+  g.beginPath();
+  g.moveTo(30, 40);
+  g.lineTo(52, 13);
+  g.strokePath(); // neck
+  g.fillStyle(TOWER_TYPES.bassPlayer.color, 1);
+  g.fillEllipse(25, 43, 24, 17); // body
+  g.fillStyle(0x14141c, 1);
+  g.fillCircle(25, 43, 4); // sound spot
+  g.fillStyle(0xcccccc, 1);
+  g.fillRoundedRect(49, 9, 9, 8, 2); // headstock
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(50, 9, 1.6);
+  g.fillCircle(55, 9, 1.6);
+  g.fillCircle(58, 13, 1.6); // tuning pegs
+  g.lineStyle(1, 0xd0bfff, 0.8);
+  g.beginPath();
+  g.moveTo(19, 43);
+  g.lineTo(50, 13);
+  g.strokePath(); // string
+  g.generateTexture(towerTextureKey('bassPlayer'), R, R);
+
+  // Backup Singer: two smaller figures sharing a central mic.
+  base(TOWER_TYPES.backupSinger.color);
+  g.fillStyle(TOWER_TYPES.backupSinger.color, 1);
+  g.fillCircle(21, 27, 5);
+  g.fillCircle(43, 27, 5); // heads
+  g.fillRoundedRect(16, 32, 10, 18, 3);
+  g.fillRoundedRect(38, 32, 10, 18, 3); // bodies
+  g.fillStyle(0xdddddd, 1);
+  g.fillRect(31, 28, 2, 16); // shared mic stand
+  g.fillStyle(0x222228, 1);
+  g.fillCircle(32, 28, 3.5);
+  g.generateTexture(towerTextureKey('backupSinger'), R, R);
+
+  // Hype Man: figure with arms raised wide + radiating energy lines.
+  base(TOWER_TYPES.hypeMan.color);
+  g.lineStyle(2, 0xffd8a8, 0.9);
+  g.beginPath();
+  g.moveTo(32, 6);
+  g.lineTo(32, 12);
+  g.moveTo(10, 16);
+  g.lineTo(15, 20);
+  g.moveTo(54, 16);
+  g.lineTo(49, 20);
+  g.moveTo(7, 32);
+  g.lineTo(13, 32);
+  g.moveTo(57, 32);
+  g.lineTo(51, 32);
+  g.strokePath(); // energy
+  g.fillStyle(TOWER_TYPES.hypeMan.color, 1);
+  g.fillCircle(32, 30, 6); // head
+  g.fillRoundedRect(27, 36, 10, 16, 3); // body
+  g.lineStyle(4, TOWER_TYPES.hypeMan.color, 1);
+  g.beginPath();
+  g.moveTo(29, 38);
+  g.lineTo(17, 23);
+  g.moveTo(35, 38);
+  g.lineTo(47, 23);
+  g.strokePath(); // raised arms
+  g.generateTexture(towerTextureKey('hypeMan'), R, R);
 
   g.destroy();
 }
