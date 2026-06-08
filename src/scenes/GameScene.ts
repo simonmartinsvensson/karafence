@@ -40,6 +40,15 @@ import {
   clearRun,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { TX } from '../systems/textures';
+import { TileType } from '../types/map';
+
+/** Map each tile type to its generated (grayscale, tinted at use) texture key. */
+const TILE_TEXTURE: Record<TileType, string> = {
+  [TileType.Stage]: TX.tileStage,
+  [TileType.Aisle]: TX.tileAisle,
+  [TileType.Build]: TX.tileBuild,
+};
 
 const SINGER_MAX_HP = 30;
 const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
@@ -759,9 +768,11 @@ export class GameScene extends Phaser.Scene {
       for (let c = 0; c < this.map.cols; c++) {
         const type = this.map.tiles[r][c];
         const { x, y } = tileToWorld(layout, c, r);
+        // Drawn tile texture (grayscale) tinted to this map's palette color.
         const tile = this.add
-          .rectangle(x, y, tileSize, tileSize, this.map.colors[type])
-          .setStrokeStyle(1, 0x000000, 0.35);
+          .image(x, y, TILE_TEXTURE[type])
+          .setDisplaySize(tileSize, tileSize)
+          .setTint(this.map.colors[type]);
         this.layers.tiles.add(tile);
       }
     }

@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
+import { generateTextures } from '../systems/textures';
 
 /**
  * BootScene is the first scene in the flow. It confirms Phaser is alive
- * (logs "boot"), generates the small runtime textures we draw procedurally
- * (the death-burst spark), and then hands off to the MenuScene (level select).
+ * (logs "boot"), generates every procedural texture (see systems/textures.ts)
+ * plus the death-burst spark, and then hands off to the MenuScene.
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -11,6 +12,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    generateTextures(this);
     this.makeSparkTexture();
   }
 
