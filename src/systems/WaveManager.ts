@@ -3,7 +3,14 @@ import type { MapDefinition } from '../types/map';
 import type { GridLayout } from './grid';
 import { Enemy } from './Enemy';
 import { ENEMY_TYPES, type EnemyTypeKey } from '../data/enemies';
-import { WAVES, DIFFICULTY, scaledCount } from '../data/waves';
+import {
+  WAVES,
+  DIFFICULTY,
+  ENDLESS,
+  scaledCount,
+  type SpawnGroup,
+  type WaveDef,
+} from '../data/waves';
 
 export interface WaveManagerCallbacks {
   /** An enemy reached the stage. */
@@ -38,6 +45,9 @@ export class WaveManager {
   private timers: Phaser.Time.TimerEvent[] = [];
   private hpScale = 1;
   private speedScale = 1;
+  private bossHpScale = 1; // endless bosses get tougher each rotation
+  /** Endless: keep generating waves forever past the authored list. */
+  private readonly endless: boolean;
 
   constructor(
     scene: Phaser.Scene,
@@ -45,12 +55,14 @@ export class WaveManager {
     layout: GridLayout,
     callbacks: WaveManagerCallbacks,
     enemyLayer: Phaser.GameObjects.Container,
+    endless = false,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.callbacks = callbacks;
     this.enemyLayer = enemyLayer;
+    this.endless = endless;
   }
 
   get currentWaveNumber(): number {
@@ -72,11 +84,16 @@ export class WaveManager {
   }
 
   get hasNextWave(): boolean {
-    return this.waveIndex < WAVES.length - 1;
+    return this.endless || this.waveIndex < WAVES.length - 1;
   }
 
   get finished(): boolean {
-    return !this.hasNextWave && !this.waveActive && this.enemiesRemaining === 0;
+    return (
+      !this.endless &&
+      !this.hasNextWave &&
+      !this.waveActive &&
+      this.enemiesRemaining === 0
+    );
   }
 
   start(): void {
@@ -85,7 +102,8 @@ export class WaveManager {
 
   /** Begin play at a specific wave index (used to resume a saved run). */
   startAtWave(index: number): void {
-    this.startWave(Math.min(Math.max(0, index), WAVES.length - 1));
+    const max = this.endless ? Number.MAX_SAFE_INTEGER : WAVES.length - 1;
+    this.startWave(Math.min(Math.max(0, index), max));
   }
 
   /** Begin the next wave (called by GameScene when intermission ends). */
@@ -94,13 +112,27 @@ export class WaveManager {
   }
 
   private startWave(index: number): void {
-    if (this.stopped || index >= WAVES.length) return;
+    if (this.stopped) return;
+    if (!this.endless && index >= WAVES.length) return;
     this.waveIndex = index;
     this.waveActive = true;
-    this.hpScale = 1 + DIFFICULTY.hpPerWave * index;
-    this.speedScale = 1 + DIFFICULTY.speedPerWave * index;
 
-    const wave = WAVES[index];
+    // Authored waves scale per `DIFFICULTY`; procedural (endless) waves past the
+    // authored list scale per the `ENDLESS` formula (speed capped).
+    const procedural = index >= WAVES.length;
+    if (procedural) {
+      this.hpScale = 1 + ENDLESS.hpPerWave * index;
+      this.speedScale = Math.min(ENDLESS.speedCap, 1 + ENDLESS.speedPerWave * index);
+      // Each boss (every `bossEvery` waves) is tougher than the previous one.
+      const bossNumber = Math.floor((index + 1) / ENDLESS.bossEvery);
+      this.bossHpScale = 1 + ENDLESS.bossHpPerCycle * Math.max(0, bossNumber - 1);
+    } else {
+      this.hpScale = 1 + DIFFICULTY.hpPerWave * index;
+      this.speedScale = 1 + DIFFICULTY.speedPerWave * index;
+      this.bossHpScale = 1;
+    }
+
+    const wave = procedural ? this.generateWave(index) : WAVES[index];
     const groupCount = (g: (typeof wave.groups)[number]) =>
       g.noScale ? g.count : scaledCount(g.count, index);
     this.toSpawn = wave.groups.reduce((sum, g) => sum + groupCount(g), 0);
@@ -115,6 +147,36 @@ export class WaveManager {
         at += group.delay;
       }
     }
+  }
+
+  /**
+   * Procedurally build a wave for endless mode (waves past the authored list).
+   * Enemy count grows with the wave; a rotating boss arrives every `bossEvery`
+   * waves. HP/speed scaling is applied separately in `startWave`.
+   */
+  private generateWave(index: number): WaveDef {
+    const waveNumber = index + 1;
+    const total = ENDLESS.baseCount + Math.floor(index * ENDLESS.countPerWave);
+    const pool = ENDLESS.enemyPool;
+
+    // Spread the count across 2-3 enemy types, rotated by wave so later waves
+    // mix different crowds. `noScale` keeps the computed count exact.
+    const typeCount = 2 + (index % 2);
+    const per = Math.max(1, Math.floor(total / typeCount));
+    const groups: SpawnGroup[] = [];
+    let remaining = total;
+    for (let i = 0; i < typeCount; i++) {
+      const type = pool[(index + i) % pool.length];
+      const count = i === typeCount - 1 ? remaining : Math.min(per, remaining);
+      remaining -= count;
+      if (count > 0) groups.push({ type, count, delay: 420, noScale: true });
+    }
+
+    if (waveNumber % ENDLESS.bossEvery === 0) {
+      const which = (waveNumber / ENDLESS.bossEvery - 1) % ENDLESS.bossRotation.length;
+      groups.push({ type: ENDLESS.bossRotation[which], count: 1, delay: 0, noScale: true });
+    }
+    return { groups, delayBeforeNext: 0 };
   }
 
   private spawn(typeKey: EnemyTypeKey): void {
@@ -151,7 +213,7 @@ export class WaveManager {
       this.layout,
       type,
       laneIndex,
-      isBoss ? 1 : this.hpScale,
+      isBoss ? this.bossHpScale : this.hpScale,
       speedScale,
       startCol ?? this.map.spawnCol,
       this.enemyLayer,

@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
-import { LEVELS, type LevelId } from '../data/levels';
+import type { LevelId } from '../data/levels';
+import { MODES, type GameMode, type ModeInfo } from '../data/modes';
+import { CHAPTER_ORDER } from '../data/story';
 import {
   META_UPGRADES,
   nextTierCost,
@@ -9,7 +11,17 @@ import {
   totalStarsEarned,
   type MetaProgress,
 } from '../data/meta';
-import { loadMeta, saveMeta, hasRun, clearRun } from '../systems/storage';
+import {
+  loadMeta,
+  saveMeta,
+  hasRun,
+  clearRun,
+  saveActiveMode,
+  loadEndlessBest,
+  loadStoryProgress,
+  saveStoryProgress,
+  clearStoryProgress,
+} from '../systems/storage';
 import { audio } from '../systems/audio';
 
 const STOP = (
@@ -20,12 +32,13 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /**
- * Landing screen: pick a level (with its star rating and a Resume option if a
- * run is saved), open the meta-upgrade tree to spend earned stars, or view
- * lifetime stats. Reads the persisted meta fresh on every entry.
+ * Landing screen: pick a game mode (Endless or Story — each with a Resume
+ * option if a run is saved), open the meta-upgrade tree to spend earned stars,
+ * or view Records (lifetime stats + best endless wave). Reads the persisted
+ * meta fresh on every entry.
  *
  * Responsive (Scale.RESIZE): the whole menu lives in a `root` container that is
- * rebuilt for the current viewport on every resize — level cards stack
+ * rebuilt for the current viewport on every resize — mode cards stack
  * vertically in portrait and sit side-by-side in landscape, and every button
  * is at least the 44px touch-target minimum.
  */
@@ -68,24 +81,24 @@ export class MenuScene extends Phaser.Scene {
     const { sw, sh } = this;
     const portrait = sh >= sw;
 
-    const titleY = Math.max(30, sh * 0.07);
-    this.text(sw / 2, titleY, '🎤 KaraFence', '#e84393', 26);
+    const titleY = Math.max(34, sh * 0.09);
+    this.drawNeonTitle(sw / 2, titleY);
     this.text(
       sw / 2,
-      titleY + 24,
-      'Karaoke night gone hostile — defend the singer',
+      titleY + 30,
+      'Karaoke night gone hostile — pick your stage',
       '#9aa0b0',
       Math.min(12, sw / 34),
     );
     this.text(
       sw / 2,
-      titleY + 44,
+      titleY + 50,
       `★ ${starsAvailable(this.meta)} stars available · ${totalStarsEarned(this.meta)} earned all-time`,
       '#ffd43b',
       12,
     );
 
-    this.drawLevelCards(portrait, titleY + 64);
+    this.drawModeCards(portrait, titleY + 72);
 
     // Bottom action buttons (always >=44px tall, reachable at screen bottom).
     const by = sh - TOUCH_MIN / 2 - 14;
@@ -104,15 +117,46 @@ export class MenuScene extends Phaser.Scene {
       y: by,
       w: bw,
       h: TOUCH_MIN,
-      label: '📊 Lifetime Stats',
+      label: '🏆 Records',
       color: 0x74c0fc,
-      onClick: () => this.openStatsPanel(),
+      onClick: () => this.openRecordsPanel(),
     });
   }
 
-  // --- Level cards ---------------------------------------------------------
+  /** Big "KARAFENCE" wordmark with a layered neon glow + spotlight wash. */
+  private drawNeonTitle(x: number, y: number): void {
+    const size = Math.round(Phaser.Math.Clamp(this.sw / 12, 30, 52));
+    // Stacked low-alpha copies fake a neon bloom behind the crisp wordmark.
+    for (const [dy, alpha, color] of [
+      [3, 0.18, '#7a1b48'],
+      [0, 0.3, '#ff5fae'],
+    ] as [number, number, string][]) {
+      const glow = this.add
+        .text(x, y + dy, 'KARAFENCE', {
+          fontFamily: 'monospace',
+          fontSize: `${size + 6}px`,
+          color,
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setAlpha(alpha);
+      this.root.add(glow);
+    }
+    const main = this.add
+      .text(x, y, 'KARAFENCE', {
+        fontFamily: 'monospace',
+        fontSize: `${size}px`,
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    main.setShadow(0, 0, '#e84393', 18, true, true);
+    this.root.add(main);
+  }
 
-  private drawLevelCards(portrait: boolean, top: number): void {
+  // --- Mode cards ----------------------------------------------------------
+
+  private drawModeCards(portrait: boolean, top: number): void {
     const { sw, sh } = this;
     const bottom = sh - TOUCH_MIN - 28;
     const areaH = bottom - top;
@@ -122,80 +166,100 @@ export class MenuScene extends Phaser.Scene {
     const centers: { x: number; y: number }[] = [];
     if (portrait) {
       cardW = Math.min(sw - 28, 460);
-      cardH = Math.min((areaH - 14) / LEVELS.length, 200);
-      // Center the stack of cards in the available area.
-      const stackH = cardH * LEVELS.length + 14 * (LEVELS.length - 1);
+      cardH = Math.min((areaH - 16) / MODES.length, 210);
+      const stackH = cardH * MODES.length + 16 * (MODES.length - 1);
       const stackTop = top + Math.max(0, (areaH - stackH) / 2);
-      LEVELS.forEach((_, i) => {
-        centers.push({ x: sw / 2, y: stackTop + cardH / 2 + i * (cardH + 14) });
+      MODES.forEach((_, i) => {
+        centers.push({ x: sw / 2, y: stackTop + cardH / 2 + i * (cardH + 16) });
       });
     } else {
-      cardW = Math.min((sw - 44) / 2, 320);
-      cardH = Math.min(areaH, 230);
+      cardW = Math.min((sw - 44) / 2, 340);
+      cardH = Math.min(areaH, 280);
       const cy = top + cardH / 2;
-      centers.push({ x: sw / 2 - cardW / 2 - 8, y: cy });
-      centers.push({ x: sw / 2 + cardW / 2 + 8, y: cy });
+      centers.push({ x: sw / 2 - cardW / 2 - 10, y: cy });
+      centers.push({ x: sw / 2 + cardW / 2 + 10, y: cy });
     }
 
-    LEVELS.forEach((entry, i) => {
-      const { x: cx, y: cy } = centers[i];
-      const cardTop = cy - cardH / 2;
-      this.rect(cx, cy, cardW, cardH, 0x14141c, 0xe84393);
-
-      this.text(cx, cardTop + 18, `Map ${i + 1}`, '#9aa0b0', 10);
-      this.text(cx, cardTop + 38, entry.map.name, '#ffffff', 15);
-
-      const stars = this.meta.stars[entry.id] ?? 0;
-      this.text(cx, cardTop + 62, this.starString(stars), '#ffd43b', 18);
-
-      const goals = entry.map.starGoals;
-      this.text(
-        cx,
-        cardTop + 84,
-        `≤${goals.maxLivesLost} lost · ≤${goals.maxGoldSpent}g · combo ${goals.minCombo}`,
-        '#777f8f',
-        9,
-      );
-
-      const resumable = hasRun(entry.id);
-      const btnW = cardW - 28;
-      // Stack the play / resume buttons at the bottom of the card.
-      const resumeY = cardTop + cardH - 14 - TOUCH_MIN / 2;
-      const playY = resumable ? resumeY - TOUCH_MIN - 8 : resumeY;
-      this.button({
-        x: cx,
-        y: playY,
-        w: btnW,
-        h: TOUCH_MIN,
-        label: resumable ? '▶ New Game' : '▶ Play',
-        color: 0x51cf66,
-        onClick: () => this.startLevel(entry.id, false),
-      });
-      if (resumable) {
-        this.button({
-          x: cx,
-          y: resumeY,
-          w: btnW,
-          h: TOUCH_MIN,
-          label: '⏵ Resume saved run',
-          color: 0x4dabf7,
-          onClick: () => this.startLevel(entry.id, true),
-        });
-      }
+    MODES.forEach((mode, i) => {
+      this.drawModeCard(mode, centers[i].x, centers[i].y, cardW, cardH);
     });
   }
 
-  private startLevel(levelId: LevelId, resume: boolean): void {
-    if (!resume) clearRun(levelId); // New Game wipes any saved run for this level
+  private drawModeCard(mode: ModeInfo, cx: number, cy: number, cardW: number, cardH: number): void {
+    const cardTop = cy - cardH / 2;
+    this.rect(cx, cy, cardW, cardH, 0x14141c, mode.accent);
+
+    this.text(cx, cardTop + 40, mode.icon, '#ffffff', 34);
+    this.text(cx, cardTop + 78, mode.name, this.hex(mode.accent), 17);
+    this.text(cx, cardTop + 100, mode.tagline, '#cfd3dc', 11);
+
+    // Per-mode flavour line + resume detection.
+    let detail: string;
+    let resumable: boolean;
+    if (mode.key === 'endless') {
+      const best = loadEndlessBest();
+      detail = best > 0 ? `Best: wave ${best}` : 'No record yet';
+      resumable = hasRun('endless', 'level1');
+    } else {
+      const progress = loadStoryProgress();
+      const done = progress?.completedChapters.length ?? 0;
+      detail = `Chapter ${Math.min(done + 1, CHAPTER_ORDER.length)} of ${CHAPTER_ORDER.length}`;
+      resumable = progress !== null && hasRun('story', progress.levelId);
+    }
+    this.text(cx, cardTop + 124, detail, '#ffd43b', 12);
+
+    const btnW = cardW - 28;
+    const resumeY = cardTop + cardH - 14 - TOUCH_MIN / 2;
+    const playY = resumable ? resumeY - TOUCH_MIN - 8 : resumeY;
+    this.button({
+      x: cx,
+      y: playY,
+      w: btnW,
+      h: TOUCH_MIN,
+      label: resumable ? '▶ New Game' : '▶ Play',
+      color: 0x51cf66,
+      onClick: () => this.startMode(mode.key, false),
+    });
+    if (resumable) {
+      this.button({
+        x: cx,
+        y: resumeY,
+        w: btnW,
+        h: TOUCH_MIN,
+        label: '⏵ Resume',
+        color: 0x4dabf7,
+        onClick: () => this.startMode(mode.key, true),
+      });
+    }
+  }
+
+  /** Resolve the (mode, level) to launch and hand off to the GameScene. */
+  private startMode(mode: GameMode, resume: boolean): void {
+    saveActiveMode(mode);
+    let levelId: LevelId = 'level1';
+
+    if (mode === 'endless') {
+      if (!resume) clearRun('endless', 'level1'); // endless always plays the Dive Bar
+    } else if (resume) {
+      const progress = loadStoryProgress();
+      levelId = progress?.levelId ?? 'level1';
+      resume = hasRun('story', levelId);
+    } else {
+      // New campaign: wipe progress + any in-progress chapter runs.
+      clearStoryProgress();
+      CHAPTER_ORDER.forEach((id) => clearRun('story', id));
+      saveStoryProgress({ levelId: 'level1', completedChapters: [], wavesCleared: 0 });
+    }
+
     // Fade out, then hand off to the game (which fades itself in).
     this.cameras.main.fadeOut(280, 11, 11, 18);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.start('GameScene', { levelId, resume });
+      this.scene.start('GameScene', { mode, levelId, resume });
     });
   }
 
-  private starString(n: number): string {
-    return '★'.repeat(n) + '☆'.repeat(Math.max(0, 3 - n));
+  private hex(color: number): string {
+    return `#${color.toString(16).padStart(6, '0')}`;
   }
 
   // --- Meta-upgrade tree ---------------------------------------------------
@@ -282,13 +346,13 @@ export class MenuScene extends Phaser.Scene {
     this.openMetaPanel(); // rebuild with the new tier / star balance
   }
 
-  // --- Lifetime stats ------------------------------------------------------
+  // --- Records (lifetime stats + endless best) -----------------------------
 
-  private openStatsPanel(): void {
+  private openRecordsPanel(): void {
     this.closeModal();
     const { sw, sh } = this;
     const w = Math.min(sw - 16, 340);
-    const h = 96 + 4 * 26 + TOUCH_MIN;
+    const h = 96 + 5 * 26 + TOUCH_MIN;
     this.pushBackdrop();
     this.modal.push(
       this.add
@@ -299,13 +363,15 @@ export class MenuScene extends Phaser.Scene {
         .on('pointerdown', STOP),
     );
     const top = sh / 2 - h / 2;
-    this.modalText(sw / 2, top + 20, '📊 LIFETIME STATS', '#74c0fc', 15);
+    this.modalText(sw / 2, top + 20, '🏆 RECORDS', '#74c0fc', 15);
 
     const lt = this.meta.lifetime;
+    const best = loadEndlessBest();
     const lines: [string, string][] = [
       ['Enemies silenced', `${lt.kills}`],
       ['Waves survived', `${lt.waves}`],
       ['Highest combo', `x${lt.highestCombo}`],
+      ['Best endless wave', best > 0 ? `${best}` : '—'],
       ['Stars earned', `${totalStarsEarned(this.meta)}`],
     ];
     lines.forEach(([label, value], i) => {
