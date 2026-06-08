@@ -114,6 +114,7 @@ export class GameScene extends Phaser.Scene {
 
   // Singer (stage performer) — kept so it can bounce when nearby foes fall.
   private singer?: Phaser.GameObjects.Container;
+  private singerFigure?: Phaser.GameObjects.Image; // the figure (flashes on hit)
   private singerTween?: Phaser.Tweens.Tween;
 
   // Combo "Crowd Hype" meter pulse at high multipliers.
@@ -204,6 +205,7 @@ export class GameScene extends Phaser.Scene {
     this.paused = false;
     this.pauseUi = [];
     this.singer = undefined;
+    this.singerFigure = undefined;
     this.singerTween = undefined;
     this.comboPulse = undefined;
     this.bossPrevHp = 0;
@@ -813,24 +815,20 @@ export class GameScene extends Phaser.Scene {
     const cx = offsetX + stageW / 2;
     const cy = offsetY + mapH / 2;
 
-    const rect = this.add
-      .rectangle(0, 0, stageW - 6, mapH * 0.45, 0xe84393)
-      .setStrokeStyle(2, 0xffffff, 0.8);
-    const note = this.add
-      .text(0, -tileSize * 0.4, '♪', {
-        fontFamily: 'monospace',
-        fontSize: `${Math.floor(tileSize * 0.9)}px`,
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-    const label = this.add
-      .text(0, tileSize * 0.4, 'SINGER', {
-        fontFamily: 'monospace',
-        fontSize: `${Math.floor(tileSize * 0.42)}px`,
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-    this.singer = this.add.container(cx, cy, [rect, note, label]);
+    // Theatre-curtain backdrop fills the stage column.
+    const curtain = this.add.image(0, 0, TX.curtain).setDisplaySize(stageW, mapH);
+    // Singer figure, sized to the column width (natural aspect, not stretched).
+    const fw = Math.min(stageW * 0.92, tileSize * 1.2);
+    const fh = fw * 2; // texture is 48x96
+    const figure = this.add.image(0, mapH * 0.06, TX.singer).setDisplaySize(fw, fh);
+    // Warm spotlight cone above the figure (additive glow).
+    const spot = this.add
+      .image(0, -fh * 0.55, TX.spotlight)
+      .setDisplaySize(stageW * 1.5, fh * 1.6)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.singerFigure = figure;
+    this.singer = this.add.container(cx, cy, [curtain, spot, figure]);
     this.layers.tiles.add(this.singer);
   }
 
@@ -1699,6 +1697,11 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     this.singerHp = Math.max(0, this.singerHp - amount);
     this.hpText.setText(`♥ ${this.singerHp}`);
+    // Flash the singer red to signal the hit.
+    if (this.singerFigure) {
+      this.singerFigure.setTint(0xff4444);
+      this.time.delayedCall(150, () => this.singerFigure?.clearTint());
+    }
     if (this.singerHp === 0) this.triggerGameOver();
   }
 }

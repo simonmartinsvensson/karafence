@@ -27,6 +27,9 @@ export const TX = {
   tileStage: 'kf-tile-stage',
   tileAisle: 'kf-tile-aisle',
   tileBuild: 'kf-tile-build',
+  curtain: 'kf-curtain',
+  spotlight: 'kf-spotlight',
+  singer: 'kf-singer',
 } as const;
 
 /**
@@ -36,6 +39,7 @@ export const TX = {
 export function generateTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TX.tileStage)) return;
   generateTileTextures(scene);
+  generateStageTextures(scene);
 }
 
 // --- Section 1: tiles ------------------------------------------------------
@@ -116,6 +120,104 @@ function generateTileTextures(scene: Phaser.Scene): void {
   }
   frame();
   g.generateTexture(TX.tileBuild, R, R);
+
+  g.destroy();
+}
+
+// --- Section 2: stage / singer ---------------------------------------------
+//
+// The stage zone is composed in GameScene.drawSinger from three textures:
+// a curtain backdrop (filling the stage column), a warm spotlight cone (ADD
+// blend) and a lit singer figure at a mic stand. The figure is the one that
+// bounces on nearby kills and flashes red when the stage is hit.
+
+function generateStageTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+
+  // Theatre curtains: deep-red vertical drapes, a gold valance + tassels on top,
+  // and gold footlights along the bottom. Real colors (not tinted at use).
+  const CW = 64;
+  const CH = 96;
+  g.clear();
+  g.fillStyle(0x6b1020, 1);
+  g.fillRect(0, 0, CW, CH);
+  for (let x = 0; x < CW; x += 10) {
+    g.fillStyle(0x4a0a16, 1);
+    g.fillRect(x, 0, 5, CH); // fold shadow
+    g.fillStyle(0x9c1c30, 1);
+    g.fillRect(x + 6, 0, 3, CH); // fold highlight
+  }
+  // Gold valance across the top with scalloped tassels.
+  g.fillStyle(0xd9a020, 1);
+  g.fillRect(0, 0, CW, 9);
+  g.fillStyle(0xffe680, 1);
+  g.fillRect(0, 0, CW, 3);
+  for (let x = 6; x < CW; x += 12) {
+    g.fillStyle(0xd9a020, 1);
+    g.fillCircle(x, 10, 4);
+    g.fillStyle(0xffe680, 1);
+    g.fillCircle(x, 9, 1.5);
+  }
+  // Footlights along the bottom edge.
+  for (let x = 7; x < CW; x += 12) {
+    g.fillStyle(0xffe680, 0.3);
+    g.fillCircle(x, CH - 4, 5);
+    g.fillStyle(0xffe680, 1);
+    g.fillCircle(x, CH - 4, 2.5);
+  }
+  g.generateTexture(TX.curtain, CW, CH);
+
+  // Spotlight cone: warm, soft-edged, narrow at the top widening downward.
+  const SP = 96;
+  g.clear();
+  const apexX = SP / 2;
+  for (let i = 0; i < 3; i++) {
+    const spread = 16 + i * 13;
+    g.fillStyle(0xfff2c0, 0.17 - i * 0.045);
+    g.beginPath();
+    g.moveTo(apexX, 3);
+    g.lineTo(apexX - spread, SP - 2);
+    g.lineTo(apexX + spread, SP - 2);
+    g.closePath();
+    g.fillPath();
+  }
+  g.generateTexture(TX.spotlight, SP, SP);
+
+  // Singer: a lit humanoid figure at a microphone stand (on-brand magenta).
+  const W = 48;
+  const H = 96;
+  const cx = W / 2;
+  g.clear();
+  g.fillStyle(0x000000, 0.22);
+  g.fillEllipse(cx, H - 5, W * 0.66, 8); // ground shadow
+  // Legs.
+  g.fillStyle(0x2b2b3a, 1);
+  g.fillRoundedRect(cx - 9, H * 0.56, 7, H * 0.4, 3);
+  g.fillRoundedRect(cx + 2, H * 0.56, 7, H * 0.4, 3);
+  // Arms.
+  g.fillStyle(0xc23280, 1);
+  g.fillRoundedRect(cx - 16, H * 0.32, 5, H * 0.22, 3);
+  g.fillRoundedRect(cx + 11, H * 0.32, 5, H * 0.22, 3);
+  // Torso (dress), lit brighter along the top.
+  g.fillStyle(0xe84393, 1);
+  g.fillRoundedRect(cx - 12, H * 0.3, 24, H * 0.3, 6);
+  g.fillStyle(0xff7ec3, 0.85);
+  g.fillRoundedRect(cx - 12, H * 0.3, 24, 7, 6);
+  // Head + lit cheek + hair.
+  g.fillStyle(0xffd9b0, 1);
+  g.fillCircle(cx, H * 0.21, 9);
+  g.fillStyle(0xfff0d8, 0.7);
+  g.fillCircle(cx - 2, H * 0.19, 4);
+  g.fillStyle(0x3a2a22, 1);
+  g.fillEllipse(cx, H * 0.15, 20, 12);
+  // Mic stand: pole + mic head near the mouth.
+  g.fillStyle(0xb8b8c0, 1);
+  g.fillRect(cx - 1, H * 0.27, 2, H * 0.68);
+  g.fillStyle(0x222228, 1);
+  g.fillCircle(cx, H * 0.27, 4);
+  g.fillStyle(0x55555f, 0.9);
+  g.fillCircle(cx - 1, H * 0.26, 1.5);
+  g.generateTexture(TX.singer, W, H);
 
   g.destroy();
 }
