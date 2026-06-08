@@ -36,6 +36,9 @@ export const TX = {
 /** Texture key for a tower type's drawn sprite. */
 export const towerTextureKey = (key: TowerTypeKey): string => `kf-tower-${key}`;
 
+/** Texture key for an enemy type's drawn silhouette (grayscale, tinted at use). */
+export const enemyTextureKey = (key: string): string => `kf-enemy-${key}`;
+
 /**
  * Generate every texture once. Idempotent: re-running (e.g. if Boot re-enters)
  * is a no-op once the first key exists.
@@ -45,6 +48,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   generateTileTextures(scene);
   generateStageTextures(scene);
   generateTowerTextures(scene);
+  generateEnemyTextures(scene);
 }
 
 // --- Section 1: tiles ------------------------------------------------------
@@ -366,6 +370,247 @@ function generateTowerTextures(scene: Phaser.Scene): void {
   g.lineTo(47, 23);
   g.strokePath(); // raised arms
   g.generateTexture(towerTextureKey('hypeMan'), R, R);
+
+  g.destroy();
+}
+
+// --- Section 4: enemies ----------------------------------------------------
+//
+// Each enemy is a grayscale character silhouette tinted to its type color at
+// use (so the existing slow / deflect color-flash via setTint keeps working).
+// Normal foes are drawn at 48px, bosses at 96px with a larger, more detailed
+// silhouette; the boss aura glow is a separate colored element drawn in Enemy.
+
+const E_BODY = 0xdcdcdc; // takes the tint (the enemy's color)
+const E_EDGE = 0x6e6e6e; // darker features / outlines
+const E_DARK = 0x474747; // deep features (brows, lapels)
+const E_LIT = 0xffffff; // bright accents (phone screen, shirt, crown)
+
+function generateEnemyTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const N = 48; // normal enemy resolution
+
+  // Heckler: blocky figure, arms crossed, scowling brow.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(16, 34, 7, 13);
+  g.fillRect(25, 34, 7, 13);
+  g.fillRoundedRect(13, 16, 22, 20, 4);
+  g.fillCircle(24, 12, 7);
+  g.fillStyle(E_DARK, 1);
+  g.fillRect(20, 10, 9, 2); // scowl brow
+  g.lineStyle(4, E_EDGE, 1);
+  g.beginPath();
+  g.moveTo(14, 22);
+  g.lineTo(34, 28);
+  g.moveTo(34, 22);
+  g.lineTo(14, 28);
+  g.strokePath(); // crossed arms
+  g.generateTexture(enemyTextureKey('heckler'), N, N);
+
+  // Phone Scroller: hunched forward, a glowing phone lighting the face.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(15, 34, 7, 13);
+  g.fillRect(24, 34, 7, 13);
+  g.fillRoundedRect(13, 18, 20, 18, 4);
+  g.fillCircle(28, 14, 7); // head forward
+  g.fillRoundedRect(25, 23, 11, 4, 2); // arms out
+  g.fillStyle(E_LIT, 0.35);
+  g.fillCircle(37, 22, 7); // screen glow
+  g.fillStyle(E_LIT, 1);
+  g.fillRoundedRect(34, 18, 6, 10, 1); // phone screen
+  g.generateTexture(enemyTextureKey('phoneScroller'), N, N);
+
+  // Drunk Uncle: wide stance, holding a frothy drink.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(12, 34, 7, 13);
+  g.fillRect(28, 34, 7, 13); // wide legs
+  g.fillRoundedRect(15, 16, 19, 20, 4);
+  g.fillCircle(24, 11, 7);
+  g.lineStyle(3, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(31, 24);
+  g.lineTo(37, 22);
+  g.strokePath(); // arm to mug
+  g.fillStyle(E_EDGE, 1);
+  g.fillRect(35, 20, 7, 9); // mug
+  g.fillStyle(E_LIT, 0.9);
+  g.fillRect(35, 20, 7, 3); // foam
+  g.generateTexture(enemyTextureKey('drunkUncle'), N, N);
+
+  // Stage Rusher: forward-lean sprint with motion lines behind.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillCircle(31, 12, 6);
+  g.fillRoundedRect(19, 15, 17, 14, 5); // angled torso
+  g.lineStyle(4, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(25, 27);
+  g.lineTo(19, 44);
+  g.moveTo(29, 27);
+  g.lineTo(35, 42); // running legs
+  g.moveTo(23, 19);
+  g.lineTo(15, 25); // arm
+  g.strokePath();
+  g.lineStyle(2, E_EDGE, 0.9);
+  g.beginPath();
+  g.moveTo(3, 15);
+  g.lineTo(13, 15);
+  g.moveTo(1, 23);
+  g.lineTo(11, 23);
+  g.moveTo(3, 31);
+  g.lineTo(13, 31); // motion lines
+  g.strokePath();
+  g.generateTexture(enemyTextureKey('stageRusher'), N, N);
+
+  // Critic: upright, nose in the air, notepad in hand.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(18, 34, 6, 13);
+  g.fillRect(25, 34, 6, 13);
+  g.fillRoundedRect(16, 16, 17, 20, 4);
+  g.fillCircle(23, 11, 7);
+  g.fillStyle(E_DARK, 1);
+  g.fillTriangle(27, 8, 32, 8, 28, 12); // upturned nose
+  g.fillStyle(E_LIT, 1);
+  g.fillRect(31, 22, 8, 10); // notepad
+  g.lineStyle(1, E_EDGE, 1);
+  g.beginPath();
+  g.moveTo(32, 25);
+  g.lineTo(38, 25);
+  g.moveTo(32, 28);
+  g.lineTo(38, 28);
+  g.strokePath();
+  g.generateTexture(enemyTextureKey('critic'), N, N);
+
+  // Superfan: oversized, chunky, arms thrown up in excitement.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillCircle(24, 30, 15); // chunky body
+  g.fillCircle(24, 11, 8); // head
+  g.lineStyle(5, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(12, 26);
+  g.lineTo(6, 12);
+  g.moveTo(36, 26);
+  g.lineTo(42, 12); // arms up
+  g.strokePath();
+  g.fillStyle(E_DARK, 1);
+  g.fillCircle(24, 13, 2); // open mouth
+  g.generateTexture(enemyTextureKey('superfan'), N, N);
+
+  // VIP: suited figure with sunglasses.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(18, 34, 6, 13);
+  g.fillRect(25, 34, 6, 13);
+  g.fillRoundedRect(15, 16, 18, 20, 3);
+  g.fillCircle(24, 11, 7);
+  g.fillStyle(E_DARK, 1);
+  g.fillTriangle(24, 16, 19, 16, 24, 25);
+  g.fillTriangle(24, 16, 29, 16, 24, 25); // lapels
+  g.fillStyle(E_LIT, 1);
+  g.fillTriangle(24, 17, 22, 17, 24, 24); // shirt
+  g.fillStyle(E_DARK, 1);
+  g.fillRect(19, 10, 11, 3); // sunglasses
+  g.generateTexture(enemyTextureKey('vip'), N, N);
+
+  // --- Bosses (96px, larger + more detailed silhouettes) ---
+  const B = 96;
+
+  // Heckler King: crown + megaphone, large and imposing.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(34, 64, 12, 27);
+  g.fillRect(50, 64, 12, 27);
+  g.fillRoundedRect(28, 34, 40, 34, 8);
+  g.fillCircle(48, 24, 14);
+  g.fillStyle(E_LIT, 1);
+  g.beginPath();
+  g.moveTo(36, 16);
+  g.lineTo(40, 6);
+  g.lineTo(44, 14);
+  g.lineTo(48, 4);
+  g.lineTo(52, 14);
+  g.lineTo(56, 6);
+  g.lineTo(60, 16);
+  g.closePath();
+  g.fillPath(); // crown
+  g.fillStyle(E_EDGE, 1);
+  g.beginPath();
+  g.moveTo(28, 44);
+  g.lineTo(11, 37);
+  g.lineTo(11, 55);
+  g.lineTo(28, 52);
+  g.closePath();
+  g.fillPath(); // megaphone
+  g.generateTexture(enemyTextureKey('hecklerKing'), B, B);
+
+  // Mic Grabber: a long hand reaching toward the stage (left).
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(46, 64, 11, 27);
+  g.fillRect(58, 64, 11, 27);
+  g.fillRoundedRect(40, 34, 32, 32, 7);
+  g.fillCircle(56, 24, 13);
+  g.lineStyle(7, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(44, 42);
+  g.lineTo(11, 52);
+  g.strokePath(); // reaching arm
+  g.fillStyle(E_BODY, 1);
+  g.fillCircle(10, 52, 6); // hand
+  g.lineStyle(3, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(7, 47);
+  g.lineTo(2, 43);
+  g.moveTo(6, 52);
+  g.lineTo(0, 52);
+  g.moveTo(7, 57);
+  g.lineTo(2, 61);
+  g.strokePath(); // fingers
+  g.generateTexture(enemyTextureKey('micGrabber'), B, B);
+
+  // DJ Who Wouldn't Stop: headphones + turntable disc.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRoundedRect(30, 40, 36, 30, 7);
+  g.fillCircle(48, 26, 13);
+  g.lineStyle(4, E_EDGE, 1);
+  g.beginPath();
+  g.arc(48, 24, 16, Math.PI * 1.1, Math.PI * 1.9, false);
+  g.strokePath(); // headphone band
+  g.fillStyle(E_DARK, 1);
+  g.fillCircle(34, 26, 5);
+  g.fillCircle(62, 26, 5); // ear cups
+  g.fillStyle(E_EDGE, 1);
+  g.fillEllipse(48, 66, 32, 11); // turntable
+  g.fillStyle(E_LIT, 1);
+  g.fillCircle(48, 66, 3); // spindle
+  g.generateTexture(enemyTextureKey('djWontStop'), B, B);
+
+  // Talent Show Judge: suited, arms folded, podium energy.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(40, 62, 12, 24);
+  g.fillRect(54, 62, 12, 24);
+  g.fillRoundedRect(32, 30, 36, 34, 7);
+  g.fillCircle(50, 22, 13);
+  g.fillStyle(E_DARK, 1);
+  g.fillTriangle(50, 30, 44, 30, 50, 44);
+  g.fillTriangle(50, 30, 56, 30, 50, 44); // lapels
+  g.fillStyle(E_LIT, 1);
+  g.fillTriangle(50, 32, 47, 32, 50, 42); // shirt
+  g.lineStyle(7, E_EDGE, 1);
+  g.beginPath();
+  g.moveTo(34, 48);
+  g.lineTo(66, 48);
+  g.strokePath(); // folded arms
+  g.fillStyle(E_EDGE, 1);
+  g.fillRect(36, 74, 28, 14); // podium
+  g.generateTexture(enemyTextureKey('talentJudge'), B, B);
 
   g.destroy();
 }
