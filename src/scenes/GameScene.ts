@@ -443,7 +443,34 @@ export class GameScene extends Phaser.Scene {
         () => this.closeBuild(),
         (type) => this.towerCost(type),
       );
+    } else if (
+      col >= 0 &&
+      row >= 0 &&
+      col < this.map.cols &&
+      row < this.map.rows &&
+      this.map.tiles[row][col] !== TileType.Stage
+    ) {
+      // Tapping a non-buildable spot (e.g. an aisle): a quick red flash so the
+      // "can't build here" feedback is unmistakable.
+      this.flashInvalidTile(col, row);
     }
+  }
+
+  /** Brief red flash on a tile the player can't build on. */
+  private flashInvalidTile(col: number, row: number): void {
+    const { x, y } = tileToWorld(this.layout, col, row);
+    const ts = this.layout.tileSize;
+    const flash = this.add
+      .rectangle(x, y, ts - 1, ts - 1, 0xff4d4d, 0.45)
+      .setStrokeStyle(2, 0xff6b6b, 0.9);
+    this.layers.fx.add(flash);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 320,
+      ease: 'Quad.easeOut',
+      onComplete: () => flash.destroy(),
+    });
   }
 
   private placeTower(type: TowerTypeKey): void {
@@ -792,6 +819,21 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(tileSize, tileSize)
           .setTint(this.map.colors[type]);
         this.layers.tiles.add(tile);
+
+        // Baked (untinted) readability accent on top: a gold left-chevron +
+        // cream lane dividers on aisles, a green "+" tower-base cue on builds.
+        const accentKey =
+          type === TileType.Aisle
+            ? TX.aisleArrow
+            : type === TileType.Build
+              ? TX.buildPlus
+              : null;
+        if (accentKey) {
+          const accent = this.add
+            .image(x, y, accentKey)
+            .setDisplaySize(tileSize, tileSize);
+          this.layers.tiles.add(accent);
+        }
       }
     }
 
@@ -804,17 +846,26 @@ export class GameScene extends Phaser.Scene {
     this.drawSinger(layout);
   }
 
-  /** Numbered entrance markers at the right edge of each aisle. */
+  /**
+   * Subtle orientation aids: a small dark pill badge with a white number on the
+   * right edge of each aisle tile (a low-contrast gold label was hard to read).
+   */
   private drawLaneMarkers(layout: GridLayout): void {
     const { tileSize, mapW, offsetX, offsetY } = layout;
+    const pillW = tileSize * 0.5;
+    const pillH = tileSize * 0.36;
     this.map.laneRows.forEach((row, i) => {
       const y = offsetY + row * tileSize + tileSize / 2;
-      const x = offsetX + mapW - tileSize / 2;
+      const x = offsetX + mapW - pillW * 0.62; // hug the right edge of the tile
+      const pill = this.add
+        .image(x, y, TX.lanePill)
+        .setDisplaySize(pillW, pillH);
+      this.layers.tiles.add(pill);
       const label = this.add
         .text(x, y, `${i + 1}`, {
           fontFamily: 'monospace',
-          fontSize: `${Math.max(8, tileSize - 8)}px`,
-          color: '#ffd166',
+          fontSize: `${Math.max(8, Math.round(tileSize * 0.34))}px`,
+          color: '#ffffff',
         })
         .setOrigin(0.5);
       this.layers.tiles.add(label);
@@ -831,20 +882,40 @@ export class GameScene extends Phaser.Scene {
     const cx = offsetX + stageW / 2;
     const cy = offsetY + mapH / 2;
 
-    // Theatre-curtain backdrop fills the stage column.
-    const curtain = this.add.image(0, 0, TX.curtain).setDisplaySize(stageW, mapH);
-    // Singer figure, sized to the column width (natural aspect, not stretched).
-    const fw = Math.min(stageW * 0.92, tileSize * 1.2);
+    // The curtain is drawn ~30% narrower than the stage column and anchored to
+    // the left edge, so it reads as a slim frame rather than dominating the
+    // board — freeing the right of the stage column toward the play grid.
+    const curtainW = stageW * 0.7;
+    const curtainX = -stageW / 2 + curtainW / 2; // left-anchored within the zone
+
+    // Dark "backstage" fill behind everything so the freed strip (and the bare
+    // stage tiles under it) read as a clean shadowed frame edge, not leftover
+    // footlights peeking past the curtain.
+    const backstage = this.add
+      .rectangle(0, 0, stageW, mapH, 0x140a1e, 1)
+      .setOrigin(0.5);
+    // Theatre-curtain backdrop, left-anchored and narrower.
+    const curtain = this.add
+      .image(curtainX, 0, TX.curtain)
+      .setDisplaySize(curtainW, mapH);
+    // Soft shadow gradient at the curtain's right edge → depth into the board.
+    const edge = this.add
+      .rectangle(curtainX + curtainW / 2, 0, tileSize * 0.3, mapH, 0x000000, 0.35)
+      .setOrigin(0, 0.5);
+    // Singer figure, sized to the narrower curtain (natural aspect, not stretched).
+    const fw = Math.min(curtainW * 0.92, tileSize * 1.05);
     const fh = fw * 2; // texture is 48x96
-    const figure = this.add.image(0, mapH * 0.06, TX.singer).setDisplaySize(fw, fh);
+    const figure = this.add
+      .image(curtainX, mapH * 0.06, TX.singer)
+      .setDisplaySize(fw, fh);
     // Warm spotlight cone above the figure (additive glow).
     const spot = this.add
-      .image(0, -fh * 0.55, TX.spotlight)
-      .setDisplaySize(stageW * 1.5, fh * 1.6)
+      .image(curtainX, -fh * 0.55, TX.spotlight)
+      .setDisplaySize(curtainW * 1.5, fh * 1.6)
       .setBlendMode(Phaser.BlendModes.ADD);
 
     this.singerFigure = figure;
-    this.singer = this.add.container(cx, cy, [curtain, spot, figure]);
+    this.singer = this.add.container(cx, cy, [backstage, curtain, edge, spot, figure]);
     this.layers.tiles.add(this.singer);
   }
 

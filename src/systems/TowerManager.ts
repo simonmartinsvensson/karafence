@@ -23,7 +23,8 @@ export class TowerManager {
   private readonly projectiles: Projectile[] = [];
 
   private selected: Tower | null = null;
-  private overlay: Phaser.GameObjects.Rectangle[] = [];
+  private overlay: Phaser.GameObjects.GameObject[] = [];
+  private overlayTweens: Phaser.Tweens.Tween[] = [];
 
   /** Global tower damage multiplier (Sound Check power-up sets this to 2). */
   damageMultiplier = 1;
@@ -197,19 +198,56 @@ export class TowerManager {
     for (let r = 0; r < this.map.rows; r++) {
       for (let c = 0; c < this.map.cols; c++) {
         const ok = this.canPlace(c, r);
-        const isTarget = c === targetCol && r === targetRow;
         const { x, y } = tileToWorld(this.layout, c, r);
         const rect = this.scene.add
-          .rectangle(x, y, ts - 1, ts - 1, ok ? 0x51cf66 : 0xff6b6b, ok ? 0.28 : 0.2);
+          .rectangle(x, y, ts - 1, ts - 1, ok ? 0x51cf66 : 0xff6b6b, ok ? 0.22 : 0.2);
         this.layers.fx.add(rect);
-        if (isTarget) rect.setStrokeStyle(2, 0xffffff, 1).setFillStyle(0x51cf66, 0.5);
         this.overlay.push(rect);
       }
     }
+    this.highlightTarget(targetCol, targetRow);
+  }
+
+  /**
+   * The chosen tile gets a stronger read: a faint green fill, a tower-base
+   * shadow ("something will go here"), and a pulsing bright-green border.
+   */
+  private highlightTarget(col: number, row: number): void {
+    const ts = this.layout.tileSize;
+    const { x, y } = tileToWorld(this.layout, col, row);
+
+    const fill = this.scene.add.rectangle(x, y, ts - 2, ts - 2, 0x51cf66, 0.32);
+    this.layers.fx.add(fill);
+    this.overlay.push(fill);
+
+    const shadow = this.scene.add.ellipse(x, y + ts * 0.16, ts * 0.5, ts * 0.22, 0x000000, 0.3);
+    this.layers.fx.add(shadow);
+    this.overlay.push(shadow);
+
+    const border = this.scene.add
+      .rectangle(x, y, ts - 3, ts - 3)
+      .setStrokeStyle(3, 0x8cff9e, 1);
+    this.layers.fx.add(border);
+    this.overlay.push(border);
+    // Pulse the border so the active tile clearly draws the eye.
+    this.overlayTweens.push(
+      this.scene.tweens.add({
+        targets: border,
+        scaleX: 1.07,
+        scaleY: 1.07,
+        alpha: 0.45,
+        duration: 620,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      }),
+    );
   }
 
   hideBuildOverlay(): void {
-    this.overlay.forEach((r) => r.destroy());
+    this.overlayTweens.forEach((t) => t.stop());
+    this.overlayTweens = [];
+    this.overlay.forEach((o) => o.destroy());
     this.overlay = [];
   }
 

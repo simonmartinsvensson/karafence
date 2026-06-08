@@ -25,8 +25,9 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, GameScene],
 };
 
-// eslint-disable-next-line no-new
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+// Expose the game instance for debugging + headless smoke tests.
+(window as unknown as { game: Phaser.Game }).game = game;
 
 // Belt-and-braces against residual mobile browser gestures that CSS alone can
 // miss: Safari's pinch "gesture*" events and double-tap-to-zoom.

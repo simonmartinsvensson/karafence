@@ -53,6 +53,8 @@ Defined in `src/main.ts`:
   also sets `touch-action: none`, `user-scalable=no`, etc. and `main.ts`
   preventDefaults pinch/double-tap so native mobile gestures never fire.
 - Dark background (`#0b0b12`).
+- The `Phaser.Game` instance is exposed as `window.game` (a harmless debug aid
+  that also lets headless smoke tests drive scenes / read game state).
 
 ## Responsive layout (mobile portrait + landscape)
 
@@ -192,9 +194,13 @@ aura), and `hypeAt` (Hype Man gold/combo aura), and Chord Bomb fields are ticked
 by `GameScene.tickSlowFields`.
 - `src/systems/Projectile.ts` — homing dot; applies damage (+ any slow) on hit.
 - `src/systems/TowerManager.ts` — placement validation (buildable + empty),
-  the valid/invalid build overlay, selection UI, projectile updates.
+  the valid/invalid build overlay (the selected tile gets a faint green fill, a
+  tower-base shadow, and a tween-pulsed bright-green border; `GameScene`
+  red-flashes a tapped non-buildable tile), selection UI, projectile updates.
 - `src/ui/BuildPanel.ts` — modal tower picker (tap a buildable tile to open);
-  shows costs and greys out unaffordable towers.
+  each card shows the tower's generated sprite (~55% of card height) inside a
+  per-type accent border (`ACCENT` map), its name and cost, and greys out /
+  dims unaffordable towers.
 - **Economy:** start with `STARTING_GOLD`, earn `enemy.reward` on kill
   (`WaveManager` `onKill`), spend gold to place towers. Gold shows in the HUD.
 
@@ -255,12 +261,23 @@ swapped for real imported textures later by changing only what
   to the map's palette in `GameScene.drawMap`, enemies to their type color in
   `Enemy` (so the slow/deflect `setTint` flashes still work). Bosses add a
   separate pulsing **aura** circle (color per `BOSS_AURA`) behind the silhouette.
+- **Baked tile accents** (`TX.aisleArrow/buildPlus/lanePill`) are drawn in their
+  **real** gold/green colors (NOT tinted) and overlaid on tiles in
+  `GameScene.drawMap`, so the readability cues survive any palette: aisles get a
+  gold left-chevron (enemy travel direction) + cream lane-divider lines;
+  buildable tiles get a green "+" tower-base cue on a faint green wash. Lane
+  numbers (`drawLaneMarkers`) sit in `TX.lanePill` dark badges (white digit).
+  The aisle/build palette (`DEFAULT_COLORS` in `parseMap`) is a saturated
+  red-brown vs. a dark slate-green so the two surfaces read as distinct.
 - **Towers** (`towerTextureKey`) are instrument/performer silhouettes on a dark
   base; `Tower.body` is now a `Sprite` (freeze tints it; the ability-ready ring
   has a golden shimmer). **Projectiles** are spun textures (note / music-wave),
   with the drummer's drumsticks + bass pulse rings drawn in `Tower`.
 - **Stage**: a curtain backdrop, spotlight cone and singer figure
-  (`TX.curtain/spotlight/singer`) composed in `GameScene.drawSinger`.
+  (`TX.curtain/spotlight/singer`) composed in `GameScene.drawSinger`. The
+  curtain is drawn ~30% narrower than the stage column and left-anchored (a dark
+  backstage fill covers the freed strip) so it frames the board rather than
+  dominating it; the singer + spotlight center on the narrower curtain.
 - **HUD icons + gradient** (`TX.coin/mic/spotIcon/hpFill`) sit in an otherwise
   graphics-drawn HUD (the resizing bars/borders stay as reflowed rects).
 - Resolution: textures are generated larger than their on-screen logic size

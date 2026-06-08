@@ -1,6 +1,17 @@
 import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
 import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
+import { towerTextureKey } from '../systems/textures';
+
+/** Per-tower accent border color, so each card reads at a glance. */
+const ACCENT: Record<TowerTypeKey, number> = {
+  leadSinger: 0xffd166, // warm gold
+  drummer: 0xff4d4d, // red
+  keyboardist: 0x9775fa, // blue/purple
+  bassPlayer: 0x3b5bdb, // deep blue
+  backupSinger: 0xffa8d8, // soft pink
+  hypeMan: 0xff922b, // bright orange
+};
 
 /**
  * Modal tower-picker. Opens when the player taps a buildable tile: a dim
@@ -43,7 +54,7 @@ export class BuildPanel {
     // Fit the grid to the viewport but cap it so it stays legible on desktop.
     const panelW = Math.min(vw - 16, 380);
     const cellW = Math.floor((panelW - pad * 2 - gap * (cols - 1)) / cols);
-    const cellH = Math.max(TOUCH_MIN + 18, Math.floor(cellW * 0.62));
+    const cellH = Math.max(TOUCH_MIN + 30, Math.floor(cellW * 0.74));
     const panelH = headerH + rows * cellH + (rows - 1) * gap + pad * 2;
     const parts: Phaser.GameObjects.GameObject[] = [];
 
@@ -77,21 +88,22 @@ export class BuildPanel {
       const cost = costOf(tower.key);
       const affordable = gold >= cost;
 
+      const accent = ACCENT[tower.key];
       const cell = this.scene.add
         .rectangle(cx, cy, cellW, cellH, affordable ? 0x232336 : 0x1a1a22)
-        .setStrokeStyle(1, affordable ? 0x51cf66 : 0x555555, 0.9);
+        .setStrokeStyle(2, affordable ? accent : 0x555555, affordable ? 1 : 0.7);
       parts.push(cell);
+      // Big tower sprite filling ~55% of the card height (was a tiny emoji).
+      const iconSize = Math.floor(cellH * 0.55);
       parts.push(
         this.scene.add
-          .text(cx, cy - cellH * 0.26, tower.icon, {
-            fontFamily: 'sans-serif',
-            fontSize: '22px',
-          })
-          .setOrigin(0.5),
+          .image(cx, cy - cellH * 0.16, towerTextureKey(tower.key))
+          .setDisplaySize(iconSize, iconSize)
+          .setAlpha(affordable ? 1 : 0.4),
       );
       parts.push(
         this.scene.add
-          .text(cx, cy + cellH * 0.06, tower.name, {
+          .text(cx, cy + cellH * 0.21, tower.name, {
             fontFamily: 'monospace',
             fontSize: '10px',
             color: affordable ? '#ffffff' : '#888888',
@@ -102,7 +114,7 @@ export class BuildPanel {
       );
       parts.push(
         this.scene.add
-          .text(cx, cy + cellH * 0.34, `${cost}g`, {
+          .text(cx, cy + cellH * 0.4, `${cost}g`, {
             fontFamily: 'monospace',
             fontSize: '12px',
             color: affordable ? '#ffd166' : '#888888',

@@ -28,6 +28,11 @@ export const TX = {
   tileStage: 'kf-tile-stage',
   tileAisle: 'kf-tile-aisle',
   tileBuild: 'kf-tile-build',
+  // Baked (NOT tinted) accents overlaid on tiles for readability — their real
+  // gold/green colors survive whatever palette the tile underneath is tinted to.
+  aisleArrow: 'kf-aisle-arrow', // gold left-chevron + cream lane dividers
+  buildPlus: 'kf-build-plus', // green "+" + tower-base shadow on a faint green wash
+  lanePill: 'kf-lane-pill', // dark rounded badge behind a lane number
   curtain: 'kf-curtain',
   spotlight: 'kf-spotlight',
   singer: 'kf-singer',
@@ -53,6 +58,7 @@ export const enemyTextureKey = (key: string): string => `kf-enemy-${key}`;
 export function generateTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TX.tileStage)) return;
   generateTileTextures(scene);
+  generateTileAccentTextures(scene);
   generateStageTextures(scene);
   generateTowerTextures(scene);
   generateEnemyTextures(scene);
@@ -102,42 +108,101 @@ function generateTileTextures(scene: Phaser.Scene): void {
   frame();
   g.generateTexture(TX.tileStage, R, R);
 
-  // Aisle: carpet with a faint chevron pattern + a lane-divider line on top edge.
+  // Aisle: a flat woven-carpet base. The directional chevron + the bright
+  // lane-divider lines are drawn as baked (non-tinted) accents in
+  // `generateTileAccentTextures` and overlaid in GameScene.drawMap, so the
+  // carpet here is kept plain (just a subtle horizontal weave) to read clearly
+  // as the walkable path once tinted to a saturated red-brown.
   g.clear();
   g.fillStyle(BASE, 1);
   g.fillRect(0, 0, R, R);
-  g.lineStyle(2, LIGHT, 0.22);
-  for (let y = -R; y < R; y += 14) {
-    g.beginPath();
-    g.moveTo(0, y);
-    g.lineTo(R / 2, y + R / 2);
-    g.lineTo(R, y);
-    g.strokePath();
-  }
-  // Lane divider: a darker line along the top edge (between stacked aisles).
-  g.fillStyle(DARK, 0.6);
-  g.fillRect(0, 0, R, 2);
+  g.fillStyle(SHADOW, 0.18);
+  for (let y = 5; y < R; y += 8) g.fillRect(0, y, R, 3); // carpet weave bands
   frame();
   g.generateTexture(TX.tileAisle, R, R);
 
-  // Build: charcoal floor with two rows of little rounded "seat" silhouettes.
+  // Build: a dark slate/charcoal floor with two rows of faint "seat"
+  // silhouettes. Drawn darker than the aisle so the buildable seating reads as
+  // dimmer/recessed; the green wash + center "+" tower-base indicator are baked
+  // accents overlaid in GameScene.drawMap so "I can build here" is unmistakable.
   g.clear();
-  g.fillStyle(0x8c8c8c, 1); // slightly darker base — seating area reads dimmer
+  g.fillStyle(0x707074, 1); // darker base — seating area reads dimmer/recessed
   g.fillRect(0, 0, R, R);
   const seatW = 12;
   const seatH = 9;
   const gap = 4;
   for (let row = 0; row < 2; row++) {
-    const sy = 14 + row * (seatH + 10);
+    const sy = 12 + row * (seatH + 12);
     for (let sx = 6; sx + seatW <= R - 4; sx += seatW + gap) {
-      g.fillStyle(DARK, 0.9);
+      g.fillStyle(0x3a3a40, 0.9);
       g.fillRoundedRect(sx + 1, sy + 2, seatW, seatH, 3); // seat shadow
-      g.fillStyle(LIGHT, 0.85);
+      g.fillStyle(LIGHT, 0.5);
       g.fillRoundedRect(sx, sy, seatW, seatH - 2, 3); // seat back highlight
     }
   }
   frame();
   g.generateTexture(TX.tileBuild, R, R);
+
+  g.destroy();
+}
+
+// --- Section 1b: baked tile accents ----------------------------------------
+//
+// These are drawn in their REAL colors (no tint) and overlaid on the tiles in
+// GameScene.drawMap, so the directional / "buildable" cues read identically on
+// every map palette: a gold left-chevron + cream lane dividers on aisles, and a
+// green "+" tower-base indicator on a faint green wash on buildable tiles.
+
+const GOLD = 0xffd98a;
+const CREAM = 0xffe9b0;
+const GREEN = 0x69db7c;
+
+function generateTileAccentTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const R = TILE_RES;
+
+  // Aisle accent: two gold "<" chevrons pointing LEFT (enemy travel direction)
+  // plus brighter cream divider lines along the top + bottom edges (the bright
+  // lane dividers between stacked aisles).
+  g.clear();
+  const chevron = (cx: number, alpha: number) => {
+    const half = 11; // vertical reach
+    const w = 9; // horizontal depth of the "<"
+    g.lineStyle(4, GOLD, alpha);
+    g.beginPath();
+    g.moveTo(cx + w, R / 2 - half);
+    g.lineTo(cx, R / 2);
+    g.lineTo(cx + w, R / 2 + half);
+    g.strokePath();
+  };
+  chevron(R * 0.34, 0.5);
+  chevron(R * 0.52, 0.28);
+  g.fillStyle(CREAM, 0.55);
+  g.fillRect(0, 0, R, 3); // top lane divider
+  g.fillRect(0, R - 3, R, 3); // bottom lane divider
+  g.generateTexture(TX.aisleArrow, R, R);
+
+  // Build accent: a faint green wash, a soft tower-base shadow, and a rounded
+  // green "+" centered — "something will go here".
+  g.clear();
+  g.fillStyle(GREEN, 0.1);
+  g.fillRect(0, 0, R, R);
+  g.fillStyle(0x000000, 0.16);
+  g.fillEllipse(R / 2, R / 2 + 9, 26, 11); // tower-base shadow
+  const t = 5; // arm thickness
+  const arm = 18; // arm length
+  g.fillStyle(GREEN, 0.55);
+  g.fillRoundedRect(R / 2 - arm / 2, R / 2 - t / 2, arm, t, 2);
+  g.fillRoundedRect(R / 2 - t / 2, R / 2 - arm / 2, t, arm, 2);
+  g.generateTexture(TX.buildPlus, R, R);
+
+  // Lane pill: a dark, semi-transparent rounded badge sized for a single digit.
+  g.clear();
+  g.fillStyle(0x05050a, 0.6);
+  g.fillRoundedRect(0, 0, 36, 26, 9);
+  g.lineStyle(1, 0xffffff, 0.12);
+  g.strokeRoundedRect(0.5, 0.5, 35, 25, 9);
+  g.generateTexture(TX.lanePill, 36, 26);
 
   g.destroy();
 }
