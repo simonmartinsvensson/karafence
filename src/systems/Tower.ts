@@ -3,7 +3,7 @@ import { type GridLayout, type BoardLayers, tileToWorld } from './grid';
 import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
 import { audio } from './audio';
-import { towerTextureKey } from './textures';
+import { TX, towerTextureKey } from './textures';
 import type { TowerSave } from './storage';
 import {
   type TowerType,
@@ -483,6 +483,9 @@ export class Tower {
     if (targets.length === 0) return [];
     this.cooldown = this.fireInterval();
     audio.sfx('shoot');
+    // Keyboardist throws a glowing music-wave; everyone else a spinning note.
+    const key = this.type.key === 'keyboardist' ? TX.projStaff : TX.projNote;
+    const size = this.layout.tileSize * 0.55;
     return targets.map(
       (target) =>
         new Projectile(
@@ -490,10 +493,11 @@ export class Tower {
           this.worldX,
           this.worldY,
           target,
-          this.type.projectileColor,
+          key,
           this.projectileSpeed,
           (t) => this.onProjectileHit(t),
           this.layers.projectiles,
+          size,
         ),
     );
   }
@@ -541,27 +545,54 @@ export class Tower {
       duration: 280,
       onComplete: () => ring.destroy(),
     });
+    this.tossDrumsticks();
     for (const enemy of this.enemiesInRange()) {
       this.dealHit(enemy);
       if (this.stats.stunOnHit) enemy.applySlow(0, this.stats.stunDuration);
     }
   }
 
+  /** Cosmetic: fling a few tumbling drumsticks outward on each splash hit. */
+  private tossDrumsticks(): void {
+    const ts = this.layout.tileSize;
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const ang = (Math.PI * 2 * i) / n + Math.random() * 0.6;
+      const stick = this.scene.add
+        .image(this.worldX, this.worldY, TX.drumstick)
+        .setDisplaySize(ts * 0.5, ts * 0.5);
+      this.layers.projectiles.add(stick);
+      this.scene.tweens.add({
+        targets: stick,
+        x: this.worldX + Math.cos(ang) * this.rangePx * 0.8,
+        y: this.worldY + Math.sin(ang) * this.rangePx * 0.8,
+        rotation: 6 + Math.random() * 4,
+        alpha: 0,
+        duration: 320,
+        onComplete: () => stick.destroy(),
+      });
+    }
+  }
+
   /** Bass Player blast: a deep pulse that knocks every enemy in range back. */
   private fireBassBlast(): void {
     audio.sfx('shoot');
-    const ring = this.scene.add
-      .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.3)
-      .setStrokeStyle(3, this.type.color, 0.9)
-      .setScale(0.15);
-    this.layers.fx.add(ring);
-    this.scene.tweens.add({
-      targets: ring,
-      scale: 1,
-      alpha: 0,
-      duration: 320,
-      onComplete: () => ring.destroy(),
-    });
+    // A low-frequency pulse: two concentric rings expanding outward.
+    for (let i = 0; i < 2; i++) {
+      const ring = this.scene.add
+        .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.28)
+        .setStrokeStyle(3, this.type.color, 0.9)
+        .setScale(0.15);
+      this.layers.fx.add(ring);
+      this.scene.tweens.add({
+        targets: ring,
+        scale: 1,
+        alpha: 0,
+        delay: i * 110,
+        duration: 340,
+        onComplete: () => ring.destroy(),
+      });
+    }
     for (const enemy of this.enemiesInRange()) {
       if (this.stats.damage > 0) {
         enemy.takeDamage(

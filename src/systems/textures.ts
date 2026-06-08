@@ -31,6 +31,9 @@ export const TX = {
   curtain: 'kf-curtain',
   spotlight: 'kf-spotlight',
   singer: 'kf-singer',
+  projNote: 'kf-proj-note',
+  projStaff: 'kf-proj-staff',
+  drumstick: 'kf-drumstick',
 } as const;
 
 /** Texture key for a tower type's drawn sprite. */
@@ -49,6 +52,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   generateStageTextures(scene);
   generateTowerTextures(scene);
   generateEnemyTextures(scene);
+  generateProjectileTextures(scene);
 }
 
 // --- Section 1: tiles ------------------------------------------------------
@@ -611,6 +615,59 @@ function generateEnemyTextures(scene: Phaser.Scene): void {
   g.fillStyle(E_EDGE, 1);
   g.fillRect(36, 74, 28, 14); // podium
   g.generateTexture(enemyTextureKey('talentJudge'), B, B);
+
+  g.destroy();
+}
+
+// --- Section 5: projectiles ------------------------------------------------
+//
+// Tower-specific projectiles (baked full color, spun by Projectile): a golden
+// musical note (Lead Singer), a glowing music-wave (Keyboardist) and a tumbling
+// drumstick (Drummer splash flourish). The Bass Player's "drop the bass" stays
+// an expanding pulse ring drawn directly in Tower.
+
+function generateProjectileTextures(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+
+  // Golden musical note (♩): head + stem + flag.
+  g.clear();
+  g.fillStyle(0xffe066, 1);
+  g.fillEllipse(9, 18, 10, 7); // note head
+  g.fillRect(13, 4, 3, 14); // stem
+  g.fillTriangle(15, 4, 15, 12, 22, 8); // flag
+  g.fillStyle(0xfff3bf, 0.9);
+  g.fillEllipse(7, 16, 3, 2); // highlight
+  g.generateTexture(TX.projNote, 26, 26);
+
+  // Glowing music-wave: a cyan sine ripple with a soft halo + staff lines.
+  g.clear();
+  g.fillStyle(0xc5f6fa, 0.28);
+  g.fillCircle(14, 12, 11); // glow
+  g.lineStyle(1, 0xc5f6fa, 0.5);
+  g.beginPath();
+  g.moveTo(2, 8);
+  g.lineTo(26, 8);
+  g.moveTo(2, 16);
+  g.lineTo(26, 16);
+  g.strokePath(); // staff lines
+  g.lineStyle(3, 0x66d9e8, 1);
+  g.beginPath();
+  g.moveTo(3, 12);
+  g.lineTo(8, 5);
+  g.lineTo(13, 12);
+  g.lineTo(18, 19);
+  g.lineTo(23, 12); // sine-ish wave
+  g.strokePath();
+  g.generateTexture(TX.projStaff, 28, 24);
+
+  // Drumstick: a tan rounded stick with a ball tip (tumbles end-over-end).
+  g.clear();
+  g.fillStyle(0xffd8a8, 1);
+  g.fillRoundedRect(2, 9, 15, 4, 2); // shaft
+  g.fillCircle(18, 11, 3.5); // tip
+  g.fillStyle(0xfff0db, 0.9);
+  g.fillRoundedRect(3, 9, 8, 1.5, 1); // highlight
+  g.generateTexture(TX.drumstick, 22, 22);
 
   g.destroy();
 }
