@@ -17,19 +17,12 @@ import { TowerManager } from '../systems/TowerManager';
 import type { Tower } from '../systems/Tower';
 import { BuildPanel } from '../ui/BuildPanel';
 import { UpgradePanel } from '../ui/UpgradePanel';
-import { ShopPanel } from '../ui/ShopPanel';
 import {
   STARTING_GOLD,
   TOWER_TYPES,
   type TowerTypeKey,
   type UpgradePathKey,
 } from '../data/towers';
-import {
-  POWERUPS,
-  SOUND_CHECK_DURATION_MS,
-  ENCORE_REWIND_SECONDS,
-  type PowerUpKey,
-} from '../data/powerups';
 import { BOSS_CONFIG } from '../data/enemies';
 import { metaModifiers, type MetaProgress } from '../data/meta';
 import type { GameMode } from '../data/modes';
@@ -68,17 +61,6 @@ const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
 const COMBO_BONUS = 0.15; // gold bonus per combo step
 const INTERMISSION_SECONDS = 12;
 
-// Active-ability tuning.
-const POWER_NOTE_DAMAGE = 400; // Lead Singer single-target nuke
-const DRUM_ROLL_RADIUS_TILES = 2.6; // Drummer stun blast radius
-const DRUM_ROLL_STUN = 3; // seconds
-const CHORD_BOMB_RADIUS_TILES = 2.5; // Keyboardist slow field radius
-const CHORD_BOMB_DURATION = 10; // seconds the field persists
-const CHORD_BOMB_SLOW = 0.4; // speed multiplier inside the field
-const CHOIR_BOOST_DURATION_MS = 10000; // Backup Singer 2x attack-speed window
-const DROP_THE_BASS_TILES = 5; // Bass Player screen-wide knockback
-const CROWD_SURF_KILLS = 10; // Hype Man triple-gold kills
-
 // Screen-furniture depths (scene root). The board container sits below these.
 const DEPTH_BOARD = 1;
 const DEPTH_HUD = 100;
@@ -108,7 +90,6 @@ export class GameScene extends Phaser.Scene {
   private towers!: TowerManager;
   private buildPanel!: BuildPanel;
   private upgradePanel!: UpgradePanel;
-  private shopPanel!: ShopPanel;
   private dialogue!: DialogueOverlay; // story-mode between-wave dialogue
 
   // Board container + its ordered z-layers (see grid.ts BoardLayers).
@@ -150,20 +131,15 @@ export class GameScene extends Phaser.Scene {
   private combo = 0;
   private comboTimer = 0;
 
-  // Active-ability state.
-  private crowdSurfKills = 0; // remaining triple-gold kills (Crowd Surf)
-  private slowFields: {
-    x: number;
-    y: number;
-    radius: number;
-    remaining: number;
-    visual: Phaser.GameObjects.Arc;
-  }[] = []; // active Chord Bomb fields
-
   // Intermission between waves.
   private intermissionActive = false;
   private intermissionRemaining = 0;
   private intermissionUi?: Phaser.GameObjects.Container;
+
+  // Pre-wave planning prompt (manual "Start Wave 1" on a fresh run).
+  private startPrompt?: Phaser.GameObjects.Container;
+  // Game speed (1 or 2). Scales movement (dt), the spawn/freeze clock and tweens.
+  private gameSpeed = 1;
 
   // Active boss + its ability state.
   private activeBoss: Enemy | null = null;
@@ -194,7 +170,7 @@ export class GameScene extends Phaser.Scene {
   // Bottom control bar (screen-space).
   private barBg!: Phaser.GameObjects.Rectangle;
   private menuBtn!: BarButton;
-  private shopBtn!: BarButton;
+  private speedBtn!: BarButton; // 1×/2× game speed toggle
 
   // Terminal-state overlay (victory / game over / chapter), re-rendered on resize.
   private endState: 'none' | 'victory' | 'gameover' | 'chapter' = 'none';
@@ -247,12 +223,12 @@ export class GameScene extends Phaser.Scene {
 
     this.combo = 0;
     this.comboTimer = 0;
-    this.crowdSurfKills = 0;
-    this.slowFields = [];
 
     this.intermissionActive = false;
     this.intermissionRemaining = 0;
     this.intermissionUi = undefined;
+    this.startPrompt = undefined;
+    this.gameSpeed = 1;
 
     this.activeBoss = null;
     this.bossAbilityTimer = 0;
@@ -271,6 +247,9 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor('#0b0b12');
     this.cameras.main.fadeIn(350, 11, 11, 18);
+    // Reset speed scaling (the scene instance + its clock are reused across runs).
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
     this.screen = computeScreenLayout(this.sw, this.sh);
 
     // Load meta-progression and apply its permanent modifiers to this run.
@@ -312,7 +291,6 @@ export class GameScene extends Phaser.Scene {
     this.towers.onSelectionChange = (tower) => this.onTowerSelection(tower);
     this.buildPanel = new BuildPanel(this);
     this.upgradePanel = new UpgradePanel(this);
-    this.shopPanel = new ShopPanel(this);
     this.dialogue = new DialogueOverlay(this);
     this.setupInput();
 
@@ -333,13 +311,13 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.resumeWaveIndex = 0;
       this.saveRunState();
-      // Story chapters open with their `waveAfter: 0` intro beat (a fresh start
-      // only) — wave 1 begins once the player taps through it.
+      // Fresh run: build/plan first, then start wave 1 manually. Story chapters
+      // play their `waveAfter: 0` intro beat before the planning prompt appears.
       const intro = this.mode === 'story' ? beatsAfterWave(this.levelId, 0) : [];
       if (intro.length > 0) {
-        this.dialogue.show(intro, () => this.waves.start());
+        this.dialogue.show(intro, () => this.showStartPrompt());
       } else {
-        this.waves.start();
+        this.showStartPrompt();
       }
     }
     this.refreshHud();
@@ -386,11 +364,11 @@ export class GameScene extends Phaser.Scene {
     this.positionControlBar();
     this.positionBossBar();
     this.positionIntermission();
+    this.positionStartPrompt();
 
     // Transient panels re-anchor cleanly by closing; reopen the upgrade panel
     // for the still-selected tower so its Activate button stays reachable.
     this.buildPanel.close();
-    this.shopPanel.close();
     if (this.buildTarget) this.closeBuild();
     const sel = this.towers?.selectedTower ?? null;
     if (sel) this.openUpgradePanel(sel);
@@ -422,11 +400,12 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.gameOver || this.paused) return;
-    const dt = delta / 1000;
+    // Movement + tick functions scale by gameSpeed; the spawn/freeze clock and
+    // tweens are scaled separately via time/tweens.timeScale in cycleSpeed().
+    const dt = (delta / 1000) * this.gameSpeed;
     this.waves.update(dt);
     this.towers.update(dt);
     this.tickCombo(dt);
-    this.tickSlowFields(dt);
     this.tickIntermission(dt);
     this.driveBoss(dt);
     this.refreshHud();
@@ -548,7 +527,6 @@ export class GameScene extends Phaser.Scene {
     this.paused = true;
     this.towers.deselect();
     this.closeBuild();
-    this.shopPanel.close();
     this.time.paused = true;
     this.tweens.pauseAll();
     this.renderPauseMenu();
@@ -696,7 +674,6 @@ export class GameScene extends Phaser.Scene {
         tower.cycleTargeting();
         this.openUpgradePanel(tower); // rebuild to show new strategy
       },
-      onActivate: () => this.activateAbility(tower),
     });
   }
 
@@ -716,121 +693,6 @@ export class GameScene extends Phaser.Scene {
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
     this.refreshHud();
     this.saveRunState();
-  }
-
-  // --- Active abilities ----------------------------------------------------
-
-  /** Fire the selected tower's active ability if it's off cooldown. */
-  private activateAbility(tower: Tower): void {
-    if (this.gameOver || !tower.abilityReady) return;
-    tower.startAbilityCooldown();
-    audio.sfx('ability');
-    this.cameras.main.shake(220, 0.008);
-    const ts = this.layout.tileSize;
-
-    switch (tower.type.ability.key) {
-      case 'powerNote': {
-        // Nuke the single strongest enemy on screen.
-        let target: Enemy | null = null;
-        for (const e of this.waves.enemies) {
-          if (!e.isTargetable) continue;
-          if (!target || e.hp > target.hp) target = e;
-        }
-        if (target) {
-          target.takeDamage(POWER_NOTE_DAMAGE);
-          this.abilityRing(target.x, target.y, ts * 1.4, 0xfff3bf);
-          this.floatText(target.x, target.y, '💥 POWER NOTE!', '#fff3bf');
-        }
-        break;
-      }
-      case 'drumRoll': {
-        const radius = DRUM_ROLL_RADIUS_TILES * ts;
-        for (const e of this.waves.enemies) {
-          if (Math.hypot(e.x - tower.x, e.y - tower.y) <= radius) {
-            e.applySlow(0, DRUM_ROLL_STUN); // factor 0 = full stop
-          }
-        }
-        this.abilityRing(tower.x, tower.y, radius, 0xff922b);
-        this.floatText(tower.x, tower.y, '🥁 DRUM ROLL!', '#ffd8a8');
-        break;
-      }
-      case 'chordBomb': {
-        const radius = CHORD_BOMB_RADIUS_TILES * ts;
-        const visual = this.add
-          .circle(tower.x, tower.y, radius, 0x66d9e8, 0.18)
-          .setStrokeStyle(2, 0x66d9e8, 0.6);
-        this.layers.fx.add(visual);
-        this.slowFields.push({
-          x: tower.x,
-          y: tower.y,
-          radius,
-          remaining: CHORD_BOMB_DURATION,
-          visual,
-        });
-        this.floatText(tower.x, tower.y, '🧊 CHORD BOMB!', '#c5f6fa');
-        break;
-      }
-      case 'choirBoost': {
-        this.towers.abilitySpeedMultiplier = 2;
-        this.showStatus(`🎶 CHOIR BOOST: 2x fire ${CHOIR_BOOST_DURATION_MS / 1000}s`);
-        this.time.delayedCall(CHOIR_BOOST_DURATION_MS, () => {
-          this.towers.abilitySpeedMultiplier = 1;
-          if (this.statusText.text.startsWith('🎶')) this.statusText.setVisible(false);
-        });
-        this.abilityRing(tower.x, tower.y, ts * 2, 0xb197fc);
-        this.floatText(tower.x, tower.y, '🎶 CHOIR BOOST!', '#d0bfff');
-        break;
-      }
-      case 'dropTheBass': {
-        for (const e of this.waves.enemies) e.knockback(DROP_THE_BASS_TILES);
-        const cx = this.layout.mapW / 2;
-        const cy = this.layout.mapH / 2;
-        this.abilityRing(cx, cy, this.layout.mapW / 2, 0x7048e8);
-        this.floatText(cx, cy, '🔊 DROP THE BASS!', '#d0bfff');
-        break;
-      }
-      case 'crowdSurf': {
-        this.crowdSurfKills = CROWD_SURF_KILLS;
-        this.showStatus(`🏄 CROWD SURF: 3x gold ×${this.crowdSurfKills}`);
-        this.floatText(tower.x, tower.y, '🏄 CROWD SURF!', '#ffd8a8');
-        break;
-      }
-    }
-
-    this.openUpgradePanel(tower); // rebuild so the button shows the cooldown
-  }
-
-  /** Expanding ring used as the visual punch for an activated ability. */
-  private abilityRing(x: number, y: number, radius: number, color: number): void {
-    const ring = this.add
-      .circle(x, y, radius, color, 0.22)
-      .setStrokeStyle(3, color, 0.9)
-      .setScale(0.15);
-    this.layers.fx.add(ring);
-    this.tweens.add({
-      targets: ring,
-      scale: 1,
-      alpha: 0,
-      duration: 420,
-      onComplete: () => ring.destroy(),
-    });
-  }
-
-  /** Chord Bomb slow fields: re-slow enemies inside them, expire after 10s. */
-  private tickSlowFields(dt: number): void {
-    for (let i = this.slowFields.length - 1; i >= 0; i--) {
-      const f = this.slowFields[i];
-      f.remaining -= dt;
-      for (const e of this.waves.enemies) {
-        if (Math.hypot(e.x - f.x, e.y - f.y) <= f.radius) {
-          e.applySlow(CHORD_BOMB_SLOW, 0.3); // short, continually refreshed
-        }
-      }
-      if (f.remaining <= 0) {
-        f.visual.destroy();
-        this.slowFields.splice(i, 1);
-      }
-    }
   }
 
   // --- Map rendering (into the board's tiles layer) ------------------------
@@ -1148,7 +1010,15 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x2a2a3a, 1)
       .setDepth(DEPTH_BAR);
     this.menuBtn = this.barButton('≡ Pause', 0x9aa0b0, '#cfd3dc', () => this.openPauseMenu());
-    this.shopBtn = this.barButton('🎟 Shop', 0xffd166, '#ffd166', () => this.openShop());
+    this.speedBtn = this.barButton('▶ 1×', 0x4dd2ff, '#bdecff', () => this.cycleSpeed());
+  }
+
+  /** Toggle 1×/2× game speed — scales movement, the spawn clock and tweens. */
+  private cycleSpeed(): void {
+    this.gameSpeed = this.gameSpeed === 1 ? 2 : 1;
+    this.time.timeScale = this.gameSpeed;
+    this.tweens.timeScale = this.gameSpeed;
+    this.speedBtn.text.setText(this.gameSpeed === 2 ? '▶▶ 2×' : '▶ 1×');
   }
 
   /** A venue-signage bar button (neon glow + framed rect + label). */
@@ -1201,7 +1071,72 @@ export class GameScene extends Phaser.Scene {
       btn.text.setFontSize(font).setPosition(cx, cy);
     };
     place(this.menuBtn, margin + btnW / 2);
-    place(this.shopBtn, vw - margin - btnW / 2);
+    place(this.speedBtn, vw - margin - btnW / 2);
+  }
+
+  // --- Pre-wave planning prompt --------------------------------------------
+
+  /**
+   * Fresh-run planning phase: let the player build before wave 1, then start it
+   * manually. Mirrors the intermission Fast-Forward control's position (just
+   * above the bottom bar, one-thumb reach).
+   */
+  private showStartPrompt(): void {
+    this.startPrompt?.destroy(true);
+    const label = this.add
+      .text(0, 0, '', { fontFamily: 'monospace', color: '#ffffff' })
+      .setOrigin(0.5, 1);
+    const btn = this.add
+      .rectangle(0, 0, TOUCH_MIN, TOUCH_MIN, 0x233323, 0.98)
+      .setStrokeStyle(2, 0x51cf66, 0.95)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add
+      .text(0, 0, '▶ START WAVE 1', { fontFamily: 'monospace', color: '#69db7c' })
+      .setOrigin(0.5);
+    btn.on(
+      'pointerdown',
+      (
+        _p: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        ev?: Phaser.Types.Input.EventData,
+      ) => {
+        ev?.stopPropagation();
+        this.beginFirstWave();
+      },
+    );
+    this.startPrompt = this.add.container(0, 0, [label, btn, text]).setDepth(DEPTH_BAR + 5);
+    this.startPrompt.setData('label', label);
+    this.startPrompt.setData('btn', btn);
+    this.startPrompt.setData('text', text);
+    this.positionStartPrompt();
+  }
+
+  private positionStartPrompt(): void {
+    const ui = this.startPrompt;
+    if (!ui) return;
+    const { vw, vh, barH } = this.screen;
+    const label = ui.getData('label') as Phaser.GameObjects.Text;
+    const btn = ui.getData('btn') as Phaser.GameObjects.Rectangle;
+    const text = ui.getData('text') as Phaser.GameObjects.Text;
+    const cx = vw / 2;
+    const btnH = TOUCH_MIN;
+    const btnW = Math.max(180, Math.min(280, vw * 0.7));
+    const btnCy = vh - barH - 8 - btnH / 2;
+    const font = Math.round(Phaser.Math.Clamp(btnH * 0.3, 13, 17));
+    btn.setSize(btnW, btnH).setPosition(cx, btnCy);
+    text.setFontSize(font).setPosition(cx, btnCy);
+    label
+      .setFontSize(font)
+      .setText('Build your defense — then start the first wave')
+      .setPosition(cx, btnCy - btnH / 2 - 6);
+  }
+
+  private beginFirstWave(): void {
+    this.startPrompt?.destroy(true);
+    this.startPrompt = undefined;
+    this.waves.start();
+    this.saveRunState();
   }
 
   // --- Game flow -----------------------------------------------------------
@@ -1246,17 +1181,6 @@ export class GameScene extends Phaser.Scene {
     let gain = reward + bonus;
     if (hype.goldMult > 1) gain = Math.round(gain * hype.goldMult);
 
-    let tripled = false;
-    if (this.crowdSurfKills > 0) {
-      gain *= 3;
-      this.crowdSurfKills -= 1;
-      tripled = true;
-      if (this.crowdSurfKills > 0) {
-        this.showStatus(`🏄 CROWD SURF: 3x gold ×${this.crowdSurfKills}`);
-      } else {
-        this.statusText.setVisible(false);
-      }
-    }
     this.gold += gain;
     this.goldEarned += gain;
 
@@ -1264,7 +1188,7 @@ export class GameScene extends Phaser.Scene {
       enemy.x,
       enemy.y,
       `+${gain}`,
-      tripled ? '#ffa94d' : this.combo >= 3 ? '#ffd43b' : '#cdeac0',
+      this.combo >= 3 ? '#ffd43b' : '#cdeac0',
     );
     this.updateComboHud(true);
     if (this.combo >= 2) audio.sfx('comboTick', { combo: this.combo });
@@ -1750,57 +1674,6 @@ export class GameScene extends Phaser.Scene {
     this.saveRunState();
   }
 
-  // --- Shop / power-ups ----------------------------------------------------
-
-  private openShop(): void {
-    if (this.gameOver) return;
-    this.towers.deselect();
-    this.shopPanel.open(
-      this.gold,
-      (key) => this.buyPowerUp(key),
-      () => this.shopPanel.close(),
-    );
-  }
-
-  private buyPowerUp(key: PowerUpKey): void {
-    const cost = POWERUPS[key].cost;
-    if (this.gold < cost) return;
-    this.gold -= cost;
-    this.goldSpent += cost;
-    this.refreshHud();
-    this.shopPanel.close();
-    this.activatePowerUp(key);
-    this.saveRunState();
-  }
-
-  private activatePowerUp(key: PowerUpKey): void {
-    const cx = this.layout.mapW / 2;
-    const cy = this.layout.mapH / 2;
-    switch (key) {
-      case 'securityGuard':
-        // Lethal hit to everything on screen (routes kills through the economy).
-        for (const enemy of [...this.waves.enemies]) enemy.takeDamage(999999);
-        this.floatText(cx, cy, '🛡️ CLEARED!', '#ffffff');
-        break;
-      case 'encore':
-        for (const enemy of this.waves.enemies) enemy.rewind(ENCORE_REWIND_SECONDS);
-        this.floatText(cx, cy, '🔁 ENCORE!', '#74c0fc');
-        break;
-      case 'soundCheck':
-        this.towers.damageMultiplier = 2;
-        this.showStatus(`🎚 2x DMG ${SOUND_CHECK_DURATION_MS / 1000}s`);
-        this.time.delayedCall(SOUND_CHECK_DURATION_MS, () => {
-          this.towers.damageMultiplier = 1;
-          this.statusText.setVisible(false);
-        });
-        break;
-    }
-  }
-
-  private showStatus(msg: string): void {
-    this.statusText.setVisible(true).setText(msg);
-  }
-
   // --- End of run (victory / game over) ------------------------------------
 
   private triggerGameOver(): void {
@@ -1810,13 +1683,10 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(400, 0.01);
     this.towers.deselect();
     this.closeBuild();
-    this.shopPanel.close();
     this.dialogue.close();
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
-    this.slowFields.forEach((f) => f.visual.destroy());
-    this.slowFields = [];
     this.clearBoss();
 
     // Persist lifetime progress; the failed run is not resumable.

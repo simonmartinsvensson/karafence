@@ -26,12 +26,8 @@ export class TowerManager {
   private overlay: Phaser.GameObjects.GameObject[] = [];
   private overlayTweens: Phaser.Tweens.Tween[] = [];
 
-  /** Global tower damage multiplier (Sound Check power-up sets this to 2). */
-  damageMultiplier = 1;
-  /** Global attack-speed multiplier (Talent Judge phase 3 sets this to 0.5). */
+  /** Global attack-speed multiplier (Talent Judge phase 3 sets this below 1). */
   attackSpeedMultiplier = 1;
-  /** Ability-driven global attack-speed multiplier (Choir Boost sets this to 2). */
-  abilitySpeedMultiplier = 1;
 
   /** Notified when the selected tower changes (null = deselected). */
   onSelectionChange?: (tower: Tower | null) => void;
@@ -85,8 +81,7 @@ export class TowerManager {
       col,
       row,
       this.enemies,
-      () => this.damageMultiplier,
-      () => this.attackSpeedMultiplier * this.abilitySpeedMultiplier,
+      () => this.attackSpeedMultiplier,
       this.layers,
       placementCost,
     );

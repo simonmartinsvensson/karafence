@@ -56,12 +56,13 @@ export class Tower {
   private readonly layout: GridLayout;
   private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
-  private readonly damageMultiplier: () => number;
   private readonly attackSpeedMultiplier: () => number;
   private readonly worldX: number;
   private readonly worldY: number;
   private readonly container: Phaser.GameObjects.Container;
   private readonly pips: Phaser.GameObjects.Rectangle[] = [];
+  /** Pending one-shot timers (e.g. double-fire), cancelled on destroy. */
+  private readonly timers: Phaser.Time.TimerEvent[] = [];
 
   private rangeCircle: Phaser.GameObjects.Arc;
   private stats: RuntimeStats;
@@ -69,17 +70,11 @@ export class Tower {
   private projectileSpeed = 0;
   private cooldown = 0;
   private frozenRemaining = 0;
+  private destroyed = false;
   private totalSpent: number;
 
-  /** Remaining cooldown on the active ability (0 = ready). */
-  private abilityRemaining = 0;
   /** Attack-speed multiplier from a Backup Singer aura (1 = none). */
   private supportSpeedBuff = 1;
-  /** Cooldown sweep (shrinking dark wedge) + ready ring, drawn on the sprite. */
-  private cooldownArc!: Phaser.GameObjects.Arc;
-  private readyRing!: Phaser.GameObjects.Arc;
-  /** Continuous shimmer on the ready ring while the ability is off cooldown. */
-  private readyShimmer?: Phaser.Tweens.Tween;
 
   constructor(
     scene: Phaser.Scene,
@@ -88,7 +83,6 @@ export class Tower {
     col: number,
     row: number,
     enemies: Iterable<Enemy>,
-    damageMultiplier: () => number,
     attackSpeedMultiplier: () => number,
     layers: BoardLayers,
     placementCost: number = type.cost,
@@ -101,7 +95,6 @@ export class Tower {
     this.row = row;
     this.id = `${col},${row}`;
     this.enemies = enemies;
-    this.damageMultiplier = damageMultiplier;
     this.attackSpeedMultiplier = attackSpeedMultiplier;
     this.targeting = type.defaultTargeting;
     this.totalSpent = placementCost;
@@ -128,94 +121,7 @@ export class Tower {
     this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
-    // Ability cooldown sweep (a shrinking dark wedge over the icon) and a gold
-    // "ready" ring. Both sit just above the tower sprite.
-    const arcR = Math.floor(ts * 0.46);
-    this.cooldownArc = scene.add
-      .arc(this.worldX, this.worldY, arcR, -90, -90, false, 0x000000, 0.55)
-      .setVisible(false);
-    this.layers.towers.add(this.cooldownArc);
-    this.readyRing = scene.add
-      .circle(this.worldX, this.worldY, ts * 0.52, 0xffffff, 0)
-      .setStrokeStyle(2, 0xffd43b, 0.95)
-      .setVisible(false);
-    this.layers.towers.add(this.readyRing);
-
     this.recompute();
-    this.updateAbilityVisual();
-  }
-
-  // --- Active ability ------------------------------------------------------
-
-  get abilityReady(): boolean {
-    return this.abilityRemaining <= 0;
-  }
-
-  /** Whole seconds of cooldown left, for the panel button. */
-  get abilityCooldownLeft(): number {
-    return Math.max(0, Math.ceil(this.abilityRemaining));
-  }
-
-  /** Put the ability on cooldown (caller checks `abilityReady` first). */
-  startAbilityCooldown(): void {
-    this.abilityRemaining = this.type.ability.cooldown;
-    this.updateAbilityVisual();
-  }
-
-  /** Sweep the cooldown wedge / show the ready ring on the sprite. */
-  private updateAbilityVisual(): void {
-    if (this.abilityRemaining > 0) {
-      this.stopReadyShimmer();
-      this.readyRing.setVisible(false);
-      const frac = this.abilityRemaining / this.type.ability.cooldown;
-      this.cooldownArc.setVisible(true).setEndAngle(-90 + 360 * frac);
-    } else {
-      this.cooldownArc.setVisible(false);
-      this.readyRing.setVisible(true);
-      this.startReadyShimmer();
-    }
-  }
-
-  /** A gentle golden shimmer (alpha + scale) loop while the ability is ready. */
-  private startReadyShimmer(): void {
-    if (this.readyShimmer) return;
-    this.readyShimmer = this.scene.tweens.add({
-      targets: this.readyRing,
-      alpha: { from: 0.5, to: 1 },
-      scaleX: { from: 1, to: 1.1 },
-      scaleY: { from: 1, to: 1.1 },
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-  }
-
-  private stopReadyShimmer(): void {
-    if (this.readyShimmer) {
-      this.readyShimmer.stop();
-      this.readyShimmer = undefined;
-      this.readyRing.setAlpha(1).setScale(1);
-    }
-  }
-
-  /**
-   * Brief glow when the active ability resets to ready: pop the gold ready-ring
-   * and flash a fading halo in the tower's color so the player notices.
-   */
-  private pulseReady(): void {
-    const halo = this.scene.add
-      .circle(this.worldX, this.worldY, this.layout.tileSize * 0.5, 0xffd43b, 0.35)
-      .setStrokeStyle(2, 0xffe680, 0.9)
-      .setScale(0.6);
-    this.layers.fx.add(halo);
-    this.scene.tweens.add({
-      targets: halo,
-      scale: 2,
-      alpha: 0,
-      duration: 420,
-      onComplete: () => halo.destroy(),
-    });
   }
 
   // --- Roles / queries -----------------------------------------------------
@@ -432,18 +338,6 @@ export class Tower {
    * @param dt seconds since last frame
    */
   update(dt: number): Projectile[] {
-    // The active-ability cooldown always recharges (even while taunted).
-    if (this.abilityRemaining > 0) {
-      this.abilityRemaining -= dt;
-      if (this.abilityRemaining <= 0) {
-        this.abilityRemaining = 0;
-        this.updateAbilityVisual();
-        this.pulseReady(); // glow: the ability just came off cooldown
-      } else {
-        this.updateAbilityVisual();
-      }
-    }
-
     if (this.frozenRemaining > 0) {
       this.frozenRemaining -= dt;
       if (this.frozenRemaining <= 0) this.body.clearTint();
@@ -472,9 +366,13 @@ export class Tower {
       this.cooldown = this.fireInterval();
       this.fireSplash();
       if (this.stats.doubleFire) {
-        this.scene.time.delayedCall(120, () => {
-          if (this.enemiesInRange().length > 0) this.fireSplash();
-        });
+        this.timers.push(
+          this.scene.time.delayedCall(120, () => {
+            if (!this.destroyed && this.frozenRemaining <= 0 && this.enemiesInRange().length > 0) {
+              this.fireSplash();
+            }
+          }),
+        );
       }
       return [];
     }
@@ -504,10 +402,7 @@ export class Tower {
 
   private dealHit(enemy: Enemy): void {
     audio.sfx('hit');
-    enemy.takeDamage(
-      Math.round(this.stats.damage * this.damageMultiplier()),
-      this.id,
-    );
+    enemy.takeDamage(Math.round(this.stats.damage), this.id);
     if (this.stats.slowOnHit) {
       enemy.applySlow(this.stats.slowFactor, this.stats.slowDuration);
     }
@@ -595,10 +490,7 @@ export class Tower {
     }
     for (const enemy of this.enemiesInRange()) {
       if (this.stats.damage > 0) {
-        enemy.takeDamage(
-          Math.round(this.stats.damage * this.damageMultiplier()),
-          this.id,
-        );
+        enemy.takeDamage(Math.round(this.stats.damage), this.id);
       }
       enemy.knockback(this.knockbackTiles);
     }
@@ -635,11 +527,11 @@ export class Tower {
   }
 
   destroy(): void {
-    this.stopReadyShimmer();
+    this.destroyed = true;
+    this.timers.forEach((t) => t.remove(false));
+    this.timers.length = 0;
     this.container.destroy();
     this.rangeCircle.destroy();
-    this.cooldownArc.destroy();
-    this.readyRing.destroy();
     this.pips.forEach((p) => p.destroy());
   }
 }
