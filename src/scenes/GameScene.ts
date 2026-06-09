@@ -740,11 +740,31 @@ export class GameScene extends Phaser.Scene {
 
     const border = this.add
       .rectangle(offsetX + mapW / 2, offsetY + mapH / 2, mapW, mapH)
-      .setStrokeStyle(2, 0xffffff, 0.15);
+      .setStrokeStyle(2, 0xffffff, 0.12);
     this.layers.tiles.add(border);
 
+    this.drawBoardVignette(layout);
     this.drawLaneMarkers(layout);
     this.drawSinger(layout);
+  }
+
+  /** Neon-noir mood: darken the board edges so the lit lanes pop in the middle. */
+  private drawBoardVignette(layout: GridLayout): void {
+    const { mapW, mapH, offsetX, offsetY } = layout;
+    const g = this.add.graphics({ x: offsetX, y: offsetY });
+    const vY = mapH * 0.16;
+    const vX = mapW * 0.08;
+    // Top / bottom.
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.55, 0.55, 0, 0);
+    g.fillRect(0, 0, mapW, vY);
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0, 0.55, 0.55);
+    g.fillRect(0, mapH - vY, mapW, vY);
+    // Left / right.
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.45, 0, 0.45, 0);
+    g.fillRect(0, 0, vX, mapH);
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0.45, 0, 0.45);
+    g.fillRect(mapW - vX, 0, vX, mapH);
+    this.layers.tiles.add(g);
   }
 
   /**

@@ -102,6 +102,11 @@ export class Enemy {
 
     const children: Phaser.GameObjects.GameObject[] = [];
 
+    // A soft ground shadow grounds the silhouette (drawn behind everything).
+    children.push(
+      scene.add.ellipse(0, bodySize * 0.42, bodySize * 0.62, bodySize * 0.22, 0x000000, 0.32),
+    );
+
     // Bosses get a soft pulsing aura behind the silhouette in their own color.
     if (type.boss) {
       const aura = scene.add

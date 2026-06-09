@@ -34,6 +34,7 @@ export const TX = {
   buildPlus: 'kf-build-plus', // green "+" + tower-base shadow on a faint green wash
   lanePill: 'kf-lane-pill', // dark rounded badge behind a lane number
   portrait: 'kf-portrait', // grayscale VN bust, tinted to a story character
+  glow: 'kf-glow', // soft white radial, tinted + ADD-blended for neon glows/shadows
   curtain: 'kf-curtain',
   spotlight: 'kf-spotlight',
   singer: 'kf-singer',
@@ -60,6 +61,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TX.tileStage)) return;
   generateTileTextures(scene);
   generateTileAccentTextures(scene);
+  generateGlowTexture(scene);
   generatePortraitTexture(scene);
   generateStageTextures(scene);
   generateTowerTextures(scene);
@@ -118,8 +120,14 @@ function generateTileTextures(scene: Phaser.Scene): void {
   g.clear();
   g.fillStyle(BASE, 1);
   g.fillRect(0, 0, R, R);
-  g.fillStyle(SHADOW, 0.18);
+  g.fillStyle(SHADOW, 0.16);
   for (let y = 5; y < R; y += 8) g.fillRect(0, y, R, 3); // carpet weave bands
+  // Lengthwise runner depth: darken the top + bottom edges, leaving a lit
+  // central band so the lane reads as a recessed runner under the footlights.
+  g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.4, 0.4, 0, 0);
+  g.fillRect(0, 0, R, R * 0.5);
+  g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.4, 0.4);
+  g.fillRect(0, R * 0.5, R, R * 0.5);
   frame();
   g.generateTexture(TX.tileAisle, R, R);
 
@@ -130,15 +138,19 @@ function generateTileTextures(scene: Phaser.Scene): void {
   g.clear();
   g.fillStyle(0x707074, 1); // darker base — seating area reads dimmer/recessed
   g.fillRect(0, 0, R, R);
+  // Top-lit gradient: a touch brighter at the top, sinking to shadow at the
+  // bottom, so each buildable tile reads as a recessed booth.
+  g.fillGradientStyle(0xffffff, 0xffffff, 0x000000, 0x000000, 0.06, 0.06, 0.34, 0.34);
+  g.fillRect(0, 0, R, R);
   const seatW = 12;
   const seatH = 9;
   const gap = 4;
   for (let row = 0; row < 2; row++) {
     const sy = 12 + row * (seatH + 12);
     for (let sx = 6; sx + seatW <= R - 4; sx += seatW + gap) {
-      g.fillStyle(0x3a3a40, 0.9);
+      g.fillStyle(0x2e2e34, 0.9);
       g.fillRoundedRect(sx + 1, sy + 2, seatW, seatH, 3); // seat shadow
-      g.fillStyle(LIGHT, 0.5);
+      g.fillStyle(LIGHT, 0.42);
       g.fillRoundedRect(sx, sy, seatW, seatH - 2, 3); // seat back highlight
     }
   }
@@ -163,13 +175,13 @@ function generateTileAccentTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
   const R = TILE_RES;
 
-  // Aisle accent: two gold "<" chevrons pointing LEFT (enemy travel direction)
-  // plus brighter cream divider lines along the top + bottom edges (the bright
-  // lane dividers between stacked aisles).
+  // Aisle accent: two gold "<" chevrons pointing LEFT (enemy travel direction),
+  // kept low-alpha so the lane reads as a runner rather than a row of arrows,
+  // plus soft cream divider lines along the top + bottom edges.
   g.clear();
   const chevron = (cx: number, alpha: number) => {
-    const half = 11; // vertical reach
-    const w = 9; // horizontal depth of the "<"
+    const half = 10; // vertical reach
+    const w = 8; // horizontal depth of the "<"
     g.lineStyle(4, GOLD, alpha);
     g.beginPath();
     g.moveTo(cx + w, R / 2 - half);
@@ -177,25 +189,23 @@ function generateTileAccentTextures(scene: Phaser.Scene): void {
     g.lineTo(cx + w, R / 2 + half);
     g.strokePath();
   };
-  chevron(R * 0.34, 0.5);
-  chevron(R * 0.52, 0.28);
-  g.fillStyle(CREAM, 0.55);
-  g.fillRect(0, 0, R, 3); // top lane divider
-  g.fillRect(0, R - 3, R, 3); // bottom lane divider
+  chevron(R * 0.36, 0.26);
+  chevron(R * 0.54, 0.13);
+  g.fillStyle(CREAM, 0.32);
+  g.fillRect(0, 0, R, 2); // top lane divider
+  g.fillRect(0, R - 2, R, 2); // bottom lane divider
   g.generateTexture(TX.aisleArrow, R, R);
 
-  // Build accent: a faint green wash, a soft tower-base shadow, and a rounded
-  // green "+" centered — "something will go here".
+  // Build accent: deliberately quiet so the board isn't a sea of markers. A
+  // faint inset frame + a small dim center pip hint "placeable"; the full green
+  // build overlay only appears when you tap a tile (TowerManager.showBuildOverlay).
   g.clear();
-  g.fillStyle(GREEN, 0.1);
-  g.fillRect(0, 0, R, R);
-  g.fillStyle(0x000000, 0.16);
-  g.fillEllipse(R / 2, R / 2 + 9, 26, 11); // tower-base shadow
-  const t = 5; // arm thickness
-  const arm = 18; // arm length
-  g.fillStyle(GREEN, 0.55);
-  g.fillRoundedRect(R / 2 - arm / 2, R / 2 - t / 2, arm, t, 2);
-  g.fillRoundedRect(R / 2 - t / 2, R / 2 - arm / 2, t, arm, 2);
+  g.lineStyle(1, GREEN, 0.16);
+  g.strokeRoundedRect(5.5, 5.5, R - 11, R - 11, 6); // faint inset frame
+  g.fillStyle(GREEN, 0.22);
+  g.fillCircle(R / 2, R / 2, 2.4); // tiny center pip
+  g.fillStyle(GREEN, 0.08);
+  g.fillCircle(R / 2, R / 2, 6); // soft halo around the pip
   g.generateTexture(TX.buildPlus, R, R);
 
   // Lane pill: a dark, semi-transparent rounded badge sized for a single digit.
@@ -206,6 +216,27 @@ function generateTileAccentTextures(scene: Phaser.Scene): void {
   g.strokeRoundedRect(0.5, 0.5, 35, 25, 9);
   g.generateTexture(TX.lanePill, 36, 26);
 
+  g.destroy();
+}
+
+// --- Section 1b2: soft radial glow -----------------------------------------
+//
+// One white radial fade, tinted + (usually) ADD-blended at use-time for neon
+// glows behind towers, projectile/impact flashes, menu light pools, etc. Also
+// re-used dark + normal-blend as a soft ground shadow.
+
+function generateGlowTexture(scene: Phaser.Scene): void {
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const S = 64;
+  const c = S / 2;
+  g.clear();
+  // Stacked translucent circles fake a smooth radial falloff (white core out).
+  for (let i = 0; i < 12; i++) {
+    const t = i / 11;
+    g.fillStyle(0xffffff, 0.10 * (1 - t) + 0.01);
+    g.fillCircle(c, c, c * (1 - t));
+  }
+  g.generateTexture(TX.glow, S, S);
   g.destroy();
 }
 
@@ -353,14 +384,21 @@ function generateTowerTextures(scene: Phaser.Scene): void {
 
   const base = (color: number) => {
     g.clear();
-    g.fillStyle(0x14141c, 1);
+    // Dark outer body.
+    g.fillStyle(0x0e0e16, 1);
     g.fillRoundedRect(2, 2, R - 4, R - 4, 11);
-    g.fillStyle(0x262631, 1);
-    g.fillRoundedRect(4, 4, R - 8, R * 0.6, 9); // lighter upper face
-    g.fillStyle(0xffffff, 0.06);
-    g.fillRoundedRect(7, 6, R - 14, 9, 6); // top sheen
-    g.lineStyle(3, color, 0.95);
-    g.strokeRoundedRect(2, 2, R - 4, R - 4, 11);
+    // Top-lit → shadowed-bottom gradient face for depth.
+    g.fillGradientStyle(0x363650, 0x363650, 0x161620, 0x161620, 1, 1, 1, 1);
+    g.fillRoundedRect(4, 4, R - 8, R - 8, 9);
+    // Faint inner rim in the tower's color (neon bleed).
+    g.lineStyle(6, color, 0.13);
+    g.strokeRoundedRect(6, 6, R - 12, R - 12, 8);
+    // Top sheen.
+    g.fillStyle(0xffffff, 0.09);
+    g.fillRoundedRect(7, 6, R - 14, 10, 6);
+    // Crisp color border.
+    g.lineStyle(3, color, 1);
+    g.strokeRoundedRect(2.5, 2.5, R - 5, R - 5, 11);
   };
 
   // Lead Singer: figure + mic under a small spotlight.

@@ -119,11 +119,20 @@ export class Tower {
     this.layers.range.add(this.rangeCircle);
 
     const size = Math.floor(ts * 0.9);
-    // Drawn tower sprite (instrument/performer silhouette on a dark base).
+    // A soft ground shadow + a neon rim-glow in the tower's color sit behind the
+    // drawn sprite (instrument/performer silhouette on a dark base) for depth.
+    const shadow = scene.add
+      .ellipse(0, size * 0.44, size * 0.74, size * 0.26, 0x000000, 0.38);
+    const glow = scene.add
+      .image(0, 0, TX.glow)
+      .setDisplaySize(size * 1.7, size * 1.7)
+      .setTint(type.color)
+      .setAlpha(0.45)
+      .setBlendMode(Phaser.BlendModes.ADD);
     this.body = scene.add
       .sprite(0, 0, towerTextureKey(type.key))
       .setDisplaySize(size, size);
-    this.container = scene.add.container(this.worldX, this.worldY, [this.body]);
+    this.container = scene.add.container(this.worldX, this.worldY, [shadow, glow, this.body]);
     this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
