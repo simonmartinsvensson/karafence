@@ -127,9 +127,9 @@ export class Tower {
       .ellipse(0, size * 0.44, size * 0.74, size * 0.26, 0x000000, 0.38);
     this.glow = scene.add
       .image(0, 0, TX.glow)
-      .setDisplaySize(size * 1.7, size * 1.7)
+      .setDisplaySize(size * 1.8, size * 1.8)
       .setTint(type.color)
-      .setAlpha(0.45)
+      .setAlpha(0.6)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.body = scene.add
       .sprite(0, 0, towerTextureKey(type.key))
