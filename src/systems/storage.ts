@@ -79,6 +79,9 @@ export function loadMeta(): MetaProgress {
   return {
     stars: { ...base.stars, ...saved.stars },
     upgrades: { ...base.upgrades, ...saved.upgrades },
+    towerLevels: { ...base.towerLevels, ...saved.towerLevels },
+    unlockedTowers: { ...base.unlockedTowers, ...saved.unlockedTowers },
+    unlocks: { ...base.unlocks, ...saved.unlocks },
     lifetime: { ...base.lifetime, ...saved.lifetime },
   };
 }

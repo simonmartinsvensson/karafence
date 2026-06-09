@@ -1,11 +1,11 @@
 import type { BossKind, EnemyTypeKey } from './enemies';
 
 /**
- * Data-driven wave definitions. Each wave is a sequence of spawn groups; each
- * group spawns `count` enemies of `type`, `delay` ms apart. After a wave is
- * fully cleared, the manager waits `delayBeforeNext` ms before the next wave.
- *
- * Spawned enemies are spread across the lanes round-robin by the WaveManager.
+ * Waves are generated from a per-level `WaveProfile` (carried on each campaign
+ * map; endless uses `ENDLESS_PROFILE`). A profile drives how many waves the
+ * level has, how many enemies each wave spawns, how fast hp/speed scale, which
+ * enemy types appear, and how often a boss arrives. This keeps the whole
+ * difficulty curve data-driven and tunable in one place.
  */
 
 export interface SpawnGroup {
@@ -13,41 +13,47 @@ export interface SpawnGroup {
   count: number;
   /** Milliseconds between spawns within this group. */
   delay: number;
-  /** Boss groups set this so count/hp/speed are NOT difficulty-scaled. */
+  /** Boss / fixed-count groups set this so count is not re-derived. */
   noScale?: boolean;
 }
 
 export interface WaveDef {
   groups: SpawnGroup[];
-  /** Milliseconds after this wave is cleared before the next wave starts. */
-  delayBeforeNext: number;
 }
 
-/**
- * Per-wave difficulty scaling (wave index w, 0-based): each later wave spawns
- * more, faster, tougher enemies.
- */
-export const DIFFICULTY = {
-  hpPerWave: 0.12,
-  speedPerWave: 0.05,
-  countPerWave: 0.15,
-};
-
-export function scaledCount(base: number, waveIndex: number): number {
-  return Math.round(base * (1 + DIFFICULTY.countPerWave * waveIndex));
+export interface WaveProfile {
+  /** Number of waves in the level (endless: a large finite cap, looped forever). */
+  waveCount: number;
+  /** Enemies in wave 1, before per-wave growth. */
+  baseCount: number;
+  /** Extra enemies per wave index. */
+  countPerWave: number;
+  /** Enemy hp scale slope: hp ×(1 + index·hpPerWave). */
+  hpPerWave: number;
+  /** Enemy speed scale slope, capped at `speedCap`. */
+  speedPerWave: number;
+  speedCap: number;
+  /** A boss every N waves (0 = no bosses). */
+  bossEvery: number;
+  /** Extra hp per boss appearance (Nth boss = ×(1 + N·bossHpPerCycle)). */
+  bossHpPerCycle: number;
+  /** Standard enemies this level draws from (distributed/rotated per wave). */
+  enemyPool: EnemyTypeKey[];
+  /** Milliseconds between spawns within a wave. */
+  spawnDelay: number;
 }
 
-/**
- * Endless-mode tuning (used by `WaveManager.generateWave` once play runs past
- * the authored waves). Data-driven so the survival curve is easy to tune:
- *   enemyCount = baseCount + floor(waveIndex * countPerWave)
- *   hpScale    = 1 + waveIndex * hpPerWave
- *   speedScale = min(speedCap, 1 + waveIndex * speedPerWave)
- *   a boss every `bossEvery` waves, rotating through `BOSS_ROTATION` and
- *   gaining `bossHpPerCycle` extra HP each time the rotation comes back around.
- * (`waveIndex` is 0-based, matching the authored-wave indexing.)
- */
-export const ENDLESS = {
+/** Boss personas cycled through on each boss wave. */
+export const BOSS_ROTATION: BossKind[] = [
+  'hecklerKing',
+  'micGrabber',
+  'djWontStop',
+  'talentJudge',
+];
+
+/** Endless mode: never really ends; ramps forever on a standard map. */
+export const ENDLESS_PROFILE: WaveProfile = {
+  waveCount: 999,
   baseCount: 6,
   countPerWave: 1.4,
   hpPerWave: 0.12,
@@ -55,7 +61,6 @@ export const ENDLESS = {
   speedCap: 2.5,
   bossEvery: 5,
   bossHpPerCycle: 0.15,
-  /** Standard enemies endless waves draw from (rotated by wave). */
   enemyPool: [
     'heckler',
     'phoneScroller',
@@ -64,165 +69,47 @@ export const ENDLESS = {
     'critic',
     'superfan',
     'vip',
-  ] as EnemyTypeKey[],
-  /** Boss personas cycled through on each boss wave. */
-  bossRotation: ['hecklerKing', 'micGrabber', 'djWontStop', 'talentJudge'] as BossKind[],
+  ],
+  spawnDelay: 420,
 };
 
-/** A boss group never scales (one boss, fixed stats). */
-const boss = (type: EnemyTypeKey): SpawnGroup => ({
-  type,
-  count: 1,
-  delay: 0,
-  noScale: true,
-});
+/** Per-wave hp / speed / boss-hp scaling derived from a profile (0-based index). */
+export function waveScaling(
+  index: number,
+  profile: WaveProfile,
+): { hpScale: number; speedScale: number; bossHpScale: number } {
+  const bossNumber = profile.bossEvery > 0 ? Math.floor((index + 1) / profile.bossEvery) : 0;
+  return {
+    hpScale: 1 + profile.hpPerWave * index,
+    speedScale: Math.min(profile.speedCap, 1 + profile.speedPerWave * index),
+    bossHpScale: 1 + profile.bossHpPerCycle * Math.max(0, bossNumber - 1),
+  };
+}
 
-export const WAVES: WaveDef[] = [
-  // 1
-  { groups: [{ type: 'heckler', count: 6, delay: 900 }], delayBeforeNext: 0 },
-  // 2
-  {
-    groups: [
-      { type: 'heckler', count: 6, delay: 700 },
-      { type: 'phoneScroller', count: 3, delay: 1300 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 3
-  {
-    groups: [
-      { type: 'drunkUncle', count: 8, delay: 500 },
-      { type: 'phoneScroller', count: 4, delay: 1100 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 4 — introduces Stage Rushers + Critics
-  {
-    groups: [
-      { type: 'heckler', count: 8, delay: 450 },
-      { type: 'stageRusher', count: 5, delay: 600 },
-      { type: 'critic', count: 2, delay: 1500 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 5 — BOSS: The Heckler King
-  {
-    groups: [{ type: 'heckler', count: 4, delay: 700 }, boss('hecklerKing')],
-    delayBeforeNext: 0,
-  },
-  // 6
-  {
-    groups: [
-      { type: 'stageRusher', count: 8, delay: 450 },
-      { type: 'critic', count: 3, delay: 1400 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 7 — introduces Superfans
-  {
-    groups: [
-      { type: 'superfan', count: 4, delay: 1600 },
-      { type: 'phoneScroller', count: 5, delay: 900 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 8 — introduces VIPs
-  {
-    groups: [
-      { type: 'vip', count: 4, delay: 1400 },
-      { type: 'heckler', count: 10, delay: 400 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 9
-  {
-    groups: [
-      { type: 'drunkUncle', count: 10, delay: 400 },
-      { type: 'superfan', count: 3, delay: 1800 },
-      { type: 'critic', count: 3, delay: 1200 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 10 — BOSS: The Mic Grabber
-  {
-    groups: [{ type: 'stageRusher', count: 5, delay: 500 }, boss('micGrabber')],
-    delayBeforeNext: 0,
-  },
-  // 11
-  {
-    groups: [
-      { type: 'vip', count: 5, delay: 1200 },
-      { type: 'phoneScroller', count: 6, delay: 800 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 12
-  {
-    groups: [
-      { type: 'superfan', count: 5, delay: 1400 },
-      { type: 'stageRusher', count: 8, delay: 450 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 13
-  {
-    groups: [
-      { type: 'critic', count: 4, delay: 1100 },
-      { type: 'vip', count: 4, delay: 1200 },
-      { type: 'heckler', count: 12, delay: 350 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 14
-  {
-    groups: [
-      { type: 'drunkUncle', count: 12, delay: 350 },
-      { type: 'superfan', count: 4, delay: 1600 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 15 — BOSS: The DJ Who Wouldn't Stop
-  {
-    groups: [{ type: 'heckler', count: 6, delay: 500 }, boss('djWontStop')],
-    delayBeforeNext: 0,
-  },
-  // 16
-  {
-    groups: [
-      { type: 'vip', count: 6, delay: 1000 },
-      { type: 'stageRusher', count: 10, delay: 400 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 17
-  {
-    groups: [
-      { type: 'superfan', count: 6, delay: 1300 },
-      { type: 'critic', count: 4, delay: 1000 },
-      { type: 'phoneScroller', count: 6, delay: 800 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 18
-  {
-    groups: [
-      { type: 'vip', count: 6, delay: 1000 },
-      { type: 'drunkUncle', count: 12, delay: 350 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 19
-  {
-    groups: [
-      { type: 'superfan', count: 6, delay: 1200 },
-      { type: 'vip', count: 6, delay: 1000 },
-      { type: 'critic', count: 5, delay: 900 },
-    ],
-    delayBeforeNext: 0,
-  },
-  // 20 — FINAL BOSS: The Talent Show Judge
-  {
-    groups: [{ type: 'vip', count: 3, delay: 900 }, boss('talentJudge')],
-    delayBeforeNext: 0,
-  },
-];
+/**
+ * Build the spawn groups for one wave from a profile. Enemy count grows with the
+ * wave; the count is spread across 2-3 pool types (rotated by wave so later
+ * waves mix different crowds); a rotating boss arrives every `bossEvery` waves.
+ */
+export function buildWaveDef(index: number, profile: WaveProfile): WaveDef {
+  const waveNumber = index + 1;
+  const total = Math.max(1, profile.baseCount + Math.floor(index * profile.countPerWave));
+  const pool = profile.enemyPool.length > 0 ? profile.enemyPool : (['heckler'] as EnemyTypeKey[]);
+
+  const typeCount = Math.min(pool.length, 2 + (index % 2));
+  const per = Math.max(1, Math.floor(total / typeCount));
+  const groups: SpawnGroup[] = [];
+  let remaining = total;
+  for (let i = 0; i < typeCount; i++) {
+    const type = pool[(index + i) % pool.length];
+    const count = i === typeCount - 1 ? remaining : Math.min(per, remaining);
+    remaining -= count;
+    if (count > 0) groups.push({ type, count, delay: profile.spawnDelay, noScale: true });
+  }
+
+  if (profile.bossEvery > 0 && waveNumber % profile.bossEvery === 0) {
+    const which = (waveNumber / profile.bossEvery - 1) % BOSS_ROTATION.length;
+    groups.push({ type: BOSS_ROTATION[which], count: 1, delay: 0, noScale: true });
+  }
+  return { groups };
+}

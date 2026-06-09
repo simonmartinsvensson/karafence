@@ -18,25 +18,6 @@ export type TowerTypeKey =
   | 'bassPlayer'
   | 'hypeMan';
 
-/** Identifier for each tower's one active (cooldown-gated) ability. */
-export type AbilityKey =
-  | 'powerNote'
-  | 'drumRoll'
-  | 'chordBomb'
-  | 'choirBoost'
-  | 'dropTheBass'
-  | 'crowdSurf';
-
-/** An active ability triggered from the tower's upgrade panel. */
-export interface TowerAbility {
-  key: AbilityKey;
-  name: string;
-  /** One-line description for the activate button. */
-  description: string;
-  /** Cooldown in seconds before it can fire again. */
-  cooldown: number;
-}
-
 export interface TowerType {
   key: TowerTypeKey;
   name: string;
@@ -61,8 +42,6 @@ export interface TowerType {
   /** Placeholder icon. */
   icon: string;
   defaultTargeting: TargetingStrategy;
-  /** This tower's active ability. */
-  ability: TowerAbility;
   /**
    * If false, the tower never targets/fires at enemies — it's a support tower
    * whose value is its aura (Backup Singer, Hype Man). Defaults to true.
@@ -92,12 +71,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xfff3bf,
     icon: '🎤',
     defaultTargeting: 'first',
-    ability: {
-      key: 'powerNote',
-      name: 'Power Note',
-      description: 'Massive single-target nuke',
-      cooldown: 18,
-    },
   },
   // Short range, AoE splash damage.
   drummer: {
@@ -112,12 +85,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xffd8a8,
     icon: '🥁',
     defaultTargeting: 'first',
-    ability: {
-      key: 'drumRoll',
-      name: 'Drum Roll',
-      description: '3s stun blast around the drummer',
-      cooldown: 20,
-    },
   },
   // Long range, slow firing, applies a slow debuff.
   keyboardist: {
@@ -134,12 +101,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xc5f6fa,
     icon: '🎹',
     defaultTargeting: 'first',
-    ability: {
-      key: 'chordBomb',
-      name: 'Chord Bomb',
-      description: 'Drops a 10s slow field',
-      cooldown: 22,
-    },
   },
   // Short range support: buffs the attack speed of nearby attacking towers.
   backupSinger: {
@@ -156,12 +117,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     defaultTargeting: 'first',
     attacks: false,
     buffAttackSpeed: 1.4,
-    ability: {
-      key: 'choirBoost',
-      name: 'Choir Boost',
-      description: 'All towers fire 2x for 10s',
-      cooldown: 25,
-    },
   },
   // Medium range: a low-frequency bass blast that knocks enemies back.
   bassPlayer: {
@@ -177,12 +132,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     projectileColor: 0xb197fc,
     icon: '🎸',
     defaultTargeting: 'first',
-    ability: {
-      key: 'dropTheBass',
-      name: 'Drop the Bass',
-      description: 'Knock ALL enemies back 5 tiles',
-      cooldown: 20,
-    },
   },
   // Wide range support: boosts gold + combo for kills in range.
   hypeMan: {
@@ -200,12 +149,6 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
     attacks: false,
     goldBoost: 1.5,
     comboBoost: true,
-    ability: {
-      key: 'crowdSurf',
-      name: 'Crowd Surf',
-      description: 'Next 10 kills pay triple gold',
-      cooldown: 28,
-    },
   },
 };
 

@@ -5,7 +5,10 @@ import type { Enemy } from './Enemy';
 import { Tower } from './Tower';
 import { Projectile } from './Projectile';
 import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
+import type { TowerBonus } from '../data/meta';
 import type { TowerSave } from './storage';
+
+const NO_BONUS: TowerBonus = { damageMult: 1, rangeAdd: 0, attackSpeedMult: 1 };
 
 /**
  * Owns all placed towers and their projectiles. Handles placement validation,
@@ -18,6 +21,8 @@ export class TowerManager {
   private readonly layout: GridLayout;
   private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
+  /** Per-tower permanent meta bonus (RPG leveling), applied at placement. */
+  private readonly towerBonus: (key: TowerTypeKey) => TowerBonus;
 
   private readonly towers = new Map<string, Tower>();
   private readonly projectiles: Projectile[] = [];
@@ -26,12 +31,8 @@ export class TowerManager {
   private overlay: Phaser.GameObjects.GameObject[] = [];
   private overlayTweens: Phaser.Tweens.Tween[] = [];
 
-  /** Global tower damage multiplier (Sound Check power-up sets this to 2). */
-  damageMultiplier = 1;
-  /** Global attack-speed multiplier (Talent Judge phase 3 sets this to 0.5). */
+  /** Global attack-speed multiplier (Talent Judge phase 3 sets this below 1). */
   attackSpeedMultiplier = 1;
-  /** Ability-driven global attack-speed multiplier (Choir Boost sets this to 2). */
-  abilitySpeedMultiplier = 1;
 
   /** Notified when the selected tower changes (null = deselected). */
   onSelectionChange?: (tower: Tower | null) => void;
@@ -42,12 +43,14 @@ export class TowerManager {
     layout: GridLayout,
     enemies: Iterable<Enemy>,
     layers: BoardLayers,
+    towerBonus: (key: TowerTypeKey) => TowerBonus = () => NO_BONUS,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.enemies = enemies;
     this.layers = layers;
+    this.towerBonus = towerBonus;
   }
 
   get selectedTower(): Tower | null {
@@ -85,10 +88,10 @@ export class TowerManager {
       col,
       row,
       this.enemies,
-      () => this.damageMultiplier,
-      () => this.attackSpeedMultiplier * this.abilitySpeedMultiplier,
+      () => this.attackSpeedMultiplier,
       this.layers,
       placementCost,
+      this.towerBonus(typeKey),
     );
     this.towers.set(this.key(col, row), tower);
 

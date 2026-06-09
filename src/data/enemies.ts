@@ -207,9 +207,13 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   },
 };
 
-/** Tuning for boss abilities (driven by GameScene). */
+/**
+ * Tuning for boss abilities (driven by GameScene). Tower-disabling effects are
+ * deliberately mild: combat is pure-passive now, so the player can't actively
+ * counter a freeze/slow — these pressure rather than fully neutralize defenses.
+ */
 export const BOSS_CONFIG = {
-  hecklerKing: { freezeRadiusTiles: 3, freezeDuration: 1.5, tauntInterval: 4 },
+  hecklerKing: { freezeRadiusTiles: 2, freezeDuration: 0.8, tauntInterval: 5 },
   micGrabber: { goldSteal: 10 },
   djWontStop: { spawnInterval: 3, spawnType: 'heckler' as EnemyTypeKey, spawnCount: 2 },
   talentJudge: {
@@ -217,6 +221,6 @@ export const BOSS_CONFIG = {
     phase3Hp: 0.25,
     rusherType: 'stageRusher' as EnemyTypeKey,
     rusherCount: 6,
-    attackSpeedFactor: 0.5,
+    attackSpeedFactor: 0.8,
   },
 };

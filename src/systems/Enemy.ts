@@ -316,14 +316,6 @@ export class Enemy {
     this.pickNextTarget();
   }
 
-  /**
-   * Encore power-up: send the enemy back toward the spawn edge by the distance
-   * it would cover in `seconds`.
-   */
-  rewind(seconds: number): void {
-    this.knockback(this.type.speed * this.speedScale * seconds);
-  }
-
   destroy(): void {
     this.auraTween?.stop();
     this.container.destroy();

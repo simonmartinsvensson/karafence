@@ -1,10 +1,12 @@
 /**
  * Map / lane type definitions.
  *
- * Maps are data-driven: a level is authored as ASCII rows + a legend (see
- * src/data/level1.ts) and parsed into a MapDefinition. This keeps new maps
- * cheap to author — edit the ASCII, get a new level.
+ * Maps are data-driven: a level is authored as ASCII rows + a legend and parsed
+ * into a MapDefinition. The campaign (src/data/campaign.ts) builds 20 of them
+ * from layout templates + a difficulty profile. Edit the table, get new levels.
  */
+
+import type { WaveProfile } from '../data/waves';
 
 export enum TileType {
   /** Stage / singer zone on the left edge. Enemies that reach it deal damage. */
@@ -45,4 +47,8 @@ export interface MapDefinition {
   starGoals: StarGoals;
   /** Flat placeholder tile colors that give the map its look. */
   colors: Record<TileType, number>;
+  /** Gold the player starts the run with (before meta modifiers). */
+  startingGold?: number;
+  /** Drives wave generation for this level (count / scaling / enemy pool / bosses). */
+  waveProfile?: WaveProfile;
 }

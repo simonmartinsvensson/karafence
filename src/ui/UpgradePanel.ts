@@ -8,7 +8,6 @@ export interface UpgradePanelCallbacks {
   onUpgrade: (path: UpgradePathKey) => void;
   onSell: () => void;
   onCycleTarget: () => void;
-  onActivate: () => void;
 }
 
 const ABSORB = (
@@ -19,12 +18,11 @@ const ABSORB = (
 ) => ev?.stopPropagation();
 
 /**
- * Non-modal panel shown when a placed tower is selected. Shows the active
- * ability (with a large Activate / cooldown button), the two upgrade paths
- * (current tier as pips, next-tier label + cost) for towers that have them, a
- * targeting toggle for attacking towers, and a Sell button. Anchored just
- * above the bottom control bar so the Activate button stays within one-thumb
- * reach, sized in CSS pixels with >=44px rows. Rebuilt on every change.
+ * Non-modal panel shown when a placed tower is selected. Shows the two upgrade
+ * paths (current tier as pips, next-tier label + cost) for towers that have
+ * them, a targeting toggle for attacking towers, and a Sell button. Anchored
+ * just above the bottom control bar (one-thumb reach), sized in CSS pixels with
+ * >=44px rows. Rebuilt on every change.
  */
 export class UpgradePanel {
   private container?: Phaser.GameObjects.Container;
@@ -47,8 +45,8 @@ export class UpgradePanel {
     const headerH = TOUCH_MIN;
     const rowH = TOUCH_MIN;
     const showUpgrades = tower.hasUpgrades;
-    // Body rows: ability + (two upgrade paths) + sell.
-    const bodyRows = 1 + (showUpgrades ? 2 : 0) + 1;
+    // Body rows: (two upgrade paths) + sell.
+    const bodyRows = (showUpgrades ? 2 : 0) + 1;
     const h = pad + headerH + (bodyRows + 1) * gap + bodyRows * rowH + pad;
 
     const parts: Phaser.GameObjects.GameObject[] = [];
@@ -101,8 +99,6 @@ export class UpgradePanel {
     }
 
     let y = top + headerH + gap + rowH / 2;
-    parts.push(...this.abilityRow(tower, y, w, cb));
-    y += rowH + gap;
     if (showUpgrades) {
       parts.push(...this.pathRow(tower, 'A', gold, y, w, cb));
       y += rowH + gap;
@@ -138,43 +134,6 @@ export class UpgradePanel {
     // Anchor the panel just above the bottom control bar (one-thumb reach).
     const cy = vh - screen.barH - 8 - h / 2;
     this.container = this.scene.add.container(vw / 2, cy, parts).setDepth(300);
-  }
-
-  /** Big, tap-friendly Activate button — or the remaining cooldown. */
-  private abilityRow(
-    tower: Tower,
-    y: number,
-    w: number,
-    cb: UpgradePanelCallbacks,
-  ): Phaser.GameObjects.GameObject[] {
-    const ability = tower.type.ability;
-    const ready = tower.abilityReady;
-    const row = this.scene.add
-      .rectangle(0, y, w - 20, TOUCH_MIN, ready ? 0x3a2150 : 0x232336)
-      .setStrokeStyle(2, ready ? 0xd0bfff : 0x444455, ready ? 1 : 0.9);
-    if (ready) {
-      row.setInteractive({ useHandCursor: true });
-      row.on('pointerdown', (
-        _p: Phaser.Input.Pointer,
-        _x: number,
-        _y: number,
-        ev?: Phaser.Types.Input.EventData,
-      ) => {
-        ev?.stopPropagation();
-        cb.onActivate();
-      });
-    }
-    const text = ready
-      ? `⚡ ${ability.name} — ACTIVATE`
-      : `⏳ ${ability.name} — ${tower.abilityCooldownLeft}s`;
-    const label = this.scene.add
-      .text(0, y, text, {
-        fontFamily: 'monospace',
-        fontSize: '13px',
-        color: ready ? '#e5dbff' : '#9aa0b0',
-      })
-      .setOrigin(0.5);
-    return [row, label];
   }
 
   private pathRow(

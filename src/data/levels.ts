@@ -1,17 +1,20 @@
 import type { MapDefinition } from '../types/map';
-import { level1 } from './level1';
-import { level2 } from './level2';
+import { CAMPAIGN, ENDLESS_LEVEL, buildMap } from './campaign';
 
-/** Stable identifiers for each playable level (also the meta/save keys). */
-export type LevelId = 'level1' | 'level2';
+/**
+ * Level registry, derived from the single campaign source (`campaign.ts`) plus
+ * the standalone endless map. `LevelId` is just the string id of a built map.
+ */
+export type LevelId = string;
 
-/** Levels in level-select order. */
-export const LEVELS: { id: LevelId; map: MapDefinition }[] = [
-  { id: 'level1', map: level1 },
-  { id: 'level2', map: level2 },
-];
+const ALL = [...CAMPAIGN, ENDLESS_LEVEL];
 
-export const LEVEL_BY_ID: Record<LevelId, MapDefinition> = {
-  level1,
-  level2,
-};
+/** Levels in campaign order (id + built map). */
+export const LEVELS: { id: LevelId; map: MapDefinition }[] = ALL.map((entry) => ({
+  id: entry.id,
+  map: buildMap(entry),
+}));
+
+export const LEVEL_BY_ID: Record<LevelId, MapDefinition> = Object.fromEntries(
+  LEVELS.map((l) => [l.id, l.map]),
+);
