@@ -876,6 +876,22 @@ export class GameScene extends Phaser.Scene {
     this.layers.fx.add(emitter);
     emitter.explode(12);
     this.time.delayedCall(520, () => emitter.destroy());
+
+    // A quick neon glow pop at the kill, in the enemy's color.
+    const pop = this.add
+      .image(x, y, TX.glow)
+      .setDisplaySize(this.layout.tileSize * 0.7, this.layout.tileSize * 0.7)
+      .setTint(color)
+      .setAlpha(0.85)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.layers.fx.add(pop);
+    this.tweens.add({
+      targets: pop,
+      scale: pop.scale * 2.2,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => pop.destroy(),
+    });
   }
 
   // --- HUD (screen-space top strip) ----------------------------------------
@@ -1259,6 +1275,7 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic('boss');
     audio.sfx('bossEntrance');
     this.cameras.main.shake(450, 0.012);
+    this.cameras.main.flash(320, 120, 12, 30); // dark-red menace wash
   }
 
   private showBossBar(boss: Enemy): void {

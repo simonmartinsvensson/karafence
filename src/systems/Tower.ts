@@ -412,6 +412,7 @@ export class Tower {
           (t) => this.onProjectileHit(t),
           this.layers.projectiles,
           size,
+          this.type.projectileColor,
         ),
     );
   }

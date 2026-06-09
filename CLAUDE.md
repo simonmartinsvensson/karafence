@@ -316,17 +316,23 @@ swapped for real imported textures later by changing only what
   `Enemy` (so the slow/deflect `setTint` flashes still work). Bosses add a
   separate pulsing **aura** circle (color per `BOSS_AURA`) behind the silhouette.
 - **Baked tile accents** (`TX.aisleArrow/buildPlus/lanePill`) are drawn in their
-  **real** gold/green colors (NOT tinted) and overlaid on tiles in
-  `GameScene.drawMap`, so the readability cues survive any palette: aisles get a
-  gold left-chevron (enemy travel direction) + cream lane-divider lines;
-  buildable tiles get a green "+" tower-base cue on a faint green wash. Lane
-  numbers (`drawLaneMarkers`) sit in `TX.lanePill` dark badges (white digit).
-  The aisle/build palette (`DEFAULT_COLORS` in `parseMap`) is a saturated
-  red-brown vs. a dark slate-green so the two surfaces read as distinct.
-- **Towers** (`towerTextureKey`) are instrument/performer silhouettes on a dark
-  base; `Tower.body` is a `Sprite` (the Heckler-King freeze tints it blue).
-  **Projectiles** are spun textures (note / music-wave), with the drummer's
-  drumsticks + bass pulse rings drawn in `Tower`.
+  **real** colors (NOT tinted) and overlaid on tiles in `GameScene.drawMap`:
+  aisles get faint gold left-chevrons + cream dividers and a lengthwise
+  runner-depth gradient; buildable tiles are quiet (a faint inset frame + a dim
+  green pip — the loud full green cue only appears on tap via
+  `TowerManager.showBuildOverlay`). `drawMap` also lays a board-edge **vignette**.
+  Lane numbers sit in `TX.lanePill` dark badges. The aisle/build palette
+  (`DEFAULT_COLORS`) is saturated red-brown vs. dark slate-green.
+- **Neon-noir polish** uses one soft-radial **`TX.glow`** texture, tinted +
+  ADD-blended: a colour rim-glow + ground shadow behind every tower (`Tower`),
+  ground shadows under enemies (`Enemy`), projectile glow + impact flash
+  (`Projectile`), neon death pops (`GameScene.deathBurst`), a boss-spawn camera
+  flash, and the menu's stage-light pools / drifting motes / card glows
+  (`MenuScene.drawMenuBackground`).
+- **Towers** (`towerTextureKey`) are instrument/performer silhouettes on a
+  gradient-shaded dark base with a neon colour border; `Tower.body` is a `Sprite`
+  (the Heckler-King freeze tints it blue). **Projectiles** are spun textures
+  (note / music-wave), with the drummer's drumsticks + bass pulse rings in `Tower`.
 - **Story portrait** (`TX.portrait`) — a grayscale visual-novel bust tinted per
   character by the `DialogueOverlay`.
 - **Stage**: a curtain backdrop, spotlight cone and singer figure
