@@ -61,8 +61,8 @@ Defined in `src/main.ts`:
 The whole game is playable on Android Chrome in both orientations.
 
 - `computeScreenLayout(vw, vh)` (`src/systems/grid.ts`) splits the live viewport
-  into a top **HUD strip**, a bottom **control bar** (the one-thumb Menu / Shop /
-  Fast Forward buttons), and the **board region** between them.
+  into a top **HUD strip**, a bottom **control bar** (the one-thumb Pause /
+  Speed / Fast Forward buttons), and the **board region** between them.
 - **Board container**: the lane grid is built once at a fixed board-local tile
   size (`BOARD_TILE` in `config.ts`) into a `board` container with ordered
   z-`layers` (`BoardLayers`: tiles/range/enemies/towers/projectiles/fx). Every
@@ -75,7 +75,7 @@ The whole game is playable on Android Chrome in both orientations.
   end overlays) lives in scene root in viewport coordinates and reflows in
   `GameScene.relayout()` / `MenuScene.rebuild()` on every `resize` event.
 - **Touch targets**: `TOUCH_MIN` (44px) is the floor for every interactive
-  control; the build/upgrade/shop panels (`src/ui/*`) and both scenes size their
+  control; the build/upgrade panels (`src/ui/*`) and both scenes size their
   buttons/rows to at least that and center on the viewport. The UpgradePanel is
   anchored just above the control bar so Activate stays within thumb reach.
 
@@ -89,10 +89,12 @@ BootScene  →  MenuScene  ⇄  GameScene
 - **MenuScene** (`src/scenes/MenuScene.ts`) is the **mode-select** landing screen
   (see "Game modes"): a neon **KARAFENCE** wordmark and two large mode cards
   (**Endless** / **Story**, each with **Play / New Game** + **Resume** when a run
-  is saved), a **Meta Upgrades** modal to spend earned stars, and a **Records**
-  modal (lifetime stats + best endless wave). Reads the persisted meta fresh on
-  each entry; `startMode()` persists the chosen mode and hands the right
-  `{ mode, levelId, resume }` to the GameScene.
+  is saved), an **Upgrades** modal (tabbed: global tree + per-tower **Towers** tab
+  + the 2× unlock) to spend stars, a **Levels** grid (20 chapters, stars + lock)
+  to replay any unlocked level, and a **Records** modal (lifetime stats + best
+  endless wave). Reads the persisted meta fresh on each entry; `startMode()` /
+  `playLevel()` persist the chosen mode and hand `{ mode, levelId, resume }` to
+  the GameScene.
 - **GameScene** (`src/scenes/GameScene.ts`) renders the lane grid + stage and
   orchestrates gameplay. It takes `{ mode, levelId, resume }` via `init()` (which
   also resets all per-run state, since Phaser reuses the scene instance), loads
@@ -104,30 +106,48 @@ BootScene  →  MenuScene  ⇄  GameScene
 
 Two modes, picked on the mode-select screen and persisted (`karafence:mode`);
 `GameMode` lives in `src/data/modes.ts` (`MODES` also drives the menu cards).
+Combat is **pure passive** in both modes — towers auto-attack; there are no
+per-tower active abilities and no shop power-ups (see "Towers / combat").
 
-- **Endless** (`src/data/modes.ts`, `ENDLESS` in `src/data/waves.ts`) — survival
-  on The Dive Bar. After the 20 authored waves, `WaveManager.generateWave(index)`
-  builds waves procedurally: `count = baseCount + floor(index·1.4)`, `hp = 1 +
-  index·0.12`, `speed = min(2.5, 1 + index·0.04)`, a rotating boss every 5 waves
-  that gets tougher each cycle (`bossHpScale`). No win condition / no stars; game
-  over shows a **"YOU SURVIVED X WAVES"** screen (run kills / gold / combo, best
-  wave) with **Try Again** + **Menu**, and banks the best to `karafence:endless:best`.
-- **Story** (`src/data/story.ts`) — a campaign across both maps (Dive Bar →
-  Grand Stage) with character dialogue. Star ratings still apply per chapter.
-  After a wave clears, `GameScene` looks up `beatsAfterWave(levelId, n)` and plays
-  any matching beats through the **DialogueOverlay** (`src/ui/DialogueOverlay.ts`)
-  during the intermission (the countdown holds while a beat is on screen); the
-  `waveAfter: 0` beat plays at chapter start (wave 1 is deferred until it's
-  dismissed). Clearing wave 20 scores stars, shows a **Chapter Complete** screen
-  and `scene.restart`s into the next chapter — or, on the last chapter, the final
-  **victory** screen. Progress persists to `karafence:story:progress`
-  (`{ levelId, completedChapters, wavesCleared }`).
+- **Story** — a **20-level campaign** (`src/data/campaign.ts`). Level 1
+  ("The Garage") is a guided tutorial; difficulty ramps to "World Finals". A
+  fresh run opens a **planning phase** with a manual **▶ Start Wave 1** button
+  (build first, no timer); resume goes straight in. Between waves, `GameScene`
+  plays any `beatsAfterWave(levelId, n)` beats through the **DialogueOverlay**
+  (`src/ui/DialogueOverlay.ts`) during the intermission (the countdown holds while
+  a beat is on screen); the `waveAfter: 0` beat plays at chapter start (wave 1
+  deferred until dismissed). Clearing the level scores stars, shows a **Chapter
+  Complete** screen and `scene.restart`s into the next chapter — or, on the last,
+  the final **victory** screen. Progress persists to `karafence:story:progress`
+  (`{ levelId, completedChapters, wavesCleared }`); the menu's **Levels** grid
+  unlocks chapters sequentially.
+- **Endless** — survival on a standalone `'endless'` map with `ENDLESS_PROFILE`
+  (`src/data/waves.ts`): waves never stop, ramping forever (count/hp/speed grow,
+  rotating boss every 5 waves, tougher each cycle). No win / no stars; game over
+  shows a **"YOU SURVIVED X WAVES"** screen (run kills / gold / combo, best wave)
+  with **Try Again** + **Menu**, banking the best to `karafence:endless:best`.
+- **Game speed**: a bottom-bar **1×/2×** toggle scales the manual `dt`,
+  `time.timeScale` (spawn/freeze clock) and `tweens.timeScale` together. It is a
+  **meta unlock** — the button only appears once `speed2x` is bought.
 - **HUD**: the wave counter shows `ENDLESS · Wave X` (no cap) or
-  `STORY · Wave X/20` so the active mode is always legible.
+  `STORY · Wave X/N` so the active mode + progress are always legible.
 - **Dialogue content** is 100% data in `src/data/story.ts` — `CHARACTERS` (ALEX,
-  VY, MAX, THE JUDGE; name + portrait tint) and `STORY_BEATS` keyed by `LevelId`
-  (`{ waveAfter, character, lines }[]`). The portrait is one grayscale
+  VY, MAX, THE JUDGE; name + portrait tint), `STORY_BEATS` keyed by level id,
+  and `CHAPTER_ORDER` (derived from `CAMPAIGN`). The portrait is one grayscale
   `TX.portrait` bust tinted per character (visual-novel style).
+
+## Campaign (src/data/campaign.ts)
+
+The 20 story levels are generated from a single difficulty curve, not hand-painted:
+`CAMPAIGN` is 20 `CampaignLevel` entries (`makeLevel(i)`) carrying lanes, enemy
+speed, starting gold, palette, `starGoals` and a **`WaveProfile`**; `buildMap`
+turns each into a `MapDefinition` via an ASCII layout template (`makeAscii`) +
+`parseMap`. `ENDLESS_LEVEL` is the standalone endless map. Levels unlock
+sequentially. `LevelId` is `string`; `LEVELS`/`LEVEL_BY_ID` (`levels.ts`),
+`defaultMeta().stars`, `CHAPTER_ORDER` and `STORY_BEATS` keys all derive from the
+campaign — add/edit entries in one place. Wave generation is unified under the
+profile (`buildWaveDef`/`waveScaling` in `waves.ts`); `WaveManager` consumes a
+profile (story = finite `waveCount`, endless = infinite).
 
 ## Map / lanes
 
@@ -136,13 +156,13 @@ parsed into a `MapDefinition` by the shared `parseMap` (`src/data/parseMap.ts`):
 
 - `src/types/map.ts` — `TileType` (`stage` / `aisle` / `build`) and
   `MapDefinition` (grid, lane rows, spawn/stage columns, plus `id`,
-  `enemySpeedMultiplier`, `starGoals`, and per-tile `colors`).
-- `src/data/level1.ts` — **"The Dive Bar"**: 16×11 grid, **5 aisles**, normal
-  speed. `src/data/level2.ts` — **"The Grand Stage"**: 16×9 grid (bigger tiles =
-  wider-looking lanes), **3 aisles**, `enemySpeedMultiplier: 1.35`, and a cooler
-  flat palette. `src/data/levels.ts` is the registry (`LevelId`, `LEVELS`,
-  `LEVEL_BY_ID`). Edit/add ASCII to author a map; tile colors come from the map's
-  `colors` (default palette in `parseMap`).
+  `enemySpeedMultiplier`, `starGoals`, per-tile `colors`, and optional
+  `startingGold` + `waveProfile`).
+- Maps are **not** authored as individual files anymore — `src/data/campaign.ts`
+  generates all 20 from the difficulty table via `makeAscii` + `parseMap` (see
+  "Campaign"). `src/data/levels.ts` is the registry (`LevelId`, `LEVELS`,
+  `LEVEL_BY_ID`), derived from `CAMPAIGN` + the endless map. Tile colors come from
+  the map's `colors` (default palette in `parseMap`).
 
 `GameScene` builds the map into the board container at the fixed `BOARD_TILE`
 size, then `fitBoard()` scales + centers that container into the board region
@@ -161,6 +181,13 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   (−5%/tier tower cost), *Crowd Memory* (+0.5s/tier combo window). `metaModifiers`
   turns purchased tiers into the run modifiers `GameScene` applies (starting gold,
   `towerCost()`, `comboWindow`).
+- **RPG meta** (`src/data/meta.ts`, Infinitode-style): permanent **per-tower
+  leveling** (`towerLevels`; `towerBonus` adds +dmg/+range/+rate per level,
+  applied at placement via `TowerManager`→`Tower.baseStats`), **tower unlocks**
+  (`unlockedTowers`; start with Lead Singer + Drummer, the rest cost stars; the
+  BuildPanel only shows unlocked towers), and **feature unlocks** (`unlocks`,
+  e.g. `speed2x`). `starsSpent` accounts for all of these; the menu's
+  **Upgrades** modal has a per-tower **Towers** tab.
 - **Lifetime stats**: total kills, waves survived, highest combo — incremented in
   `GameScene` and persisted at wave-clear / run-end.
 - **Persistence** (`src/systems/storage.ts`, localStorage, hardened with
@@ -185,10 +212,13 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   (taunt freezes towers in radius), **Mic Grabber** (steals gold + resets combo
   at the stage), **DJ Who Wouldn't Stop** (`shield` + summons Hecklers),
   **Talent Show Judge** (multi-phase). `BOSS_CONFIG` tunes the abilities.
-- `src/data/waves.ts` — 20 waves; bosses at 5/10/15/20 (`boss()` groups set
-  `noScale`). `DIFFICULTY` / `scaledCount` scale count/hp/speed per wave.
+- `src/data/waves.ts` — wave generation from a `WaveProfile`: `buildWaveDef(index,
+  profile)` builds the spawn groups (count grows with the wave, types rotate from
+  the profile pool, a rotating boss every `bossEvery` waves) and `waveScaling`
+  derives hp/speed/boss-hp. Each campaign level carries its own profile; endless
+  uses `ENDLESS_PROFILE`.
 - `src/systems/Enemy.ts` — waypoint movement, HP + shield bars, `takeDamage()`
-  (handles deflect / first-tower bypass / shield), `applySlow()`, `rewind()`,
+  (handles deflect / first-tower bypass / shield), `applySlow()`, `knockback()`,
   and `isBoss` / `hpRatio` for the boss bar.
 - `src/systems/WaveManager.ts` — round-robin spawns, `spawnAt()` (splits + boss
   summons), Superfan split on death; callbacks `onReachStage` / `onKill` /
@@ -207,27 +237,17 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   tree): **Backup Singer** (short range, `buffAttackSpeed` aura speeds up nearby
   attacking towers), **Hype Man** (wide range, `goldBoost` +50% gold and
   `comboBoost` faster combo for kills in range). Each has cost, range (tiles),
-  damage, attack speed, a default targeting strategy, and an `ability` (see
-  below).
-- `src/systems/Tower.ts` — picks a target per its targeting strategy
-  (`first` / `last` / `strongest`, cycled by selecting the tower); single-target
-  towers fire a homing `Projectile`, splash towers pulse damage to all in range,
-  Bass Players pulse a knockback (`Enemy.knockback`), support towers don't fire.
-  Range circle shows on hover/select.
-
-### Active abilities
-
-Every tower has one cooldown-gated active ability (`TowerAbility` in
-`towers.ts`), triggered from the **Activate** button in the upgrade panel:
-Lead Singer **Power Note** (single-target nuke), Drummer **Drum Roll** (3s stun
-AoE), Keyboardist **Chord Bomb** (10s slow field), Backup Singer **Choir Boost**
-(10s 2x fire for all towers), Bass Player **Drop the Bass** (knock all enemies
-back 5 tiles), Hype Man **Crowd Surf** (next 10 kills pay 3x gold). `Tower`
-tracks the cooldown and draws it on the sprite (a shrinking dark wedge + a gold
-"ready" ring). The effects live in `GameScene.activateAbility`; `TowerManager`
-holds `abilitySpeedMultiplier` (Choir Boost), `applySupportBuffs` (Backup Singer
-aura), and `hypeAt` (Hype Man gold/combo aura), and Chord Bomb fields are ticked
-by `GameScene.tickSlowFields`.
+  damage, attack speed, and a default targeting strategy.
+- **Pure passive combat**: there are **no per-tower active abilities and no shop
+  power-ups** — strategy is placement + upgrades + the support auras. `Tower`
+  picks a target per its targeting strategy (`first` / `last` / `strongest`,
+  cycled by selecting the tower); single-target towers fire a homing `Projectile`,
+  splash towers pulse damage to all in range, Bass Players pulse a passive
+  knockback (`Enemy.knockback`), support towers don't fire. `applySupportBuffs`
+  (Backup Singer aura) and `hypeAt` (Hype Man gold/combo aura) live in
+  `TowerManager`. Range circle shows on hover/select. Boss tower-disables
+  (Heckler King freeze, Talent Judge slow) are tuned mild since there's no active
+  counter.
 - `src/systems/Projectile.ts` — homing dot; applies damage (+ any slow) on hit.
 - `src/systems/TowerManager.ts` — placement validation (buildable + empty),
   the valid/invalid build overlay (the selected tile gets a faint green fill, a
@@ -254,11 +274,12 @@ by `GameScene.tickSlowFields`.
   fully maxes). Tier pips render on the tower (red = A on top, cyan = B below).
 - `src/ui/UpgradePanel.ts` — opens on selecting a placed tower: both paths
   (pips + next label/cost), a targeting toggle, and **Sell** (`SELL_REFUND` =
-  60% of `totalSpent`). Affordability is snapshotted when the panel is (re)built.
+  60% of `totalSpent`). No Activate row (combat is passive). Affordability is
+  snapshotted when the panel is (re)built.
 - `GameScene` wires `TowerManager.onSelectionChange` → open/close the panel, and
   owns the gold spend/refund on upgrade/sell.
 
-## Combo, economy depth, pacing, shop
+## Combo, economy depth, pacing
 
 All orchestrated by `GameScene`:
 
@@ -268,18 +289,15 @@ All orchestrated by `GameScene`:
   combo resets if no kill lands within the window.
 - **Interest** — on each wave clear, `+floor(gold / 10)` is banked (rewards
   saving), shown as a floating "+Ng interest".
-- **Intermission** — `WaveManager` no longer auto-advances; on clear it calls
-  `onWaveCleared`, and `GameScene` runs a `INTERMISSION_SECONDS` countdown with
-  a Skip (Fast Forward) button. Building/upgrading/shopping stay enabled.
-  `WaveManager.startNextWave()` begins the next wave (countdown end or Skip).
-- **Shop** (`src/ui/ShopPanel.ts`, data in `src/data/powerups.ts`) — a
-  persistent button opens the "KaraFence Cash" modal selling one-use power-ups:
-  Security Guard (kill all on screen), Encore (`Enemy.rewind` all enemies 10s),
-  Sound Check (`TowerManager.damageMultiplier = 2` for 15s). Effects apply on
-  purchase.
-- **Difficulty scaling** (`DIFFICULTY` / `scaledCount` in `src/data/waves.ts`) —
-  each wave index raises enemy count, HP (`Enemy` `hpScale`), and speed
-  (`speedScale`) by a small per-wave factor.
+- **Manual first wave** — a fresh run opens a planning phase (`showStartPrompt`)
+  with a **▶ Start Wave 1** button; the wave begins on tap (`beginFirstWave`).
+- **Intermission** — `WaveManager` doesn't auto-advance; on clear it calls
+  `onWaveCleared`, and `GameScene` runs an `INTERMISSION_SECONDS` countdown with a
+  Skip (Fast Forward) button (held while a story beat is on screen). Building /
+  upgrading stay enabled. `WaveManager.startNextWave()` begins the next wave.
+- **Difficulty scaling** — per the level's `WaveProfile` (`waveScaling` in
+  `src/data/waves.ts`): each wave index raises enemy count, HP (`Enemy` `hpScale`)
+  and speed (`speedScale`).
 
 ## Procedural art (generated textures)
 
@@ -306,9 +324,11 @@ swapped for real imported textures later by changing only what
   The aisle/build palette (`DEFAULT_COLORS` in `parseMap`) is a saturated
   red-brown vs. a dark slate-green so the two surfaces read as distinct.
 - **Towers** (`towerTextureKey`) are instrument/performer silhouettes on a dark
-  base; `Tower.body` is now a `Sprite` (freeze tints it; the ability-ready ring
-  has a golden shimmer). **Projectiles** are spun textures (note / music-wave),
-  with the drummer's drumsticks + bass pulse rings drawn in `Tower`.
+  base; `Tower.body` is a `Sprite` (the Heckler-King freeze tints it blue).
+  **Projectiles** are spun textures (note / music-wave), with the drummer's
+  drumsticks + bass pulse rings drawn in `Tower`.
+- **Story portrait** (`TX.portrait`) — a grayscale visual-novel bust tinted per
+  character by the `DialogueOverlay`.
 - **Stage**: a curtain backdrop, spotlight cone and singer figure
   (`TX.curtain/spotlight/singer`) composed in `GameScene.drawSinger`. The
   curtain is drawn ~30% narrower than the stage column and left-anchored (a dark
@@ -341,9 +361,8 @@ swapped for real imported textures later by changing only what
   volume stepper, **Resume**, and **Quit to menu**; it reflows on resize.
 - **Visual polish** (mostly `GameScene`, plus `Tower` / `Enemy` / `BootScene`):
   camera **fade** transitions between scenes; **screen shake** on boss hits
-  (scaled to damage) and ability activations; **death particle bursts** tinted to
-  the enemy's color (`spark` texture generated in `BootScene`); a **ready glow**
-  on towers when an ability comes off cooldown; the **Crowd Hype** meter pulses
+  (scaled to damage); **death particle bursts** tinted to the enemy's color
+  (`spark` texture generated in `BootScene`); the **Crowd Hype** meter pulses
   continuously at x5+; **smoothly animated** enemy hp/shield bars; and the stage
   **singer bounces** when a foe is silenced near the stage.
 
