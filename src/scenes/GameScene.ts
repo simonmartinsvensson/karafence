@@ -740,11 +740,31 @@ export class GameScene extends Phaser.Scene {
 
     const border = this.add
       .rectangle(offsetX + mapW / 2, offsetY + mapH / 2, mapW, mapH)
-      .setStrokeStyle(2, 0xffffff, 0.15);
+      .setStrokeStyle(2, 0xffffff, 0.12);
     this.layers.tiles.add(border);
 
+    this.drawBoardVignette(layout);
     this.drawLaneMarkers(layout);
     this.drawSinger(layout);
+  }
+
+  /** Neon-noir mood: darken the board edges so the lit lanes pop in the middle. */
+  private drawBoardVignette(layout: GridLayout): void {
+    const { mapW, mapH, offsetX, offsetY } = layout;
+    const g = this.add.graphics({ x: offsetX, y: offsetY });
+    const vY = mapH * 0.16;
+    const vX = mapW * 0.08;
+    // Top / bottom.
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.55, 0.55, 0, 0);
+    g.fillRect(0, 0, mapW, vY);
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0, 0.55, 0.55);
+    g.fillRect(0, mapH - vY, mapW, vY);
+    // Left / right.
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.45, 0, 0.45, 0);
+    g.fillRect(0, 0, vX, mapH);
+    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0.45, 0, 0.45);
+    g.fillRect(mapW - vX, 0, vX, mapH);
+    this.layers.tiles.add(g);
   }
 
   /**
@@ -856,6 +876,22 @@ export class GameScene extends Phaser.Scene {
     this.layers.fx.add(emitter);
     emitter.explode(12);
     this.time.delayedCall(520, () => emitter.destroy());
+
+    // A quick neon glow pop at the kill, in the enemy's color.
+    const pop = this.add
+      .image(x, y, TX.glow)
+      .setDisplaySize(this.layout.tileSize * 0.7, this.layout.tileSize * 0.7)
+      .setTint(color)
+      .setAlpha(0.85)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.layers.fx.add(pop);
+    this.tweens.add({
+      targets: pop,
+      scale: pop.scale * 2.2,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => pop.destroy(),
+    });
   }
 
   // --- HUD (screen-space top strip) ----------------------------------------
@@ -1239,6 +1275,7 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic('boss');
     audio.sfx('bossEntrance');
     this.cameras.main.shake(450, 0.012);
+    this.cameras.main.flash(320, 120, 12, 30); // dark-red menace wash
   }
 
   private showBossBar(boss: Enemy): void {

@@ -33,6 +33,7 @@ import {
   clearStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { TX } from '../systems/textures';
 
 const STOP = (
   _p: Phaser.Input.Pointer,
@@ -92,6 +93,8 @@ export class MenuScene extends Phaser.Scene {
     this.root = this.add.container(0, 0);
     const { sw, sh } = this;
     const portrait = sh >= sw;
+
+    this.drawMenuBackground();
 
     const titleY = Math.max(34, sh * 0.09);
     this.drawNeonTitle(sw / 2, titleY);
@@ -176,6 +179,60 @@ export class MenuScene extends Phaser.Scene {
     this.root.add(main);
   }
 
+  /** Atmospheric backdrop: gradient wash, colored stage-light pools, drifting
+   * motes and an edge vignette — drawn first so it sits behind the menu. */
+  private drawMenuBackground(): void {
+    const { sw, sh } = this;
+    const add = (o: Phaser.GameObjects.GameObject) => this.root.add(o);
+
+    const bg = this.add.graphics();
+    bg.fillGradientStyle(0x1b0e24, 0x160b20, 0x07070d, 0x07070d, 1, 1, 1, 1);
+    bg.fillRect(0, 0, sw, sh);
+    add(bg);
+
+    // Soft stage-light pools (additive) — a magenta key light + cool/warm fills.
+    const pool = (x: number, y: number, d: number, color: number, alpha: number) =>
+      add(
+        this.add
+          .image(x, y, TX.glow)
+          .setDisplaySize(d, d)
+          .setTint(color)
+          .setAlpha(alpha)
+          .setBlendMode(Phaser.BlendModes.ADD),
+      );
+    pool(sw * 0.5, sh * 0.1, Math.max(sw, sh) * 0.85, 0xe84393, 0.2);
+    pool(sw * 0.18, sh * 0.0, sw * 0.6, 0x6cc5ff, 0.12);
+    pool(sw * 0.82, sh * 0.0, sw * 0.6, 0xffd166, 0.1);
+
+    // Slow drifting motes (dust in the stage light) rising from the bottom.
+    add(
+      this.add.particles(0, 0, TX.glow, {
+        x: { min: 0, max: sw },
+        y: sh + 12,
+        lifespan: 9000,
+        frequency: 340,
+        speedY: { min: -26, max: -10 },
+        speedX: { min: -8, max: 8 },
+        scale: { min: 0.05, max: 0.13 },
+        alpha: { start: 0.22, end: 0 },
+        tint: [0xffd9f2, 0x9fdcff],
+        blendMode: 'ADD',
+      }),
+    );
+
+    // Edge vignette.
+    const vg = this.add.graphics();
+    const vy = sh * 0.14;
+    const vx = sw * 0.1;
+    vg.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0, 0.5, 0.5);
+    vg.fillRect(0, sh - vy, sw, vy);
+    vg.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.4, 0, 0.4, 0);
+    vg.fillRect(0, 0, vx, sh);
+    vg.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0.4, 0, 0.4);
+    vg.fillRect(sw - vx, 0, vx, sh);
+    add(vg);
+  }
+
   // --- Mode cards ----------------------------------------------------------
 
   private drawModeCards(portrait: boolean, top: number): void {
@@ -209,7 +266,25 @@ export class MenuScene extends Phaser.Scene {
 
   private drawModeCard(mode: ModeInfo, cx: number, cy: number, cardW: number, cardH: number): void {
     const cardTop = cy - cardH / 2;
+    // Accent glow bleeding out from behind the card (neon edge).
+    this.root.add(
+      this.add
+        .image(cx, cy, TX.glow)
+        .setDisplaySize(cardW * 1.12, cardH * 1.16)
+        .setTint(mode.accent)
+        .setAlpha(0.22)
+        .setBlendMode(Phaser.BlendModes.ADD),
+    );
     this.rect(cx, cy, cardW, cardH, 0x14141c, mode.accent);
+    // A big translucent icon glow + a soft accent wash across the card top.
+    this.root.add(
+      this.add
+        .image(cx, cardTop + 40, TX.glow)
+        .setDisplaySize(cardW * 0.7, cardH * 0.5)
+        .setTint(mode.accent)
+        .setAlpha(0.12)
+        .setBlendMode(Phaser.BlendModes.ADD),
+    );
 
     this.text(cx, cardTop + 40, mode.icon, '#ffffff', 34);
     this.text(cx, cardTop + 78, mode.name, this.hex(mode.accent), 17);
