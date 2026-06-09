@@ -42,6 +42,9 @@ const STOP = (
   ev?: Phaser.Types.Input.EventData,
 ) => ev?.stopPropagation();
 
+/** Bump this whenever the game is patched — shown in the menu corner. */
+const LAST_PATCH = '2026-06-09 12:22 CEST';
+
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
  * option if a run is saved), open the meta-upgrade tree to spend earned stars,
@@ -146,6 +149,17 @@ export class MenuScene extends Phaser.Scene {
       color: 0x74c0fc,
       onClick: () => this.openRecordsPanel(),
     });
+
+    // Last-patch stamp, tucked low-key in the bottom-left corner.
+    this.root.add(
+      this.add
+        .text(8, sh - 6, `Last patch: ${LAST_PATCH}`, {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: '#5b6172',
+        })
+        .setOrigin(0, 1),
+    );
   }
 
   /** Big "KARAFENCE" wordmark with a layered neon glow + spotlight wash. */
