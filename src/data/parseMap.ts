@@ -1,4 +1,5 @@
 import { TileType, type MapDefinition, type StarGoals } from '../types/map';
+import type { WaveProfile } from './waves';
 
 /**
  * Shared ASCII map parser. A level is authored as equal-length rows + a legend
@@ -31,6 +32,8 @@ export interface MapOptions {
   enemySpeedMultiplier?: number;
   starGoals: StarGoals;
   colors?: Record<TileType, number>;
+  startingGold?: number;
+  waveProfile?: WaveProfile;
 }
 
 export function parseMap(opts: MapOptions): MapDefinition {
@@ -74,5 +77,7 @@ export function parseMap(opts: MapOptions): MapDefinition {
     enemySpeedMultiplier: opts.enemySpeedMultiplier ?? 1,
     starGoals: opts.starGoals,
     colors: opts.colors ?? DEFAULT_COLORS,
+    startingGold: opts.startingGold,
+    waveProfile: opts.waveProfile,
   };
 }

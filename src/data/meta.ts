@@ -1,4 +1,5 @@
 import type { LevelId } from './levels';
+import { CAMPAIGN } from './campaign';
 
 /**
  * Meta-progression: a star you earn per level (best result kept) is a currency
@@ -60,8 +61,10 @@ export interface MetaProgress {
 }
 
 export function defaultMeta(): MetaProgress {
+  const stars: Record<LevelId, number> = {};
+  for (const level of CAMPAIGN) stars[level.id] = 0;
   return {
-    stars: { level1: 0, level2: 0 },
+    stars,
     upgrades: { startingGold: 0, cheaperTowers: 0, longerCombo: 0 },
     lifetime: { kills: 0, waves: 0, highestCombo: 0 },
   };

@@ -24,6 +24,7 @@ import {
   type UpgradePathKey,
 } from '../data/towers';
 import { BOSS_CONFIG } from '../data/enemies';
+import { ENDLESS_PROFILE } from '../data/waves';
 import { metaModifiers, type MetaProgress } from '../data/meta';
 import type { GameMode } from '../data/modes';
 import { beatsAfterWave, nextChapter } from '../data/story';
@@ -255,7 +256,7 @@ export class GameScene extends Phaser.Scene {
     // Load meta-progression and apply its permanent modifiers to this run.
     this.meta = loadMeta();
     const mods = metaModifiers(this.meta);
-    this.gold = Math.round(STARTING_GOLD * mods.startingGoldMult);
+    this.gold = Math.round((this.map.startingGold ?? STARTING_GOLD) * mods.startingGoldMult);
     this.towerCostMult = mods.towerCostMult;
     this.comboWindow = COMBO_WINDOW + mods.comboWindowBonus;
 
@@ -278,6 +279,7 @@ export class GameScene extends Phaser.Scene {
         onBossSpawn: (enemy) => this.onBossSpawn(enemy),
       },
       this.layers.enemies,
+      this.map.waveProfile ?? ENDLESS_PROFILE,
       this.mode === 'endless',
     );
 
@@ -1794,7 +1796,7 @@ export class GameScene extends Phaser.Scene {
     const gap = 12;
     const bw = Math.min(170, (this.sw - 24 - gap) / 2);
     this.overlayButton('↻ Try Again', cx - (bw + gap) / 2, y, 0x51cf66, () =>
-      this.restartScene({ mode: 'endless', levelId: 'level1', resume: false }), bw,
+      this.restartScene({ mode: 'endless', levelId: 'endless', resume: false }), bw,
     );
     this.overlayButton('Menu', cx + (bw + gap) / 2, y, 0x74c0fc, () =>
       this.fadeToScene('MenuScene'), bw,

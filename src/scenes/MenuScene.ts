@@ -199,11 +199,14 @@ export class MenuScene extends Phaser.Scene {
     if (mode.key === 'endless') {
       const best = loadEndlessBest();
       detail = best > 0 ? `Best: wave ${best}` : 'No record yet';
-      resumable = hasRun('endless', 'level1');
+      resumable = hasRun('endless', 'endless');
     } else {
       const progress = loadStoryProgress();
       const done = progress?.completedChapters.length ?? 0;
-      detail = `Chapter ${Math.min(done + 1, CHAPTER_ORDER.length)} of ${CHAPTER_ORDER.length}`;
+      detail =
+        done >= CHAPTER_ORDER.length
+          ? 'Campaign complete!'
+          : `Level ${Math.min(done + 1, CHAPTER_ORDER.length)} of ${CHAPTER_ORDER.length}`;
       resumable = progress !== null && hasRun('story', progress.levelId);
     }
     this.text(cx, cardTop + 124, detail, '#ffd43b', 12);
@@ -236,19 +239,21 @@ export class MenuScene extends Phaser.Scene {
   /** Resolve the (mode, level) to launch and hand off to the GameScene. */
   private startMode(mode: GameMode, resume: boolean): void {
     saveActiveMode(mode);
-    let levelId: LevelId = 'level1';
+    const firstChapter = CHAPTER_ORDER[0];
+    let levelId: LevelId = firstChapter;
 
     if (mode === 'endless') {
-      if (!resume) clearRun('endless', 'level1'); // endless always plays the Dive Bar
+      levelId = 'endless';
+      if (!resume) clearRun('endless', 'endless');
     } else if (resume) {
       const progress = loadStoryProgress();
-      levelId = progress?.levelId ?? 'level1';
+      levelId = progress?.levelId ?? firstChapter;
       resume = hasRun('story', levelId);
     } else {
       // New campaign: wipe progress + any in-progress chapter runs.
       clearStoryProgress();
       CHAPTER_ORDER.forEach((id) => clearRun('story', id));
-      saveStoryProgress({ levelId: 'level1', completedChapters: [], wavesCleared: 0 });
+      saveStoryProgress({ levelId: firstChapter, completedChapters: [], wavesCleared: 0 });
     }
 
     // Fade out, then hand off to the game (which fades itself in).
