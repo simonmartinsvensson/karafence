@@ -67,6 +67,8 @@ export class Tower {
   private readonly pips: Phaser.GameObjects.Rectangle[] = [];
   /** Pending one-shot timers (e.g. double-fire), cancelled on destroy. */
   private readonly timers: Phaser.Time.TimerEvent[] = [];
+  private glow!: Phaser.GameObjects.Image; // neon rim glow (pulses on fire)
+  private bodyScale = 1; // base sprite scale, for the fire "pop"
 
   private rangeCircle: Phaser.GameObjects.Arc;
   private stats: RuntimeStats;
@@ -123,7 +125,7 @@ export class Tower {
     // drawn sprite (instrument/performer silhouette on a dark base) for depth.
     const shadow = scene.add
       .ellipse(0, size * 0.44, size * 0.74, size * 0.26, 0x000000, 0.38);
-    const glow = scene.add
+    this.glow = scene.add
       .image(0, 0, TX.glow)
       .setDisplaySize(size * 1.7, size * 1.7)
       .setTint(type.color)
@@ -132,11 +134,42 @@ export class Tower {
     this.body = scene.add
       .sprite(0, 0, towerTextureKey(type.key))
       .setDisplaySize(size, size);
-    this.container = scene.add.container(this.worldX, this.worldY, [shadow, glow, this.body]);
+    this.bodyScale = this.body.scaleX;
+    this.container = scene.add.container(this.worldX, this.worldY, [shadow, this.glow, this.body]);
     this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
+    // Gentle idle "hover" bob on the body + glow (phase-offset per tile so the
+    // board breathes rather than pulsing in unison). The ground shadow stays put.
+    scene.tweens.add({
+      targets: [this.body, this.glow],
+      y: -size * 0.06,
+      duration: 1300 + ((col * 7 + row * 13) % 600),
+      delay: ((col * 31 + row * 17) % 500),
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
     this.recompute();
+  }
+
+  /** A quick scale punch + glow flash when the tower fires. */
+  private pop(): void {
+    this.scene.tweens.add({
+      targets: this.body,
+      scaleX: this.bodyScale * 1.16,
+      scaleY: this.bodyScale * 1.16,
+      duration: 80,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.glow,
+      alpha: 0.9,
+      duration: 90,
+      yoyo: true,
+    });
   }
 
   // --- Roles / queries -----------------------------------------------------
@@ -397,6 +430,7 @@ export class Tower {
     if (targets.length === 0) return [];
     this.cooldown = this.fireInterval();
     audio.sfx('shoot');
+    this.pop();
     // Keyboardist throws a glowing music-wave; everyone else a spinning note.
     const key = this.type.key === 'keyboardist' ? TX.projStaff : TX.projNote;
     const size = this.layout.tileSize * 0.55;
@@ -445,6 +479,7 @@ export class Tower {
 
   private fireSplash(): void {
     audio.sfx('shoot');
+    this.pop();
     const ring = this.scene.add
       .circle(this.worldX, this.worldY, this.rangePx, this.type.projectileColor, 0.35)
       .setStrokeStyle(2, this.type.color, 0.9)
@@ -489,6 +524,7 @@ export class Tower {
   /** Bass Player blast: a deep pulse that knocks every enemy in range back. */
   private fireBassBlast(): void {
     audio.sfx('shoot');
+    this.pop();
     // A low-frequency pulse: two concentric rings expanding outward.
     for (let i = 0; i < 2; i++) {
       const ring = this.scene.add

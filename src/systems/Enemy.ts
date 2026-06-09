@@ -59,6 +59,9 @@ export class Enemy {
   private targetLane: number;
   private targetX = 0;
   private targetY = 0;
+  /** Walk-cycle phase + hop height, so the silhouette waddles as it moves. */
+  private walkPhase = Math.random() * Math.PI * 2;
+  private readonly bobAmp: number;
 
   constructor(
     scene: Phaser.Scene,
@@ -93,6 +96,7 @@ export class Enemy {
     const start = tileToWorld(layout, this.col, map.laneRows[laneIndex]);
 
     const bodySize = Math.max(6, Math.floor(ts * type.size));
+    this.bobAmp = bodySize * 0.12;
     this.baseColor = type.color;
     // Drawn character silhouette, tinted to the enemy's color.
     this.body = scene.add
@@ -224,6 +228,11 @@ export class Enemy {
         this.body.setTint(this.baseColor);
       }
     }
+
+    // Waddle: a little hop synced to walk speed (the silhouette bobs, not its
+    // ground shadow / hp bars, which sit on other children).
+    this.walkPhase += dt * (6 + this.type.speed * this.speedScale * this.slowFactor * 2.2);
+    this.body.y = -Math.abs(Math.sin(this.walkPhase)) * this.bobAmp;
 
     const step =
       this.type.speed * this.speedScale * this.slowFactor * this.layout.tileSize * dt;
