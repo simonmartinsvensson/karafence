@@ -371,6 +371,12 @@ swapped for real imported textures later by changing only what
   (`spark` texture generated in `BootScene`); the **Crowd Hype** meter pulses
   continuously at x5+; **smoothly animated** enemy hp/shield bars; and the stage
   **singer bounces** when a foe is silenced near the stage.
+- **Bloom + motion pass** (`src/systems/fx.ts`): both scene cameras get a WebGL
+  **bloom + vignette** postFX (`addNeonCameraFX`, no-ops under Canvas) so every
+  additive glow bleeds like neon. Towers **idle-bob** and **pop** (scale + glow
+  flash) on fire; enemies **waddle** as they walk; projectiles leave a fading
+  **neon trail**; the menu has sweeping **spotlight beams** + breathing light
+  pools; the in-game stage **spotlight sways**.
 
 ## NPM scripts
 

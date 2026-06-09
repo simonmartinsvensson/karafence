@@ -33,6 +33,7 @@ import {
   clearStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { addNeonCameraFX } from '../systems/fx';
 import { TX } from '../systems/textures';
 
 const STOP = (
@@ -43,7 +44,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-09 12:22 CEST';
+const LAST_PATCH = '2026-06-09 13:02 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -84,6 +85,7 @@ export class MenuScene extends Phaser.Scene {
     this.meta = loadMeta();
     this.cameras.main.setBackgroundColor('#0b0b12');
     this.cameras.main.fadeIn(350, 11, 11, 18);
+    addNeonCameraFX(this.cameras.main);
     audio.playMusic('menu');
     this.rebuild();
     this.scale.on('resize', this.resizeHandler);
@@ -204,16 +206,51 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRect(0, 0, sw, sh);
     add(bg);
 
-    // Soft stage-light pools (additive) — a magenta key light + cool/warm fills.
-    const pool = (x: number, y: number, d: number, color: number, alpha: number) =>
-      add(
-        this.add
-          .image(x, y, TX.glow)
-          .setDisplaySize(d, d)
-          .setTint(color)
-          .setAlpha(alpha)
-          .setBlendMode(Phaser.BlendModes.ADD),
-      );
+    // Sweeping concert spotlight beams from the top edge (additive cones that
+    // rock back and forth out of phase) — the "live venue" centerpiece.
+    const beam = (x: number, color: number, from: number, to: number, dur: number) => {
+      const img = this.add
+        .image(x, -sh * 0.05, TX.spotlight)
+        .setOrigin(0.5, 0)
+        .setDisplaySize(sw * 0.42, sh * 1.15)
+        .setTint(color)
+        .setAlpha(0.16)
+        .setAngle(from)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      add(img);
+      this.tweens.add({
+        targets: img,
+        angle: to,
+        duration: dur,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    };
+    beam(sw * 0.34, 0xe84393, -16, 10, 5200);
+    beam(sw * 0.66, 0x6cc5ff, 14, -12, 6100);
+
+    // Soft stage-light pools (additive) — a magenta key light + cool/warm fills,
+    // each slowly breathing so the backdrop never sits still.
+    const pool = (x: number, y: number, d: number, color: number, alpha: number) => {
+      const img = this.add
+        .image(x, y, TX.glow)
+        .setDisplaySize(d, d)
+        .setTint(color)
+        .setAlpha(alpha)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      add(img);
+      this.tweens.add({
+        targets: img,
+        alpha: alpha * 1.5,
+        scaleX: img.scaleX * 1.12,
+        scaleY: img.scaleY * 1.12,
+        duration: 2200 + d,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    };
     pool(sw * 0.5, sh * 0.1, Math.max(sw, sh) * 0.85, 0xe84393, 0.2);
     pool(sw * 0.18, sh * 0.0, sw * 0.6, 0x6cc5ff, 0.12);
     pool(sw * 0.82, sh * 0.0, sw * 0.6, 0xffd166, 0.1);

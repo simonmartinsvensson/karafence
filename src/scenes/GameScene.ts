@@ -45,6 +45,7 @@ import {
   saveStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { addNeonCameraFX } from '../systems/fx';
 import { DialogueOverlay } from '../ui/DialogueOverlay';
 import { TX } from '../systems/textures';
 import { TileType } from '../types/map';
@@ -254,6 +255,7 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor('#0b0b12');
     this.cameras.main.fadeIn(350, 11, 11, 18);
+    addNeonCameraFX(this.cameras.main);
     // Reset speed scaling (the scene instance + its clock are reused across runs).
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
@@ -829,11 +831,22 @@ export class GameScene extends Phaser.Scene {
     const figure = this.add
       .image(curtainX, mapH * 0.06, TX.singer)
       .setDisplaySize(fw, fh);
-    // Warm spotlight cone above the figure (additive glow).
+    // Warm spotlight cone above the figure (additive glow) that gently sways +
+    // breathes, so the stage feels live rather than a static backdrop.
     const spot = this.add
-      .image(curtainX, -fh * 0.55, TX.spotlight)
+      .image(curtainX, -fh * 0.2, TX.spotlight)
+      .setOrigin(0.5, 0.1)
       .setDisplaySize(curtainW * 1.5, fh * 1.6)
       .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: spot,
+      angle: { from: -5, to: 5 },
+      alpha: { from: 0.8, to: 1 },
+      duration: 2600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     this.singerFigure = figure;
     this.singer = this.add.container(cx, cy, [backstage, curtain, edge, spot, figure]);

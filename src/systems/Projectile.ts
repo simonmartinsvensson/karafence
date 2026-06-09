@@ -68,7 +68,30 @@ export class Projectile {
       this.sprite.x += (dx / dist) * step;
       this.sprite.y += (dy / dist) * step;
       this.glow.setPosition(this.sprite.x, this.sprite.y);
+      this.dropTrail(dt);
     }
+  }
+
+  /** Periodically stamp a fading glow ghost so the shot leaves a neon trail. */
+  private trailAccum = 0;
+  private dropTrail(dt: number): void {
+    this.trailAccum += dt;
+    if (this.trailAccum < 0.028) return;
+    this.trailAccum = 0;
+    const ghost = this.scene.add
+      .image(this.sprite.x, this.sprite.y, TX.glow)
+      .setDisplaySize(this.glow.displayWidth * 0.6, this.glow.displayHeight * 0.6)
+      .setTint(this.glowColor)
+      .setAlpha(0.4)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.parent.add(ghost);
+    this.scene.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      scale: ghost.scale * 0.3,
+      duration: 220,
+      onComplete: () => ghost.destroy(),
+    });
   }
 
   /** A quick additive glow pop where the projectile lands. */
