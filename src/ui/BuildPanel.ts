@@ -35,6 +35,7 @@ export class BuildPanel {
     onSelect: (type: TowerTypeKey) => void,
     onCancel: () => void,
     costOf: (type: TowerTypeKey) => number,
+    isUnlocked: (type: TowerTypeKey) => boolean = () => true,
   ): void {
     this.close();
     const vw = this.scene.scale.width;
@@ -46,8 +47,11 @@ export class BuildPanel {
       .setInteractive();
     this.backdrop.on('pointerdown', () => onCancel());
 
+    // Only unlocked towers are buildable; the rest are bought with stars on the
+    // menu (so the in-game picker stays focused on what you can actually place).
+    const towers = TOWER_LIST.filter((t) => isUnlocked(t.key));
     const cols = 3;
-    const rows = Math.ceil(TOWER_LIST.length / cols);
+    const rows = Math.ceil(towers.length / cols);
     const pad = 12;
     const gap = 8;
     const headerH = 26;
@@ -82,7 +86,7 @@ export class BuildPanel {
 
     const gridLeft = -panelW / 2 + pad + cellW / 2;
     const gridTop = -panelH / 2 + headerH + pad + cellH / 2;
-    TOWER_LIST.forEach((tower, i) => {
+    towers.forEach((tower, i) => {
       const cx = gridLeft + (i % cols) * (cellW + gap);
       const cy = gridTop + Math.floor(i / cols) * (cellH + gap);
       const cost = costOf(tower.key);

@@ -15,6 +15,9 @@ import {
   MAX_TIER,
   SELL_REFUND,
 } from '../data/towers';
+import type { TowerBonus } from '../data/meta';
+
+const NO_BONUS: TowerBonus = { damageMult: 1, rangeAdd: 0, attackSpeedMult: 1 };
 
 /** Effective combat stats after applying purchased upgrade tiers. */
 interface RuntimeStats {
@@ -57,6 +60,7 @@ export class Tower {
   private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
   private readonly attackSpeedMultiplier: () => number;
+  private readonly metaBonus: TowerBonus;
   private readonly worldX: number;
   private readonly worldY: number;
   private readonly container: Phaser.GameObjects.Container;
@@ -86,6 +90,7 @@ export class Tower {
     attackSpeedMultiplier: () => number,
     layers: BoardLayers,
     placementCost: number = type.cost,
+    bonus: TowerBonus = NO_BONUS,
   ) {
     this.scene = scene;
     this.layout = layout;
@@ -96,6 +101,7 @@ export class Tower {
     this.id = `${col},${row}`;
     this.enemies = enemies;
     this.attackSpeedMultiplier = attackSpeedMultiplier;
+    this.metaBonus = bonus;
     this.targeting = type.defaultTargeting;
     this.totalSpent = placementCost;
 
@@ -155,10 +161,11 @@ export class Tower {
   // --- Upgrades / economy --------------------------------------------------
 
   private baseStats(): RuntimeStats {
+    const b = this.metaBonus;
     return {
-      damage: this.type.damage,
-      rangeTiles: this.type.range,
-      attackSpeed: this.type.attackSpeed,
+      damage: this.type.damage * b.damageMult,
+      rangeTiles: this.type.range + b.rangeAdd,
+      attackSpeed: this.type.attackSpeed * b.attackSpeedMult,
       splash: this.type.splash,
       pierce: 1,
       multiTarget: 1,

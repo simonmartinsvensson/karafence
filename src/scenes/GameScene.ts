@@ -25,7 +25,13 @@ import {
 } from '../data/towers';
 import { BOSS_CONFIG } from '../data/enemies';
 import { ENDLESS_PROFILE } from '../data/waves';
-import { metaModifiers, type MetaProgress } from '../data/meta';
+import {
+  metaModifiers,
+  towerBonusFor,
+  isTowerUnlocked,
+  isUnlocked,
+  type MetaProgress,
+} from '../data/meta';
 import type { GameMode } from '../data/modes';
 import { beatsAfterWave, nextChapter } from '../data/story';
 import {
@@ -171,7 +177,7 @@ export class GameScene extends Phaser.Scene {
   // Bottom control bar (screen-space).
   private barBg!: Phaser.GameObjects.Rectangle;
   private menuBtn!: BarButton;
-  private speedBtn!: BarButton; // 1×/2× game speed toggle
+  private speedBtn?: BarButton; // 1×/2× game speed toggle (meta-unlocked)
 
   // Terminal-state overlay (victory / game over / chapter), re-rendered on resize.
   private endState: 'none' | 'victory' | 'gameover' | 'chapter' = 'none';
@@ -289,6 +295,7 @@ export class GameScene extends Phaser.Scene {
       this.layout,
       this.waves.enemies,
       this.layers,
+      (key) => towerBonusFor(this.meta, key),
     );
     this.towers.onSelectionChange = (tower) => this.onTowerSelection(tower);
     this.buildPanel = new BuildPanel(this);
@@ -452,6 +459,7 @@ export class GameScene extends Phaser.Scene {
         (type) => this.placeTower(type),
         () => this.closeBuild(),
         (type) => this.towerCost(type),
+        (type) => isTowerUnlocked(this.meta, type),
       );
     } else if (
       col >= 0 &&
@@ -1012,7 +1020,10 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x2a2a3a, 1)
       .setDepth(DEPTH_BAR);
     this.menuBtn = this.barButton('≡ Pause', 0x9aa0b0, '#cfd3dc', () => this.openPauseMenu());
-    this.speedBtn = this.barButton('▶ 1×', 0x4dd2ff, '#bdecff', () => this.cycleSpeed());
+    // The 2× speed toggle is a meta unlock (bought with stars on the menu).
+    if (isUnlocked(this.meta, 'speed2x')) {
+      this.speedBtn = this.barButton('▶ 1×', 0x4dd2ff, '#bdecff', () => this.cycleSpeed());
+    }
   }
 
   /** Toggle 1×/2× game speed — scales movement, the spawn clock and tweens. */
@@ -1020,7 +1031,7 @@ export class GameScene extends Phaser.Scene {
     this.gameSpeed = this.gameSpeed === 1 ? 2 : 1;
     this.time.timeScale = this.gameSpeed;
     this.tweens.timeScale = this.gameSpeed;
-    this.speedBtn.text.setText(this.gameSpeed === 2 ? '▶▶ 2×' : '▶ 1×');
+    this.speedBtn?.text.setText(this.gameSpeed === 2 ? '▶▶ 2×' : '▶ 1×');
   }
 
   /** A venue-signage bar button (neon glow + framed rect + label). */
@@ -1073,7 +1084,7 @@ export class GameScene extends Phaser.Scene {
       btn.text.setFontSize(font).setPosition(cx, cy);
     };
     place(this.menuBtn, margin + btnW / 2);
-    place(this.speedBtn, vw - margin - btnW / 2);
+    if (this.speedBtn) place(this.speedBtn, vw - margin - btnW / 2);
   }
 
   // --- Pre-wave planning prompt --------------------------------------------

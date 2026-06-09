@@ -3,12 +3,22 @@ import { TOUCH_MIN } from '../config';
 import type { LevelId } from '../data/levels';
 import { MODES, type GameMode, type ModeInfo } from '../data/modes';
 import { CHAPTER_ORDER } from '../data/story';
+import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
 import {
   META_UPGRADES,
   nextTierCost,
   maxTier,
   starsAvailable,
   totalStarsEarned,
+  TOWER_MAX_LEVEL,
+  towerUpgradeCost,
+  towerUpgradeEffectLabel,
+  isTowerUnlocked,
+  TOWER_UNLOCK_COST,
+  isUnlocked,
+  UNLOCK_COST,
+  UNLOCK_NAME,
+  type UnlockKey,
   type MetaProgress,
 } from '../data/meta';
 import {
@@ -45,6 +55,8 @@ const STOP = (
 export class MenuScene extends Phaser.Scene {
   private meta!: MetaProgress;
   private root!: Phaser.GameObjects.Container;
+  /** Active tab in the meta-upgrade modal. */
+  private metaTab: 'upgrades' | 'towers' = 'upgrades';
   /** Objects belonging to the currently open modal (destroyed on close). */
   private modal: Phaser.GameObjects.GameObject[] = [];
   private resizeHandler = () => {
@@ -102,18 +114,28 @@ export class MenuScene extends Phaser.Scene {
 
     // Bottom action buttons (always >=44px tall, reachable at screen bottom).
     const by = sh - TOUCH_MIN / 2 - 14;
-    const bw = Math.min(220, (sw - 36) / 2);
+    const gap = 8;
+    const bw = Math.min(190, (sw - 24 - gap * 2) / 3);
     this.button({
-      x: sw / 2 - bw / 2 - 6,
+      x: sw / 2 - bw - gap,
       y: by,
       w: bw,
       h: TOUCH_MIN,
-      label: '⭐ Meta Upgrades',
+      label: '⭐ Upgrades',
       color: 0xffd166,
       onClick: () => this.openMetaPanel(),
     });
     this.button({
-      x: sw / 2 + bw / 2 + 6,
+      x: sw / 2,
+      y: by,
+      w: bw,
+      h: TOUCH_MIN,
+      label: '🗺 Levels',
+      color: 0x69db7c,
+      onClick: () => this.openLevelSelect(),
+    });
+    this.button({
+      x: sw / 2 + bw + gap,
       y: by,
       w: bw,
       h: TOUCH_MIN,
@@ -272,9 +294,12 @@ export class MenuScene extends Phaser.Scene {
   private openMetaPanel(): void {
     this.closeModal();
     const { sw, sh } = this;
-    const w = Math.min(sw - 16, 420);
+    const w = Math.min(sw - 16, 440);
     const rowH = TOUCH_MIN + 18;
-    const h = Math.min(sh - 24, 90 + META_UPGRADES.length * rowH + TOUCH_MIN);
+    const towers = this.metaTab === 'towers';
+    const rowCount = towers ? TOWER_LIST.length : META_UPGRADES.length + 1;
+    const headH = 96; // title + stars line + tab row
+    const h = Math.min(sh - 16, headH + rowCount * rowH + TOUCH_MIN + 16);
     this.pushBackdrop();
 
     this.modal.push(
@@ -287,42 +312,272 @@ export class MenuScene extends Phaser.Scene {
     );
     const left = sw / 2 - w / 2;
     const top = sh / 2 - h / 2;
-    this.modalText(sw / 2, top + 18, '⭐ META UPGRADES', '#ffd166', 15);
-    this.modalText(sw / 2, top + 38, `${starsAvailable(this.meta)} stars to spend`, '#ffd43b', 12);
+    this.modalText(sw / 2, top + 16, '⭐ META UPGRADES', '#ffd166', 15);
+    this.modalText(sw / 2, top + 34, `${starsAvailable(this.meta)} stars to spend`, '#ffd43b', 12);
 
+    // Tabs.
+    const tabW = Math.min(150, (w - 36) / 2);
+    const tabY = top + 60;
+    const tab = (label: string, key: 'upgrades' | 'towers', x: number) =>
+      this.modal.push(
+        ...this.button({
+          x,
+          y: tabY,
+          w: tabW,
+          h: TOUCH_MIN - 6,
+          label,
+          color: this.metaTab === key ? 0xffd166 : 0x555a66,
+          depth: 311,
+          onClick: () => {
+            this.metaTab = key;
+            this.openMetaPanel();
+          },
+        }),
+      );
+    tab('Upgrades', 'upgrades', sw / 2 - tabW / 2 - 6);
+    tab('Towers', 'towers', sw / 2 + tabW / 2 + 6);
+
+    const rowTop = top + headH;
+    if (towers) this.drawTowerRows(left, w, rowTop, rowH);
+    else this.drawUpgradeRows(left, w, rowTop, rowH);
+
+    this.modal.push(
+      ...this.button({
+        x: sw / 2,
+        y: top + h - 14 - TOUCH_MIN / 2,
+        w: Math.min(140, w - 40),
+        h: TOUCH_MIN,
+        label: 'Close',
+        color: 0xff6b6b,
+        depth: 311,
+        onClick: () => this.closeModal(),
+      }),
+    );
+  }
+
+  /** One meta row: title + subtitle on the left, an action button on the right. */
+  private metaRow(
+    left: number,
+    w: number,
+    rowY: number,
+    title: string,
+    subtitle: string,
+    btnLabel: string,
+    enabled: boolean,
+    onClick: () => void,
+  ): void {
+    this.modalText(left + 16, rowY, title, '#ffffff', 12, 0);
+    this.modalText(left + 16, rowY + 16, subtitle, '#9aa0b0', 10, 0);
+    const bw = Math.min(120, w * 0.3);
+    this.modal.push(
+      ...this.button({
+        x: left + w - bw / 2 - 14,
+        y: rowY + 8,
+        w: bw,
+        h: TOUCH_MIN,
+        label: btnLabel,
+        color: enabled ? 0x51cf66 : 0x555555,
+        enabled,
+        depth: 311,
+        onClick,
+      }),
+    );
+  }
+
+  private drawUpgradeRows(left: number, w: number, rowTop: number, rowH: number): void {
+    const avail = starsAvailable(this.meta);
     META_UPGRADES.forEach((def, i) => {
-      const rowY = top + 64 + i * rowH;
+      const rowY = rowTop + i * rowH;
       const tier = this.meta.upgrades[def.key] ?? 0;
       const max = maxTier(def);
       const cost = nextTierCost(def, tier);
       const pips = '●'.repeat(tier) + '○'.repeat(max - tier);
-
-      this.modalText(left + 16, rowY, `${def.name}  ${pips}`, '#ffffff', 12, 0);
-      this.modalText(
-        left + 16,
-        rowY + 16,
+      const affordable = cost !== null && avail >= cost;
+      this.metaRow(
+        left,
+        w,
+        rowY,
+        `${def.name}  ${pips}`,
         tier > 0 ? def.effectLabel(tier) : 'Not purchased',
-        '#9aa0b0',
-        10,
-        0,
+        cost === null ? 'MAXED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
+        affordable,
+        () => this.buyUpgrade(def.key),
       );
+    });
+    // Feature unlock: 2× speed.
+    const rowY = rowTop + META_UPGRADES.length * rowH;
+    const owned = isUnlocked(this.meta, 'speed2x');
+    const cost = UNLOCK_COST.speed2x;
+    const affordable = !owned && avail >= cost;
+    this.metaRow(
+      left,
+      w,
+      rowY,
+      `${UNLOCK_NAME.speed2x}  ${owned ? '●' : '○'}`,
+      'Toggle 1×/2× game speed in a run',
+      owned ? 'OWNED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
+      affordable,
+      () => this.buyUnlock('speed2x'),
+    );
+  }
 
-      const affordable = cost !== null && starsAvailable(this.meta) >= cost;
-      const label = cost === null ? 'MAXED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`;
-      const bw = Math.min(110, w * 0.3);
-      this.modal.push(
-        ...this.button({
-          x: left + w - bw / 2 - 14,
-          y: rowY + 8,
-          w: bw,
-          h: TOUCH_MIN,
-          label,
-          color: affordable ? 0x51cf66 : 0x555555,
-          enabled: affordable,
-          depth: 311,
-          onClick: () => this.buyUpgrade(def.key),
-        }),
+  private drawTowerRows(left: number, w: number, rowTop: number, rowH: number): void {
+    const avail = starsAvailable(this.meta);
+    TOWER_LIST.forEach((tower, i) => {
+      const rowY = rowTop + i * rowH;
+      const unlocked = isTowerUnlocked(this.meta, tower.key);
+      if (!unlocked) {
+        const cost = TOWER_UNLOCK_COST[tower.key];
+        const affordable = avail >= cost;
+        this.metaRow(
+          left,
+          w,
+          rowY,
+          `${tower.icon} ${tower.name}  🔒`,
+          'Locked — unlock to build it',
+          affordable ? `Unlock ★${cost}` : `Need ★${cost}`,
+          affordable,
+          () => this.unlockTower(tower.key),
+        );
+        return;
+      }
+      const level = this.meta.towerLevels[tower.key] ?? 0;
+      const cost = towerUpgradeCost(level);
+      const affordable = cost !== null && avail >= cost;
+      const pips = '●'.repeat(level) + '○'.repeat(TOWER_MAX_LEVEL - level);
+      this.metaRow(
+        left,
+        w,
+        rowY,
+        `${tower.icon} ${tower.name}  ${pips}`,
+        level > 0 ? towerUpgradeEffectLabel(level) : 'Base stats',
+        cost === null ? 'MAX' : affordable ? `Lvl ★${cost}` : `Need ★${cost}`,
+        affordable,
+        () => this.buyTowerLevel(tower.key),
       );
+    });
+  }
+
+  private buyUpgrade(key: (typeof META_UPGRADES)[number]['key']): void {
+    const def = META_UPGRADES.find((u) => u.key === key);
+    if (!def) return;
+    const tier = this.meta.upgrades[key] ?? 0;
+    const cost = nextTierCost(def, tier);
+    if (cost === null || starsAvailable(this.meta) < cost) return;
+    this.meta.upgrades[key] = tier + 1;
+    this.commitMeta();
+  }
+
+  private buyTowerLevel(key: TowerTypeKey): void {
+    const level = this.meta.towerLevels[key] ?? 0;
+    const cost = towerUpgradeCost(level);
+    if (cost === null || starsAvailable(this.meta) < cost) return;
+    this.meta.towerLevels[key] = level + 1;
+    this.commitMeta();
+  }
+
+  private unlockTower(key: TowerTypeKey): void {
+    if (isTowerUnlocked(this.meta, key)) return;
+    if (starsAvailable(this.meta) < TOWER_UNLOCK_COST[key]) return;
+    this.meta.unlockedTowers[key] = true;
+    this.commitMeta();
+  }
+
+  private buyUnlock(key: UnlockKey): void {
+    if (isUnlocked(this.meta, key) || starsAvailable(this.meta) < UNLOCK_COST[key]) return;
+    this.meta.unlocks[key] = true;
+    this.commitMeta();
+  }
+
+  /** Persist + refresh the available-stars line and the (re)open the modal. */
+  private commitMeta(): void {
+    saveMeta(this.meta);
+    this.rebuild();
+    this.openMetaPanel();
+  }
+
+  // --- Story level select --------------------------------------------------
+
+  /** Highest campaign index the player may pick (one past the last completed). */
+  private highestUnlockedIndex(): number {
+    const completed = loadStoryProgress()?.completedChapters ?? [];
+    let maxDone = -1;
+    CHAPTER_ORDER.forEach((id, i) => {
+      if (completed.includes(id)) maxDone = Math.max(maxDone, i);
+    });
+    return Math.min(CHAPTER_ORDER.length - 1, maxDone + 1);
+  }
+
+  private openLevelSelect(): void {
+    this.closeModal();
+    const { sw, sh } = this;
+    const w = Math.min(sw - 16, 460);
+    const cols = 5;
+    const rows = Math.ceil(CHAPTER_ORDER.length / cols);
+    const pad = 14;
+    const gap = 8;
+    const headerH = 40;
+    const cell = Math.floor((w - pad * 2 - gap * (cols - 1)) / cols);
+    const h = Math.min(sh - 16, headerH + rows * (cell + gap) + pad + TOUCH_MIN);
+    this.pushBackdrop();
+    this.modal.push(
+      this.add
+        .rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0x69db7c, 0.9)
+        .setDepth(310)
+        .setInteractive()
+        .on('pointerdown', STOP),
+    );
+    const left = sw / 2 - w / 2;
+    const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 18, '🗺 SELECT LEVEL', '#69db7c', 15);
+
+    const unlockedMax = this.highestUnlockedIndex();
+    const gridLeft = left + pad + cell / 2;
+    const gridTop = top + headerH + cell / 2;
+    CHAPTER_ORDER.forEach((id, i) => {
+      const cx = gridLeft + (i % cols) * (cell + gap);
+      const cy = gridTop + Math.floor(i / cols) * (cell + gap);
+      const unlocked = i <= unlockedMax;
+      const stars = this.meta.stars[id] ?? 0;
+      const rect = this.add
+        .rectangle(cx, cy, cell, cell, unlocked ? 0x232336 : 0x1a1a22)
+        .setStrokeStyle(2, unlocked ? 0x69db7c : 0x444455, unlocked ? 0.9 : 0.6)
+        .setDepth(311);
+      this.modal.push(rect);
+      this.modal.push(
+        this.add
+          .text(cx, cy - cell * 0.12, unlocked ? `${i + 1}` : '🔒', {
+            fontFamily: 'monospace',
+            fontSize: `${Math.round(cell * 0.34)}px`,
+            color: unlocked ? '#ffffff' : '#888888',
+          })
+          .setOrigin(0.5)
+          .setDepth(312),
+      );
+      if (unlocked) {
+        this.modal.push(
+          this.add
+            .text(cx, cy + cell * 0.28, '★'.repeat(stars) + '☆'.repeat(3 - stars), {
+              fontFamily: 'monospace',
+              fontSize: `${Math.round(cell * 0.16)}px`,
+              color: '#ffd43b',
+            })
+            .setOrigin(0.5)
+            .setDepth(312),
+        );
+        rect
+          .setInteractive({ useHandCursor: true })
+          .on('pointerdown', (
+            _p: Phaser.Input.Pointer,
+            _x: number,
+            _y: number,
+            ev?: Phaser.Types.Input.EventData,
+          ) => {
+            ev?.stopPropagation();
+            this.playLevel(id);
+          });
+      }
     });
 
     this.modal.push(
@@ -339,16 +594,17 @@ export class MenuScene extends Phaser.Scene {
     );
   }
 
-  private buyUpgrade(key: (typeof META_UPGRADES)[number]['key']): void {
-    const def = META_UPGRADES.find((u) => u.key === key);
-    if (!def) return;
-    const tier = this.meta.upgrades[key] ?? 0;
-    const cost = nextTierCost(def, tier);
-    if (cost === null || starsAvailable(this.meta) < cost) return;
-    this.meta.upgrades[key] = tier + 1;
-    saveMeta(this.meta);
-    this.rebuild(); // refresh the available-stars line behind the modal
-    this.openMetaPanel(); // rebuild with the new tier / star balance
+  /** Start a chosen campaign level (story mode), preserving unlock progress. */
+  private playLevel(id: LevelId): void {
+    saveActiveMode('story');
+    const progress = loadStoryProgress() ?? { levelId: id, completedChapters: [], wavesCleared: 0 };
+    progress.levelId = id;
+    saveStoryProgress(progress);
+    clearRun('story', id); // a fresh attempt at this level
+    this.cameras.main.fadeOut(280, 11, 11, 18);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start('GameScene', { mode: 'story', levelId: id, resume: false });
+    });
   }
 
   // --- Records (lifetime stats + endless best) -----------------------------

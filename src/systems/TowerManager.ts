@@ -5,7 +5,10 @@ import type { Enemy } from './Enemy';
 import { Tower } from './Tower';
 import { Projectile } from './Projectile';
 import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
+import type { TowerBonus } from '../data/meta';
 import type { TowerSave } from './storage';
+
+const NO_BONUS: TowerBonus = { damageMult: 1, rangeAdd: 0, attackSpeedMult: 1 };
 
 /**
  * Owns all placed towers and their projectiles. Handles placement validation,
@@ -18,6 +21,8 @@ export class TowerManager {
   private readonly layout: GridLayout;
   private readonly layers: BoardLayers;
   private readonly enemies: Iterable<Enemy>;
+  /** Per-tower permanent meta bonus (RPG leveling), applied at placement. */
+  private readonly towerBonus: (key: TowerTypeKey) => TowerBonus;
 
   private readonly towers = new Map<string, Tower>();
   private readonly projectiles: Projectile[] = [];
@@ -38,12 +43,14 @@ export class TowerManager {
     layout: GridLayout,
     enemies: Iterable<Enemy>,
     layers: BoardLayers,
+    towerBonus: (key: TowerTypeKey) => TowerBonus = () => NO_BONUS,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.enemies = enemies;
     this.layers = layers;
+    this.towerBonus = towerBonus;
   }
 
   get selectedTower(): Tower | null {
@@ -84,6 +91,7 @@ export class TowerManager {
       () => this.attackSpeedMultiplier,
       this.layers,
       placementCost,
+      this.towerBonus(typeKey),
     );
     this.towers.set(this.key(col, row), tower);
 
