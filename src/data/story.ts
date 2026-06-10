@@ -40,19 +40,22 @@ export interface StoryBeat {
 }
 
 /**
- * Beats per level id. Level 1 ("The Garage") is the guided tutorial; later
- * levels carry a light narrative arc at milestone venues. Several beats may
- * share a `waveAfter` — they play in order. Edit freely: this is pure data.
+ * Beats per level id. The campaign teaches one act at a time: each tower's
+ * how-it-works beat sits at the level where it auto-unlocks (TOWER_STORY_UNLOCK
+ * in meta.ts), so the tutorial never mentions a tower you can't build yet.
+ * Level 1 teaches only the two starting acts (Lead Singer + Drummer) + basics.
+ * Several beats may share a `waveAfter` — they play in order. Pure data.
  */
 export const STORY_BEATS: Record<LevelId, StoryBeat[]> = {
-  // Level 1 — TUTORIAL. (waveCount is 3, so beats land at 0/1/2/3.)
+  // Level 1 — TUTORIAL (3 short waves → beats at 0/1/2/3). Only the two
+  // starting acts: Lead Singer + Drummer.
   level1: [
     {
       waveAfter: 0,
       character: 'vy',
       lines: [
-        "Welcome to The Garage, kid — where every singer starts.",
-        'Tap a glowing seat (the green +) to set up a bandmate. They defend the lanes on their own; your job is to place them well.',
+        'Welcome to The Garage, kid — where every singer starts.',
+        'Tap a glowing seat to set up a bandmate. They defend the lanes on their own; your job is to place them well.',
         "Spend your gold, then hit ▶ START WAVE 1 when you're ready. No rush — plan first.",
       ],
     },
@@ -61,35 +64,89 @@ export const STORY_BEATS: Record<LevelId, StoryBeat[]> = {
       character: 'vy',
       lines: [
         'Nice. Your Lead Singer picks off one heckler at a time down a lane.',
-        'Tap a placed bandmate to upgrade them or change who they target — first, last, or strongest.',
-        'Each act has two upgrade paths but can only MAX one. Pick a specialty.',
+        'Tap a placed bandmate to upgrade it or change who it targets — first, last, or strongest.',
       ],
     },
     {
       waveAfter: 2,
       character: 'vy',
       lines: [
-        'Different acts, different jobs: the Drummer hits a whole cluster, the Keyboardist slows a lane, the Bass Player shoves the crowd back.',
-        "The Backup Singer and Hype Man don't attack — they boost the bandmates around them. Tuck them in the middle of your setup.",
-        'Place where two lanes run close and one act can cover both.',
+        'Your other starter, the Drummer, hits a whole cluster at once.',
+        'Park it where a few lanes bunch up and it covers them all.',
       ],
     },
     {
       waveAfter: 3,
       character: 'vy',
       lines: [
-        "That's the whole game, kid. Place smart, upgrade smarter, hold the stage.",
-        'The real venues are waiting. Let’s go.',
+        "That's the basics, kid. Place smart, upgrade smarter, hold the stage.",
+        'I’ll introduce the rest of the band as you climb. The real venues are waiting — let’s go.',
       ],
     },
   ],
 
-  // Level 5 — the rival shows up.
+  // Level 2 — placement tip (still just the two starters).
+  level2: [
+    {
+      waveAfter: 0,
+      character: 'vy',
+      lines: [
+        'Two acts is plenty to start. Cover the seats where two lanes run close —',
+        'one well-placed bandmate can guard both at once.',
+      ],
+    },
+  ],
+
+  // Level 3 — Keyboardist unlocks (teach the slow).
+  level3: [
+    {
+      waveAfter: 0,
+      character: 'vy',
+      lines: [
+        'New act on the bill: a Keyboardist. Long reach, and it slows the crowd to a crawl.',
+        'Great for buying your damage-dealers more time on the tanky ones.',
+      ],
+    },
+  ],
+
+  // Level 5 — Bass Player unlocks (teach knockback) + the rival shows up.
   level5: [
     {
       waveAfter: 0,
+      character: 'vy',
+      lines: [
+        'Say hi to your Bass Player — that low end physically shoves the whole crowd back down the lane.',
+        'Drop it near the stage as a last line of defense.',
+      ],
+    },
+    {
+      waveAfter: 1,
       character: 'max',
-      lines: ["Oh, fresh meat at the mic.", "Cute. You'll never last the night, newbie."],
+      lines: ['Oh, fresh meat at the mic.', "Cute. You'll never last the night, newbie."],
+    },
+  ],
+
+  // Level 7 — Backup Singer unlocks (teach the support aura).
+  level7: [
+    {
+      waveAfter: 0,
+      character: 'vy',
+      lines: [
+        "A Backup Singer doesn't fight — park it among your acts and everyone nearby plays faster.",
+        'Tuck it in the middle of your setup where it covers the most bandmates.',
+      ],
+    },
+  ],
+
+  // Level 9 — Hype Man unlocks (teach the gold/combo aura).
+  level9: [
+    {
+      waveAfter: 0,
+      character: 'vy',
+      lines: [
+        'The Hype Man works the crowd: kills in his range pay extra gold and build your combo faster.',
+        'Pure support — place him over your busiest lanes.',
+      ],
     },
   ],
 

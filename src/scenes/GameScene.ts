@@ -28,12 +28,12 @@ import { ENDLESS_PROFILE } from '../data/waves';
 import {
   metaModifiers,
   towerBonusFor,
-  isTowerUnlocked,
+  isTowerAvailable,
   isUnlocked,
   type MetaProgress,
 } from '../data/meta';
 import type { GameMode } from '../data/modes';
-import { beatsAfterWave, nextChapter } from '../data/story';
+import { beatsAfterWave, nextChapter, CHAPTER_ORDER } from '../data/story';
 import {
   loadMeta,
   saveMeta,
@@ -524,9 +524,14 @@ export class GameScene extends Phaser.Scene {
       (type) => this.placeTower(type),
       () => this.closeBuild(),
       (type) => this.towerCost(type),
-      (type) => isTowerUnlocked(this.meta, type),
+      (type) => isTowerAvailable(this.meta, this.reachedLevel(), type),
     );
     this.panelGold = this.gold;
+  }
+
+  /** 1-based campaign level reached (endless = everything unlocked). */
+  private reachedLevel(): number {
+    return this.mode === 'endless' ? 99 : CHAPTER_ORDER.indexOf(this.levelId) + 1;
   }
 
   /** Brief red flash on a tile the player can't build on. */

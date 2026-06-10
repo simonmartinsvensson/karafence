@@ -95,23 +95,24 @@ function makeLevel(i: number): CampaignLevel {
   const tutorial = i === 0;
   const lanes = i < 2 ? 3 : i < 6 ? 4 : i < 12 ? 5 : 6;
   const profile: WaveProfile = {
+    // Tutorial is a gentle on-ramp: 3 short waves of a few slow hecklers.
     waveCount: tutorial ? 3 : Math.min(20, 5 + Math.floor(i * 0.8)),
-    baseCount: tutorial ? 4 : 4 + Math.floor(i * 0.5),
-    countPerWave: 0.4 + i * 0.06,
-    hpPerWave: 0.05 + i * 0.006,
-    speedPerWave: 0.015 + i * 0.0015,
+    baseCount: tutorial ? 2 : 4 + Math.floor(i * 0.5),
+    countPerWave: tutorial ? 0 : 0.4 + i * 0.06,
+    hpPerWave: tutorial ? 0 : 0.05 + i * 0.006,
+    speedPerWave: tutorial ? 0 : 0.015 + i * 0.0015,
     speedCap: 1.5 + i * 0.04,
     bossEvery: i < 3 ? 0 : i < 10 ? 5 : 4,
     bossHpPerCycle: 0.12,
     enemyPool: poolForLevel(i),
-    spawnDelay: tutorial ? 1100 : Math.max(380, 900 - i * 28),
+    spawnDelay: tutorial ? 1500 : Math.max(380, 900 - i * 28),
   };
   return {
     id: `level${i + 1}`,
     name: NAMES[i],
     lanes,
-    enemySpeedMultiplier: 0.8 + i * 0.032,
-    startingGold: tutorial ? 320 : Math.max(210, 300 - i * 5),
+    enemySpeedMultiplier: tutorial ? 0.62 : 0.8 + i * 0.032,
+    startingGold: tutorial ? 420 : Math.max(210, 300 - i * 5),
     waveProfile: profile,
     starGoals: {
       // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5). Keep

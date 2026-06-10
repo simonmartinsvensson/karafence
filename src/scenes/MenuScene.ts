@@ -14,7 +14,9 @@ import {
   towerUpgradeCost,
   towerUpgradeEffectLabel,
   isTowerUnlocked,
+  isTowerAvailable,
   TOWER_UNLOCK_COST,
+  TOWER_STORY_UNLOCK,
   isUnlocked,
   UNLOCK_COST,
   UNLOCK_NAME,
@@ -44,7 +46,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-10 13:53 CEST';
+const LAST_PATCH = '2026-06-10 15:06 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -558,10 +560,12 @@ export class MenuScene extends Phaser.Scene {
 
   private drawTowerRows(left: number, w: number, rowTop: number, rowH: number): void {
     const avail = starsAvailable(this.meta);
+    const reached = this.highestUnlockedIndex() + 1; // 1-based campaign level reached
     TOWER_LIST.forEach((tower, i) => {
       const rowY = rowTop + i * rowH;
-      const unlocked = isTowerUnlocked(this.meta, tower.key);
-      if (!unlocked) {
+      const available = isTowerAvailable(this.meta, reached, tower.key);
+      if (!available) {
+        // Auto-unlocks by reaching its story level — or buy it early with stars.
         const cost = TOWER_UNLOCK_COST[tower.key];
         const affordable = avail >= cost;
         this.metaRow(
@@ -570,7 +574,7 @@ export class MenuScene extends Phaser.Scene {
           rowY,
           rowH,
           `${tower.icon} ${tower.name}  🔒`,
-          'Locked — unlock to build it',
+          `Unlocks at level ${TOWER_STORY_UNLOCK[tower.key]} — or buy now`,
           affordable ? `Unlock ★${cost}` : `Need ★${cost}`,
           affordable,
           () => this.unlockTower(tower.key),

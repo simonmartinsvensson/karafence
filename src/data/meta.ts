@@ -133,8 +133,36 @@ export const TOWER_UNLOCK_COST: Record<TowerTypeKey, number> = {
   hypeMan: 4,
 };
 
+/**
+ * Story level at which each tower auto-unlocks for free (so the campaign teaches
+ * one new act at a time, and a tower's tutorial beat is always relevant). Stars
+ * can still buy a tower earlier (see `isTowerUnlocked`).
+ */
+export const TOWER_STORY_UNLOCK: Record<TowerTypeKey, number> = {
+  leadSinger: 1,
+  drummer: 1,
+  keyboardist: 3,
+  bassPlayer: 5,
+  backupSinger: 7,
+  hypeMan: 9,
+};
+
+/** Bought-or-starting unlock (account-wide, persisted). */
 export function isTowerUnlocked(meta: MetaProgress, key: TowerTypeKey): boolean {
   return STARTING_TOWERS.includes(key) || meta.unlockedTowers[key] === true;
+}
+
+/**
+ * Whether a tower can be built now: starting/bought, OR the campaign has reached
+ * its story-unlock level. `reachedLevel` is the 1-based level number the player
+ * is on / has reached (pass a large number for endless = everything available).
+ */
+export function isTowerAvailable(
+  meta: MetaProgress,
+  reachedLevel: number,
+  key: TowerTypeKey,
+): boolean {
+  return isTowerUnlocked(meta, key) || reachedLevel >= TOWER_STORY_UNLOCK[key];
 }
 
 // --- Feature unlocks -------------------------------------------------------
