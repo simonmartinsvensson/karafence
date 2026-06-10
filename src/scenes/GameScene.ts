@@ -341,7 +341,25 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.refreshHud();
+    this.showVenueCard();
     audio.playMusic('inWave');
+  }
+
+  /** A brief centered "now playing: {venue}" title card that fades on entry. */
+  private showVenueCard(): void {
+    const card = this.add
+      .text(this.sw / 2, this.sh * 0.32, `🎤 ${this.map.name}`, {
+        fontFamily: 'monospace',
+        fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 22, 18, 34))}px`,
+        color: '#ffffff',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH_OVERLAY + 30)
+      .setAlpha(0);
+    card.setShadow(0, 0, '#e84393', 16, true, true);
+    this.tweens.add({ targets: card, alpha: 1, duration: 320, yoyo: true, hold: 1400, onComplete: () => card.destroy() });
   }
 
   // --- Board container + layers -------------------------------------------
@@ -1221,7 +1239,7 @@ export class GameScene extends Phaser.Scene {
     text.setFontSize(font).setPosition(cx, btnCy);
     label
       .setFontSize(font)
-      .setText('Build your defense — then start the first wave')
+      .setText('Tune up your band — then kick off the first set')
       .setPosition(cx, btnCy - btnH / 2 - 6);
   }
 
@@ -1530,8 +1548,20 @@ export class GameScene extends Phaser.Scene {
       duration: 400,
       onComplete: () => flash.destroy(),
     });
+    // Rotate punny "crowd's going off" callouts, stepped by the combo tier.
+    const cheers = [
+      'THE CROWD GOES WILD!',
+      'ENCORE! ENCORE!',
+      "YOU'RE A SHOW-STOPPER!",
+      'BRING DOWN THE HOUSE!',
+      'PITCH PERFECT!',
+      'STANDING OVATION!',
+      'HEADLINER ENERGY!',
+      'THAT KEY? NAILED IT!',
+    ];
+    const cheer = cheers[Math.floor(this.combo / 5 - 1) % cheers.length];
     const text = this.add
-      .text(this.sw / 2, this.sh / 2 - 30, 'THE CROWD GOES WILD!', {
+      .text(this.sw / 2, this.sh / 2 - 30, cheer, {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#ff6bd6',
@@ -1593,7 +1623,7 @@ export class GameScene extends Phaser.Scene {
     if (interest > 0) {
       this.gold += interest;
       this.goldEarned += interest;
-      this.screenFloat(`+${interest}g interest`, '#69db7c');
+      this.screenFloat(`+${interest}g in tips 🎶`, '#69db7c');
       audio.sfx('gold');
     }
     this.refreshHud();
@@ -1753,7 +1783,7 @@ export class GameScene extends Phaser.Scene {
       | Phaser.GameObjects.Text
       | undefined;
     label?.setText(
-      `Wave ${this.waves.currentWaveNumber} complete — next wave in ${Math.ceil(this.intermissionRemaining)}s`,
+      `Set ${this.waves.currentWaveNumber} nailed — next act in ${Math.ceil(this.intermissionRemaining)}s`,
     );
   }
 
@@ -1826,15 +1856,15 @@ export class GameScene extends Phaser.Scene {
     if (this.endState === 'gameover' && this.mode === 'endless') {
       this.renderEndlessSurvived(line);
     } else if (this.endState === 'gameover') {
-      line(-30, 'GAME OVER', 30, '#ff6b6b');
-      line(6, `Reached wave ${this.waves.currentWaveNumber}`, 13, '#9aa0b0');
+      line(-30, "SHOW'S OVER", 30, '#ff6b6b');
+      line(6, `Booed off at wave ${this.waves.currentWaveNumber}`, 13, '#9aa0b0');
       this.overlayButton('Back to menu', cx, this.endButtonY(), 0x51cf66, () =>
         this.fadeToScene('MenuScene'),
       );
     } else {
       // Story chapter complete or final victory — both show the star result.
       const final = this.endState === 'victory';
-      line(-90, final ? 'YOU SURVIVED!' : 'CHAPTER COMPLETE', final ? 26 : 22, '#69db7c');
+      line(-90, final ? 'STANDING OVATION!' : 'SET COMPLETE!', final ? 26 : 22, '#69db7c');
       line(-64, this.map.name, 12, '#9aa0b0');
       line(-30, '★'.repeat(this.endStars) + '☆'.repeat(3 - this.endStars), 34, '#ffd43b');
 

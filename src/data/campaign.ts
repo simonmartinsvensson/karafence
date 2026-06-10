@@ -68,26 +68,26 @@ function poolForLevel(i: number): EnemyTypeKey[] {
 }
 
 const NAMES = [
-  'The Garage', // 1 — tutorial
-  'Open Mic Night',
-  'The Corner Pub',
-  'Karaoke Box',
-  'The Dive Bar',
-  'College Bar Crawl',
-  'The Roadhouse',
-  'Neon Lounge',
-  'The Comedy Club',
-  'City Music Hall', // 10
-  'The Underground',
-  'Festival Side Stage',
-  'The Jazz Cellar',
-  'Riverboat Cruise',
-  'The Arena Warmup',
-  'Downtown Theater',
-  'The Sky Lounge',
-  'Stadium Tour',
-  'The Grand Stage',
-  'World Finals', // 20
+  'The Garage', // 1 — tutorial (named in the tutorial dialogue)
+  'Open Mic Drop',
+  'Tone-Deaf Tavern',
+  'The Treble Maker',
+  'Bar None',
+  'The Lyric Lounge',
+  'Reverb Room',
+  'The Bassment',
+  'Sharp Note Saloon',
+  'Mic Drop Inn', // 10
+  'The Crescendo',
+  'All That Jazz Cellar',
+  'The Warm-Up Act',
+  'The Showboat',
+  'Off the Record',
+  'Sound Check Arena',
+  'Curtain Call Hall',
+  'Highnote Heights',
+  'The Grand Stage', // named in the level-19 dialogue
+  'The Final Countdown', // 20
 ];
 
 /** Difficulty curve for level index `i` (0-based). */

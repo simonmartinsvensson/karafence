@@ -76,7 +76,7 @@ export class BuildPanel {
 
     parts.push(
       this.scene.add
-        .text(0, -panelH / 2 + 14, 'BUILD A TOWER', {
+        .text(0, -panelH / 2 + 14, 'ADD TO THE LINEUP', {
           fontFamily: 'monospace',
           fontSize: '13px',
           color: '#e84393',

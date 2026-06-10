@@ -415,13 +415,15 @@ export class Tower {
       this.cooldown = this.fireInterval();
       this.fireSplash();
       if (this.stats.doubleFire) {
-        this.timers.push(
-          this.scene.time.delayedCall(120, () => {
-            if (!this.destroyed && this.frozenRemaining <= 0 && this.enemiesInRange().length > 0) {
-              this.fireSplash();
-            }
-          }),
-        );
+        const ev = this.scene.time.delayedCall(120, () => {
+          // Drop the (now-fired) timer so the array can't grow without bound.
+          const i = this.timers.indexOf(ev);
+          if (i >= 0) this.timers.splice(i, 1);
+          if (!this.destroyed && this.frozenRemaining <= 0 && this.enemiesInRange().length > 0) {
+            this.fireSplash();
+          }
+        });
+        this.timers.push(ev);
       }
       return [];
     }
@@ -460,6 +462,7 @@ export class Tower {
   }
 
   private onProjectileHit(target: Enemy): void {
+    if (this.destroyed) return; // a projectile already in flight when the tower was sold
     this.dealHit(target);
     // Piercing shot also hits the nearest other enemies around the impact.
     if (this.stats.pierce > 1) {
