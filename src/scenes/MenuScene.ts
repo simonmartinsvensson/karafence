@@ -44,7 +44,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-10 12:35 CEST';
+const LAST_PATCH = '2026-06-10 12:45 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -421,11 +421,15 @@ export class MenuScene extends Phaser.Scene {
     this.closeModal();
     const { sw, sh } = this;
     const w = Math.min(sw - 16, 440);
-    const rowH = TOUCH_MIN + 18;
     const towers = this.metaTab === 'towers';
     const rowCount = towers ? TOWER_LIST.length : META_UPGRADES.length + 1;
     const headH = 96; // title + stars line + tab row
-    const h = Math.min(sh - 16, headH + rowCount * rowH + TOUCH_MIN + 16);
+    const closeArea = TOUCH_MIN + 14;
+    const idealRowH = TOUCH_MIN + 18;
+    // Fit the panel to the screen, then size rows to the space that's left so
+    // they never spill past the panel / off-screen on short (landscape) viewports.
+    const h = Math.min(sh - 12, headH + rowCount * idealRowH + closeArea);
+    const rowH = Math.max(30, Math.floor((h - headH - closeArea) / rowCount));
     this.pushBackdrop();
 
     this.modal.push(
@@ -486,6 +490,7 @@ export class MenuScene extends Phaser.Scene {
     left: number,
     w: number,
     rowY: number,
+    rowH: number,
     title: string,
     subtitle: string,
     btnLabel: string,
@@ -493,14 +498,16 @@ export class MenuScene extends Phaser.Scene {
     onClick: () => void,
   ): void {
     this.modalText(left + 16, rowY, title, '#ffffff', 12, 0);
-    this.modalText(left + 16, rowY + 16, subtitle, '#9aa0b0', 10, 0);
+    this.modalText(left + 16, rowY + Math.min(16, rowH * 0.36), subtitle, '#9aa0b0', 10, 0);
     const bw = Math.min(120, w * 0.3);
+    // Button height tracks the (possibly compressed) row so rows never overlap.
+    const bh = Math.min(TOUCH_MIN, rowH - 2);
     this.modal.push(
       ...this.button({
         x: left + w - bw / 2 - 14,
         y: rowY + 8,
         w: bw,
-        h: TOUCH_MIN,
+        h: bh,
         label: btnLabel,
         color: enabled ? 0x51cf66 : 0x555555,
         enabled,
@@ -523,6 +530,7 @@ export class MenuScene extends Phaser.Scene {
         left,
         w,
         rowY,
+        rowH,
         `${def.name}  ${pips}`,
         tier > 0 ? def.effectLabel(tier) : 'Not purchased',
         cost === null ? 'MAXED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
@@ -539,6 +547,7 @@ export class MenuScene extends Phaser.Scene {
       left,
       w,
       rowY,
+      rowH,
       `${UNLOCK_NAME.speed2x}  ${owned ? '●' : '○'}`,
       'Toggle 1×/2× game speed in a run',
       owned ? 'OWNED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
@@ -559,6 +568,7 @@ export class MenuScene extends Phaser.Scene {
           left,
           w,
           rowY,
+          rowH,
           `${tower.icon} ${tower.name}  🔒`,
           'Locked — unlock to build it',
           affordable ? `Unlock ★${cost}` : `Need ★${cost}`,
@@ -575,6 +585,7 @@ export class MenuScene extends Phaser.Scene {
         left,
         w,
         rowY,
+        rowH,
         `${tower.icon} ${tower.name}  ${pips}`,
         level > 0 ? towerUpgradeEffectLabel(level) : 'Base stats',
         cost === null ? 'MAX' : affordable ? `Lvl ★${cost}` : `Need ★${cost}`,

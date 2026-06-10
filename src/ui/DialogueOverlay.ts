@@ -70,11 +70,33 @@ export class DialogueOverlay {
 
     const vw = this.scene.scale.width;
     const vh = this.scene.scale.height;
-    const boxW = Math.min(vw - 24, 660);
-    const boxH = Math.round(Phaser.Math.Clamp(vh * 0.3, 150, 220));
+    const margin = 12;
+    const pad = 14;
     const cx = vw / 2;
-    const boxCy = vh - 18 - boxH / 2;
+    const boxW = Math.min(vw - margin * 2, 660);
     const left = cx - boxW / 2;
+
+    // Reserve a portrait column independent of box height, so the text width
+    // (and thus its wrapped height) is known before we size the box.
+    const colW = Math.min(boxW * 0.26, 108);
+    const textLeft = left + colW + pad * 1.5;
+    const textW = Math.max(48, left + boxW - pad - textLeft);
+    const topArea = 42; // name + divider above the body text
+
+    // Box must fit on screen; size it to the text, shrinking the font (to a
+    // floor) only if even the tallest allowed box can't contain the beat.
+    const maxBoxH = vh - margin * 2;
+    const maxTextH = maxBoxH - topArea - pad;
+    let fontSize = Math.round(Phaser.Math.Clamp(vw / 52, 11, 14));
+    let body = this.makeBody(beat, fontSize, textW);
+    while (body.height > maxTextH && fontSize > 9) {
+      body.destroy();
+      fontSize -= 1;
+      body = this.makeBody(beat, fontSize, textW);
+    }
+    const boxH = Math.min(maxBoxH, Math.max(120, Math.round(topArea + body.height + pad)));
+    const boxCy = vh - margin - boxH / 2;
+    const boxTop = boxCy - boxH / 2;
 
     const parts: Phaser.GameObjects.GameObject[] = [];
 
@@ -85,14 +107,19 @@ export class DialogueOverlay {
         .setStrokeStyle(2.5, char.color, 0.95),
     );
 
-    // Portrait — a tinted silhouette that rises above the box (VN style).
-    const portraitH = boxH * 1.18;
-    const portraitW = portraitH * (96 / 112);
-    const portraitX = left + portraitW / 2 + 14;
+    // Portrait — a tinted silhouette in its column, bottom-aligned to the box,
+    // capped so it never runs off the top of the screen.
     const portraitBottom = boxCy + boxH / 2 - 6;
+    let portraitH = Math.min(boxH * 1.12, vh * 0.42);
+    let portraitW = portraitH * (96 / 112);
+    if (portraitW > colW) {
+      portraitW = colW;
+      portraitH = portraitW * (112 / 96);
+    }
+    const portraitX = left + pad + colW / 2;
     parts.push(
       this.scene.add
-        .rectangle(portraitX, portraitBottom - portraitH * 0.42, portraitW + 8, portraitH * 0.9, 0x0c0c14, 0.9)
+        .rectangle(portraitX, portraitBottom - portraitH * 0.45, portraitW + 8, portraitH * 0.92, 0x0c0c14, 0.9)
         .setStrokeStyle(2, char.color, 0.55),
     );
     parts.push(
@@ -104,9 +131,7 @@ export class DialogueOverlay {
     );
 
     // Name plate.
-    const textLeft = portraitX + portraitW / 2 + 18;
-    const textW = boxW - (textLeft - left) - 18;
-    const nameY = boxCy - boxH / 2 + 18;
+    const nameY = boxTop + 16;
     parts.push(
       this.scene.add
         .text(textLeft, nameY, char.name, {
@@ -123,26 +148,17 @@ export class DialogueOverlay {
         .setOrigin(0, 0.5),
     );
 
-    // Lines.
-    parts.push(
-      this.scene.add
-        .text(textLeft, nameY + 26, beat.lines.join('\n'), {
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          color: '#e8e8f0',
-          lineSpacing: 6,
-          wordWrap: { width: textW },
-        })
-        .setOrigin(0, 0),
-    );
+    // Body lines (already built + measured above; just position it).
+    body.setPosition(textLeft, boxTop + topArea);
+    parts.push(body);
 
-    // Advance hint + progress dots.
+    // Advance hint.
     const last = this.index === this.beats.length - 1;
     parts.push(
       this.scene.add
         .text(
-          cx + boxW / 2 - 14,
-          boxCy + boxH / 2 - 12,
+          cx + boxW / 2 - 12,
+          boxCy + boxH / 2 - 11,
           last ? 'tap to continue ▶' : 'tap ▶',
           { fontFamily: 'monospace', fontSize: '10px', color: '#9aa0b0' },
         )
@@ -152,10 +168,23 @@ export class DialogueOverlay {
     this.container = this.scene.add.container(0, 0, parts).setDepth(DEPTH + 1).setScrollFactor(0);
     // Make the whole box tappable too (not just the backdrop).
     this.container.setInteractive(
-      new Phaser.Geom.Rectangle(left, boxCy - boxH / 2, boxW, boxH),
+      new Phaser.Geom.Rectangle(left, boxTop, boxW, boxH),
       Phaser.Geom.Rectangle.Contains,
     );
     this.container.on('pointerdown', () => this.advance());
+  }
+
+  /** The beat's lines as a wrapped text object (used for measure + display). */
+  private makeBody(beat: StoryBeat, fontSize: number, textW: number): Phaser.GameObjects.Text {
+    return this.scene.add
+      .text(0, 0, beat.lines.join('\n'), {
+        fontFamily: 'monospace',
+        fontSize: `${fontSize}px`,
+        color: '#e8e8f0',
+        lineSpacing: 5,
+        wordWrap: { width: textW },
+      })
+      .setOrigin(0, 0);
   }
 
   /** Reflow on resize (no-op if closed). */
