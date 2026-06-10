@@ -114,8 +114,14 @@ function makeLevel(i: number): CampaignLevel {
     startingGold: tutorial ? 320 : Math.max(210, 300 - i * 5),
     waveProfile: profile,
     starGoals: {
-      maxLivesLost: Math.max(2, 8 - Math.floor(i / 3)),
-      maxGoldSpent: 500 + i * 40,
+      // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5). Keep
+      // the clean-run star a real but achievable challenge — never so tight that
+      // a single boss leak auto-fails it on a long level.
+      maxLivesLost: Math.max(5, 12 - Math.floor(i / 3)),
+      // "Thrifty" star: scale the budget with the level's size so it rewards an
+      // efficient build (not maxing everything) instead of being free early and
+      // impossible late.
+      maxGoldSpent: 600 + i * 90,
       minCombo: 3 + Math.floor(i / 2),
     },
     colors: i >= 13 ? COOL_PALETTE : undefined,

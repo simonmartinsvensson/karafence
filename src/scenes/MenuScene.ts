@@ -44,7 +44,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-10 12:45 CEST';
+const LAST_PATCH = '2026-06-10 13:17 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
