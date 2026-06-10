@@ -341,8 +341,27 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.refreshHud();
+    this.ambientNotes();
     this.showVenueCard();
     audio.playMusic('inWave');
+  }
+
+  /** Faint musical notes drifting up across the venue — subtle atmosphere. */
+  private ambientNotes(): void {
+    this.add
+      .particles(0, 0, TX.projNote, {
+        x: { min: 0, max: this.sw },
+        y: this.sh + 16,
+        lifespan: 7000,
+        frequency: 1100,
+        speedY: { min: -34, max: -16 },
+        speedX: { min: -10, max: 10 },
+        scale: { min: 0.4, max: 0.85 },
+        rotate: { min: -25, max: 25 },
+        alpha: { start: 0.16, end: 0 },
+        blendMode: 'ADD',
+      })
+      .setDepth(DEPTH_BOARD + 1);
   }
 
   /** A brief centered "now playing: {venue}" title card that fades on entry. */
@@ -534,10 +553,45 @@ export class GameScene extends Phaser.Scene {
       this.gold -= cost;
       this.goldSpent += cost;
       this.towers.placeTower(type, target.col, target.row, cost);
+      const { x, y } = tileToWorld(this.layout, target.col, target.row);
+      this.fxBurst(x, y, TOWER_TYPES[type].color);
       this.refreshHud();
       this.saveRunState();
     }
     this.closeBuild();
+  }
+
+  /** A short expanding glow ring + spark burst (tower placed / upgraded). */
+  private fxBurst(x: number, y: number, color: number): void {
+    const ts = this.layout.tileSize;
+    const ring = this.add
+      .image(x, y, TX.glow)
+      .setDisplaySize(ts * 0.6, ts * 0.6)
+      .setTint(color)
+      .setAlpha(0.85)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.layers.fx.add(ring);
+    this.tweens.add({
+      targets: ring,
+      scale: ring.scale * 2.6,
+      alpha: 0,
+      duration: 320,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    const em = this.add.particles(x, y, 'spark', {
+      lifespan: 360,
+      speed: { min: 40, max: 120 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 1, end: 0 },
+      tint: color,
+      blendMode: 'ADD',
+      emitting: false,
+    });
+    this.layers.fx.add(em);
+    em.explode(9);
+    this.time.delayedCall(420, () => em.destroy());
   }
 
   private closeBuild(): void {
@@ -744,6 +798,7 @@ export class GameScene extends Phaser.Scene {
     const spent = tower.applyUpgrade(path);
     this.gold -= spent;
     this.goldSpent += spent;
+    this.fxBurst(tower.x, tower.y, tower.type.projectileColor);
     this.refreshHud();
     this.saveRunState();
     this.openUpgradePanel(tower); // rebuild with new tier / gold
@@ -1255,10 +1310,11 @@ export class GameScene extends Phaser.Scene {
   private onEnemyReachStage(enemy: Enemy): void {
     // The Mic Grabber steals gold and kills the combo if he reaches the stage.
     if (enemy.type.boss === 'micGrabber') {
-      this.gold = Math.max(0, this.gold - BOSS_CONFIG.micGrabber.goldSteal);
+      const steal = BOSS_CONFIG.micGrabber.goldSteal;
+      this.gold = Math.max(0, this.gold - steal);
       this.combo = 0;
       this.updateComboHud(false);
-      this.floatText(enemy.x, enemy.y, '🎤 -10g STOLEN!', '#ff6b6b');
+      this.floatText(enemy.x, enemy.y, `🎤 -${steal}g STOLEN!`, '#ff6b6b');
     }
     if (enemy === this.activeBoss) this.clearBoss();
     audio.sfx('reachStage');

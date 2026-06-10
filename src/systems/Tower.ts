@@ -139,6 +139,16 @@ export class Tower {
     this.layers.towers.add(this.container);
     this.body.setInteractive({ useHandCursor: true });
 
+    // Spawn pop-in: the act takes the stage with a little bounce.
+    this.body.setScale(this.bodyScale * 0.4);
+    scene.tweens.add({
+      targets: this.body,
+      scaleX: this.bodyScale,
+      scaleY: this.bodyScale,
+      duration: 260,
+      ease: 'Back.easeOut',
+    });
+
     // Gentle idle "hover" bob on the body + glow (phase-offset per tile so the
     // board breathes rather than pulsing in unison). The ground shadow stays put.
     scene.tweens.add({

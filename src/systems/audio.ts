@@ -157,7 +157,6 @@ class AudioManager {
   private sfxBus!: GainNode; // sfx sub-bus
 
   private settings: AudioSettings;
-  private unlocked = false;
 
   // Sequencer state.
   private current: MusicTrackName | null = null;
@@ -208,18 +207,27 @@ class AudioManager {
     return true;
   }
 
-  /** Resume the context after a user gesture and start any pending music. */
+  /**
+   * Resume the context on a user gesture and (re)assert the desired track.
+   * Runs on every gesture so that if the context was suspended (tab refocus on
+   * mobile) and a track was requested meanwhile, it actually starts on return.
+   * `playMusic` is a no-op when already on the right track, so this never
+   * restarts music on an ordinary tap.
+   */
   private unlock(): void {
     if (!this.ensureContext() || !this.ctx) return;
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
-    if (!this.unlocked) {
-      this.unlocked = true;
+    const start = (): void => {
       const track = this.pending ?? this.current;
-      if (track) {
-        this.current = null; // force a (re)start
+      if (track && this.current !== track) {
+        this.current = null;
+        this.playMusic(track);
+      } else if (track && this.schedulerId === null) {
+        this.current = null; // scheduler was stopped — restart the same track
         this.playMusic(track);
       }
-    }
+    };
+    if (this.ctx.state === 'suspended') void this.ctx.resume().then(start);
+    else start();
   }
 
   private get ready(): boolean {
@@ -299,6 +307,14 @@ class AudioManager {
   /** Look-ahead scheduler: queue every note that falls due in the next window. */
   private scheduler(): void {
     if (!this.ctx || !this.current) return;
+    // Don't schedule while the context is suspended (e.g. the tab is in the
+    // background) — `currentTime` is frozen there, and on resume it jumps
+    // forward, which would otherwise make the catch-up loop queue a huge burst
+    // of overlapping notes at once. Re-anchor the clock when far behind.
+    if (this.ctx.state !== 'running') return;
+    if (this.nextNoteTime < this.ctx.currentTime) {
+      this.nextNoteTime = this.ctx.currentTime + 0.06;
+    }
     const track = TRACKS[this.current];
     const stepDur = 60 / track.bpm / 2; // 8th notes
     while (this.nextNoteTime < this.ctx.currentTime + AudioManager.SCHEDULE_AHEAD) {
