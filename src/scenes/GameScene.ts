@@ -41,6 +41,7 @@ import {
   saveRun,
   clearRun,
   saveEndlessBest,
+  loadEndlessBest,
   loadStoryProgress,
   saveStoryProgress,
 } from '../systems/storage';
@@ -98,6 +99,9 @@ export class GameScene extends Phaser.Scene {
   private towers!: TowerManager;
   private buildPanel!: BuildPanel;
   private upgradePanel!: UpgradePanel;
+  /** Gold the currently-open build/upgrade panel was built with, so it can be
+   * rebuilt live when gold changes (affordability updates without reopening). */
+  private panelGold = -1;
   private dialogue!: DialogueOverlay; // story-mode between-wave dialogue
 
   // Board container + its ordered z-layers (see grid.ts BoardLayers).
@@ -185,6 +189,7 @@ export class GameScene extends Phaser.Scene {
   private endStars = 0;
   private endGained = 0;
   private endBestWave = 0; // endless: best wave after this run
+  private endNewRecord = false; // endless: did this run set a new best?
   private nextChapterId: LevelId | null = null; // story: chapter to advance to
   private endOverlay: Phaser.GameObjects.GameObject[] = [];
 
@@ -208,6 +213,9 @@ export class GameScene extends Phaser.Scene {
   init(data: { mode?: GameMode; levelId?: LevelId; resume?: boolean }): void {
     this.mode = data.mode ?? 'story';
     this.levelId = data.levelId ?? 'level1';
+    // Guard against a stale/corrupt level id (e.g. an old save) so an unknown
+    // level falls back to the first chapter instead of crashing on an undefined map.
+    if (!LEVEL_BY_ID[this.levelId]) this.levelId = 'level1';
     this.resume = data.resume ?? false;
     this.map = LEVEL_BY_ID[this.levelId];
 
@@ -248,6 +256,7 @@ export class GameScene extends Phaser.Scene {
 
     this.endState = 'none';
     this.endBestWave = 0;
+    this.endNewRecord = false;
     this.nextChapterId = null;
     this.endOverlay = [];
   }
@@ -420,6 +429,7 @@ export class GameScene extends Phaser.Scene {
     this.tickIntermission(dt);
     this.driveBoss(dt);
     this.refreshHud();
+    this.syncOpenPanel();
   }
 
   // --- Input / placement ---------------------------------------------------
@@ -456,13 +466,7 @@ export class GameScene extends Phaser.Scene {
     if (this.towers.canPlace(col, row)) {
       this.buildTarget = { col, row };
       this.towers.showBuildOverlay(col, row);
-      this.buildPanel.open(
-        this.gold,
-        (type) => this.placeTower(type),
-        () => this.closeBuild(),
-        (type) => this.towerCost(type),
-        (type) => isTowerUnlocked(this.meta, type),
-      );
+      this.openBuildPanel();
     } else if (
       col >= 0 &&
       row >= 0 &&
@@ -474,6 +478,18 @@ export class GameScene extends Phaser.Scene {
       // "can't build here" feedback is unmistakable.
       this.flashInvalidTile(col, row);
     }
+  }
+
+  /** (Re)build the tower-picker modal for the current `buildTarget` + gold. */
+  private openBuildPanel(): void {
+    this.buildPanel.open(
+      this.gold,
+      (type) => this.placeTower(type),
+      () => this.closeBuild(),
+      (type) => this.towerCost(type),
+      (type) => isTowerUnlocked(this.meta, type),
+    );
+    this.panelGold = this.gold;
   }
 
   /** Brief red flash on a tile the player can't build on. */
@@ -671,7 +687,7 @@ export class GameScene extends Phaser.Scene {
   // --- Tower selection / upgrades / selling --------------------------------
 
   private onTowerSelection(tower: Tower | null): void {
-    if (tower) {
+    if (tower && !this.gameOver) {
       this.openUpgradePanel(tower);
     } else {
       this.upgradePanel.close();
@@ -687,6 +703,21 @@ export class GameScene extends Phaser.Scene {
         this.openUpgradePanel(tower); // rebuild to show new strategy
       },
     });
+    this.panelGold = this.gold;
+  }
+
+  /**
+   * Keep an open build/upgrade panel's affordability in sync with live gold:
+   * rebuild it (flicker-free, same frame) whenever gold changes, so a tower you
+   * couldn't afford on open becomes buyable the instant the kill gold lands —
+   * no need to close and reopen.
+   */
+  private syncOpenPanel(): void {
+    if (this.gold === this.panelGold) return;
+    const sel = this.towers.selectedTower;
+    if (this.upgradePanel.isOpen && sel) this.openUpgradePanel(sel);
+    else if (this.buildPanel.isOpen) this.openBuildPanel();
+    else this.panelGold = this.gold; // nothing open — just resync the marker
   }
 
   private upgradeTower(tower: Tower, path: UpgradePathKey): void {
@@ -1755,9 +1786,11 @@ export class GameScene extends Phaser.Scene {
     // Persist lifetime progress; the failed run is not resumable.
     saveMeta(this.meta);
     clearRun(this.mode, this.levelId);
-    // Endless: bank the best wave reached.
+    // Endless: bank the best wave reached (new record only if strictly higher).
     if (this.mode === 'endless') {
-      this.endBestWave = saveEndlessBest(this.waves.currentWaveNumber);
+      const reached = this.waves.currentWaveNumber;
+      this.endNewRecord = reached > loadEndlessBest();
+      this.endBestWave = saveEndlessBest(reached);
     }
 
     this.endState = 'gameover';
@@ -1786,7 +1819,8 @@ export class GameScene extends Phaser.Scene {
     add(
       this.add
         .rectangle(cx, cy, this.sw, this.sh, 0x000000, this.endState === 'gameover' ? 0.7 : 0.72)
-        .setDepth(DEPTH_OVERLAY),
+        .setDepth(DEPTH_OVERLAY)
+        .setInteractive(), // absorb taps so towers can't be tapped through the overlay
     );
 
     if (this.endState === 'gameover' && this.mode === 'endless') {
@@ -1841,17 +1875,16 @@ export class GameScene extends Phaser.Scene {
   private renderEndlessSurvived(line: (dy: number, s: string, sz: number, c: string) => void): void {
     const cx = this.sw / 2;
     const reached = this.waves.currentWaveNumber;
-    const newRecord = reached >= this.endBestWave && this.endBestWave > 0;
-    line(-104, 'YOU SURVIVED', 22, '#4dd2ff');
-    line(-70, `${reached} WAVES`, 34, '#ffd43b');
+    line(-104, 'YOU REACHED', 22, '#4dd2ff');
+    line(-70, `WAVE ${reached}`, 34, '#ffd43b');
     line(-26, `Enemies silenced: ${this.runKills}`, 13, '#cdeac0');
     line(-6, `Gold earned: ${this.goldEarned}g`, 13, '#ffd166');
     line(14, `Highest combo: x${this.highestCombo}`, 13, '#ff9ed8');
     line(
       44,
-      newRecord ? `🏆 New best — wave ${this.endBestWave}!` : `Best: wave ${this.endBestWave}`,
+      this.endNewRecord ? `🏆 New best — wave ${this.endBestWave}!` : `Best: wave ${this.endBestWave}`,
       13,
-      newRecord ? '#ffd43b' : '#777f8f',
+      this.endNewRecord ? '#ffd43b' : '#777f8f',
     );
     const y = this.endButtonY();
     const gap = 12;
@@ -1912,7 +1945,7 @@ export class GameScene extends Phaser.Scene {
   damageSinger(amount: number): void {
     if (this.gameOver) return;
     this.singerHp = Math.max(0, this.singerHp - amount);
-    this.hpText.setText(`♥ ${this.singerHp}`);
+    this.hpText.setText(`${this.singerHp}`); // match refreshHud's format (no flicker)
     // Flash the singer red to signal the hit.
     if (this.singerFigure) {
       this.singerFigure.setTint(0xff4444);

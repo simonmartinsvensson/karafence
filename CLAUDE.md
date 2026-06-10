@@ -124,7 +124,7 @@ per-tower active abilities and no shop power-ups (see "Towers / combat").
 - **Endless** — survival on a standalone `'endless'` map with `ENDLESS_PROFILE`
   (`src/data/waves.ts`): waves never stop, ramping forever (count/hp/speed grow,
   rotating boss every 5 waves, tougher each cycle). No win / no stars; game over
-  shows a **"YOU SURVIVED X WAVES"** screen (run kills / gold / combo, best wave)
+  shows a **"YOU REACHED WAVE X"** screen (run kills / gold / combo, best wave)
   with **Try Again** + **Menu**, banking the best to `karafence:endless:best`.
 - **Game speed**: a bottom-bar **1×/2×** toggle scales the manual `dt`,
   `time.timeScale` (spawn/freeze clock) and `tweens.timeScale` together. It is a
@@ -274,8 +274,10 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   fully maxes). Tier pips render on the tower (red = A on top, cyan = B below).
 - `src/ui/UpgradePanel.ts` — opens on selecting a placed tower: both paths
   (pips + next label/cost), a targeting toggle, and **Sell** (`SELL_REFUND` =
-  60% of `totalSpent`). No Activate row (combat is passive). Affordability is
-  snapshotted when the panel is (re)built.
+  60% of `totalSpent`). No Activate row (combat is passive). Affordability
+  refreshes **live**: `GameScene.syncOpenPanel` rebuilds the open build/upgrade
+  panel (flicker-free, same frame) whenever gold changes, so an upgrade you
+  couldn't afford on open becomes buyable the instant the kill gold lands.
 - `GameScene` wires `TowerManager.onSelectionChange` → open/close the panel, and
   owns the gold spend/refund on upgrade/sell.
 
