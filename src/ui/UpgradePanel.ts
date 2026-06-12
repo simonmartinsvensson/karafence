@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
 import { computeScreenLayout } from '../systems/grid';
-import { MAX_TIER, type UpgradePathKey } from '../data/towers';
+import { MAX_TIER, describeTier, type UpgradePathKey } from '../data/towers';
 import type { Tower } from '../systems/Tower';
 
 export interface UpgradePanelCallbacks {
@@ -59,14 +59,23 @@ export class UpgradePanel {
 
     const top = -h / 2 + pad;
 
-    // Header: tower name (left) + targeting toggle (right, attacking only).
+    // Header: tower name + role blurb (left) + targeting toggle (right).
     const headerCy = top + headerH / 2;
     parts.push(
       this.scene.add
-        .text(-w / 2 + 12, headerCy, `${tower.type.icon} ${tower.type.name}`, {
+        .text(-w / 2 + 12, headerCy - 8, `${tower.type.icon} ${tower.type.name}`, {
           fontFamily: 'monospace',
           fontSize: '14px',
           color: '#ffffff',
+        })
+        .setOrigin(0, 0.5),
+    );
+    parts.push(
+      this.scene.add
+        .text(-w / 2 + 12, headerCy + 9, tower.type.blurb, {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: '#9aa0b0',
         })
         .setOrigin(0, 0.5),
     );
@@ -205,14 +214,32 @@ export class UpgradePanel {
         cb.onUpgrade(path);
       });
     }
-    const label = this.scene.add
-      .text(-w / 2 + 14, y, text, {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color,
-      })
-      .setOrigin(0, 0.5);
-    return [row, label];
+    // What the next upgrade actually does — derived from its stat deltas/flags,
+    // so the player sees the effect, not just the name. Only the next buyable
+    // tier has one (maxed/locked rows show just the head line, centered).
+    const effect = next && !maxed && !locked ? describeTier(next) : '';
+    const out: Phaser.GameObjects.GameObject[] = [row];
+    out.push(
+      this.scene.add
+        .text(-w / 2 + 14, effect ? y - 8 : y, text, {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color,
+        })
+        .setOrigin(0, 0.5),
+    );
+    if (effect) {
+      out.push(
+        this.scene.add
+          .text(-w / 2 + 26, y + 9, effect, {
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            color: affordable ? '#a9b0c0' : '#8a7878',
+          })
+          .setOrigin(0, 0.5),
+      );
+    }
+    return out;
   }
 
   close(): void {

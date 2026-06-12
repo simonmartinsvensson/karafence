@@ -21,6 +21,8 @@ export type TowerTypeKey =
 export interface TowerType {
   key: TowerTypeKey;
   name: string;
+  /** One-line role description, shown in the build/upgrade panels. */
+  blurb: string;
   /** Gold cost to place. */
   cost: number;
   /** Attack range, in tiles. */
@@ -62,6 +64,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   leadSinger: {
     key: 'leadSinger',
     name: 'Lead Singer',
+    blurb: 'Single target, down a lane',
     cost: 50,
     range: 2.6,
     damage: 9,
@@ -76,6 +79,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   drummer: {
     key: 'drummer',
     name: 'Drummer',
+    blurb: 'AoE splash to a cluster',
     cost: 75,
     range: 1.7,
     damage: 5,
@@ -90,6 +94,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   keyboardist: {
     key: 'keyboardist',
     name: 'Keyboardist',
+    blurb: 'Long range, slows the crowd',
     cost: 65,
     range: 3.4,
     damage: 4,
@@ -106,6 +111,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   backupSinger: {
     key: 'backupSinger',
     name: 'Backup Singer',
+    blurb: 'Aura: +40% attack speed nearby',
     cost: 60,
     range: 1.9,
     damage: 0,
@@ -122,6 +128,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   bassPlayer: {
     key: 'bassPlayer',
     name: 'Bass Player',
+    blurb: 'Knocks the whole crowd back',
     cost: 85,
     range: 2.4,
     damage: 4,
@@ -137,6 +144,7 @@ export const TOWER_TYPES: Record<TowerTypeKey, TowerType> = {
   hypeMan: {
     key: 'hypeMan',
     name: 'Hype Man',
+    blurb: 'Aura: +50% gold & faster combo',
     cost: 90,
     range: 3.8,
     damage: 0,
@@ -273,3 +281,27 @@ export const UPGRADES: Partial<Record<TowerTypeKey, UpgradeTree>> = {
     },
   },
 };
+
+/**
+ * A concise, human-readable summary of what an upgrade tier does, derived
+ * straight from its stat deltas + effect flags (so it never drifts from the
+ * actual numbers). Used by the UpgradePanel under each upgrade's name.
+ */
+export function describeTier(tier: UpgradeTier): string {
+  const parts: string[] = [];
+  if (tier.damage) parts.push(`+${tier.damage} dmg`);
+  if (tier.rangeTiles) parts.push(`+${tier.rangeTiles} range`);
+  if (tier.attackSpeed) parts.push(`+${tier.attackSpeed}/s rate`);
+  if (tier.pierce) parts.push(`pierces ${tier.pierce}`);
+  if (tier.multiTarget) parts.push(`hits ${tier.multiTarget} foes`);
+  if (tier.doubleFire) parts.push('fires twice');
+  if (tier.slowOnHit) {
+    parts.push(
+      tier.slowOnHit.factor === 0
+        ? `freezes ${tier.slowOnHit.duration}s`
+        : `slows ${Math.round((1 - tier.slowOnHit.factor) * 100)}% for ${tier.slowOnHit.duration}s`,
+    );
+  }
+  if (tier.stunOnHit) parts.push(`stuns ${tier.stunOnHit.duration}s`);
+  return parts.join(' · ');
+}

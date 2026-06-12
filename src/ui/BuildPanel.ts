@@ -58,7 +58,8 @@ export class BuildPanel {
     // Fit the grid to the viewport but cap it so it stays legible on desktop.
     const panelW = Math.min(vw - 16, 380);
     const cellW = Math.floor((panelW - pad * 2 - gap * (cols - 1)) / cols);
-    const cellH = Math.max(TOUCH_MIN + 30, Math.floor(cellW * 0.74));
+    // Taller cells so each card fits sprite + name + a one-line role blurb + cost.
+    const cellH = Math.max(TOUCH_MIN + 54, Math.floor(cellW * 1.04));
     const panelH = headerH + rows * cellH + (rows - 1) * gap + pad * 2;
     const parts: Phaser.GameObjects.GameObject[] = [];
 
@@ -97,17 +98,18 @@ export class BuildPanel {
         .rectangle(cx, cy, cellW, cellH, affordable ? 0x232336 : 0x1a1a22)
         .setStrokeStyle(2, affordable ? accent : 0x555555, affordable ? 1 : 0.7);
       parts.push(cell);
-      // Big tower sprite filling ~55% of the card height (was a tiny emoji).
-      const iconSize = Math.floor(cellH * 0.55);
+      const cellTop = cy - cellH / 2;
+      // Tower sprite up top, then name, a one-line role blurb, and the cost.
+      const iconSize = Math.floor(cellH * 0.4);
       parts.push(
         this.scene.add
-          .image(cx, cy - cellH * 0.16, towerTextureKey(tower.key))
+          .image(cx, cellTop + cellH * 0.28, towerTextureKey(tower.key))
           .setDisplaySize(iconSize, iconSize)
           .setAlpha(affordable ? 1 : 0.4),
       );
       parts.push(
         this.scene.add
-          .text(cx, cy + cellH * 0.21, tower.name, {
+          .text(cx, cellTop + cellH * 0.55, tower.name, {
             fontFamily: 'monospace',
             fontSize: '10px',
             color: affordable ? '#ffffff' : '#888888',
@@ -118,7 +120,18 @@ export class BuildPanel {
       );
       parts.push(
         this.scene.add
-          .text(cx, cy + cellH * 0.4, `${cost}g`, {
+          .text(cx, cellTop + cellH * 0.72, tower.blurb, {
+            fontFamily: 'monospace',
+            fontSize: '8px',
+            color: affordable ? '#9aa0b0' : '#6b6b75',
+            align: 'center',
+            wordWrap: { width: cellW - 10 },
+          })
+          .setOrigin(0.5),
+      );
+      parts.push(
+        this.scene.add
+          .text(cx, cellTop + cellH * 0.92, `${cost}g`, {
             fontFamily: 'monospace',
             fontSize: '12px',
             color: affordable ? '#ffd166' : '#888888',
