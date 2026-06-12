@@ -53,7 +53,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-12 16:45 CEST';
+const LAST_PATCH = '2026-06-12 17:40 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -531,7 +531,7 @@ export class MenuScene extends Phaser.Scene {
       h: TOUCH_MIN,
       label: resumable ? '▶ New Game' : '▶ Play',
       color: 0x51cf66,
-      onClick: () => this.startMode(mode.key, false),
+      onClick: () => this.requestNewGame(mode.key),
     });
     if (resumable) {
       this.button({
@@ -544,6 +544,99 @@ export class MenuScene extends Phaser.Scene {
         onClick: () => this.startMode(mode.key, true),
       });
     }
+  }
+
+  /**
+   * "New Game" guard: starting a fresh campaign wipes story unlock progress, and
+   * a fresh endless run abandons the one in progress — both easy to hit by
+   * accident. Confirm first when there's something to lose; otherwise just start.
+   */
+  private requestNewGame(mode: GameMode): void {
+    if (mode === 'story') {
+      const prog = loadStoryProgress();
+      const done = prog?.completedChapters.length ?? 0;
+      const hasProgress =
+        !!prog && (done > 0 || (prog.wavesCleared ?? 0) > 0 || hasRun('story', prog.levelId));
+      if (hasProgress) {
+        this.confirmModal(
+          'Start a new campaign?',
+          [
+            `This resets your campaign — you've cleared`,
+            `${done}/${CHAPTER_ORDER.length} chapters (now on Level ${Math.min(done + 1, CHAPTER_ORDER.length)}).`,
+            'Your stars, upgrades & fans are kept.',
+          ],
+          'Erase & start new',
+          () => this.startMode('story', false),
+        );
+        return;
+      }
+    } else if (mode === 'endless' && hasRun('endless', 'endless')) {
+      this.confirmModal(
+        'Start a new endless run?',
+        ['Your run in progress will be abandoned.', 'Your best wave is kept.'],
+        'Start new',
+        () => this.startMode('endless', false),
+      );
+      return;
+    }
+    this.startMode(mode, false);
+  }
+
+  /** A two-button confirmation modal (Cancel / destructive confirm). */
+  private confirmModal(
+    title: string,
+    lines: string[],
+    confirmLabel: string,
+    onConfirm: () => void,
+  ): void {
+    this.closeModal();
+    const { sw, sh } = this;
+    const w = Math.min(sw - 16, 360);
+    const h = 64 + lines.length * 20 + 16 + TOUCH_MIN;
+    this.pushBackdrop();
+    this.modal.push(
+      this.add
+        .rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0xff6b6b, 0.9)
+        .setDepth(310)
+        .setInteractive()
+        .on('pointerdown', STOP),
+    );
+    const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 22, `⚠ ${title}`, '#ffd43b', 15);
+    lines.forEach((lineStr, i) =>
+      this.modalText(sw / 2, top + 50 + i * 20, lineStr, '#cfd3dc', 11),
+    );
+    const by = top + h - 14 - TOUCH_MIN / 2;
+    const gap = 10;
+    const bw = Math.min(160, (w - 40 - gap) / 2);
+    this.modal.push(
+      ...this.button({
+        x: sw / 2 - (bw + gap) / 2,
+        y: by,
+        w: bw,
+        h: TOUCH_MIN,
+        label: 'Cancel',
+        color: 0x74c0fc,
+        depth: 311,
+        onClick: () => this.closeModal(),
+      }),
+    );
+    this.modal.push(
+      ...this.button({
+        x: sw / 2 + (bw + gap) / 2,
+        y: by,
+        w: bw,
+        h: TOUCH_MIN,
+        label: confirmLabel,
+        color: 0xff6b6b,
+        depth: 311,
+        onClick: () => {
+          this.closeModal();
+          onConfirm();
+        },
+      }),
+    );
   }
 
   /** Resolve the (mode, level) to launch and hand off to the GameScene. */
