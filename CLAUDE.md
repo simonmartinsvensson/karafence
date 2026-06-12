@@ -188,10 +188,54 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   BuildPanel only shows unlocked towers), and **feature unlocks** (`unlocks`,
   e.g. `speed2x`). `starsSpent` accounts for all of these; the menu's
   **Upgrades** modal has a per-tower **Towers** tab.
+- **Fan meter** (`meta.fans`/`meta.fanStars`, `FAN_PER_STAR`/`bankFans` in
+  `meta.ts`): a single unifying "addictive loop" currency that **every** system
+  feeds, so no run is ever wasted and stars accrue continuously. Fans are earned
+  during play — kills (scaled by the combo), wave clears, an endless milestone
+  every 5 waves, the occasional **encore crate** (`maybeDropCrate`, a variable
+  reward of fans or gold), a best-combo flourish, daily quests, and the daily
+  login streak — and **banked at run end (win OR loss, both modes)** via
+  `GameScene.bankRunFans`. Each `FAN_PER_STAR` fans grants a **bonus ★** that
+  counts toward the same spendable star pool (`totalStarsEarned` =
+  `ratingStarsEarned` + `fanStars`). Stars remain the only thing you spend; the
+  meter just makes every session advance you. The end screens show the run's fan
+  payout (`fanSummaryLines`); the menu shows a fan-meter bar + goal tease
+  (`drawFanMeter`/`nextUnlockTease`: campaign % + the next act to unlock), and
+  endless surfaces a best-wave chase ("1 wave from your best!").
+- **Daily quests + streak** (`src/data/quests.ts`, pure): two date-seeded
+  quests (`pickDailyQuests`) + a login streak, rolled on menu entry
+  (`MenuScene.refreshDaily` → `rollDaily`, banking a streak fan bonus on a new
+  day). Quests are evaluated against each run's `RunStats` in `bankRunFans` and
+  pay out in fans. A **first-win-of-the-day** bonus (`FIRST_WIN_FANS`, guarded by
+  `DailyState.firstWinClaimed`, reset by `rollDaily`) pays out the first won run
+  each day. State persists in `meta.daily` (`DailyState`); shown in the Records
+  modal. No new currency or screen — just more fan sources.
+- **More fan-loop hooks** (all feed the one meter, all light-touch):
+  - **Encore overdrive** (`triggerOverdrive`/`fanRain`, `OVERDRIVE_SECONDS`): a
+    combo at x10+ (each x5) kicks off a few seconds of **doubled fan gain** + a
+    fan-rain flourish — mastery made visible.
+  - **Comeback bonus**: clearing a wave at ≤2 HP pays bonus fans ("Saved the
+    show!").
+  - **Scout in the crowd** (`maybeSpawnScout`, `Enemy.bonusFans`): a rare bonus
+    VIP mid-wave worth a fat fan pop (reuses the VIP enemy + `WaveManager.spawnAt`;
+    skipped on the tutorial).
+  - **Tonight's Setlist** (`src/data/setlist.ts`, pure): a **date-seeded run
+    modifier for Endless** — tweaks the `WaveProfile` (more bosses, faster/bigger
+    crowd, …) for a matching **fan multiplier** (`runFanMult`, applied in
+    `bankRunFans`). Shown on the endless card + a run-start venue-card line. A
+    fresh daily reason to replay without a new mode.
+  - **Performer rank** (`performerRank`/`PERFORMER_RANKS` in `meta.ts`): a career
+    title derived purely from total stars (monotonic), shown under the wordmark +
+    in Records.
+  - **All-stars chase**: the menu tease + Levels grid show `N/60 ★`; unlocked
+    levels missing stars get an **amber** border (green when 3-starred).
+  - **Next-upgrade highlight** (`UpgradePanel.bestBuy`): the cheapest affordable
+    upgrade gets a gold border + ⭐ to steer spending.
 - **Lifetime stats**: total kills, waves survived, highest combo — incremented in
   `GameScene` and persisted at wave-clear / run-end.
 - **Persistence** (`src/systems/storage.ts`, localStorage, hardened with
-  try/catch): the **meta** slot (`karafence:meta`) holds stars/upgrades/lifetime;
+  try/catch): the **meta** slot (`karafence:meta`) holds
+  stars/upgrades/lifetime/fans/fanStars/daily;
   a separate **run** slot per **mode+level** (`karafence:run:<mode>:<id>` — so an
   endless run and a story run on the same map don't collide) holds an in-progress
   run (resume wave, gold, lives, scoring, and serialized towers via
@@ -347,6 +391,20 @@ swapped for real imported textures later by changing only what
 - Resolution: textures are generated larger than their on-screen logic size
   (e.g. a 40px tile is drawn at 64px) so they stay crisp when the board scales
   up, sampled NEAREST under `pixelArt: true`.
+- **Real-sprite overrides** (`src/systems/spriteOverrides.ts`): replaces any
+  procedural texture with a real PNG **without touching scenes/systems** (logic
+  only references keys). `SPRITE_OVERRIDES` maps `key → 'assets/sprites/x.png'`;
+  BootScene loads each into a temp key (`queueSpriteOverrides` in `preload`) then
+  swaps it over the procedural one (`applySpriteOverrides` in `create`, via
+  `renameTexture`). A missing/failed file silently keeps its procedural art, so
+  it's safe to add/remove entries. **Ships with game-icons.net (CC BY 3.0)
+  sprites** for all 11 enemy/boss silhouettes (white → tinted to type color at
+  runtime, in `public/assets/sprites/`) + the coin/mic/note HUD icons; **towers
+  stay procedural** (their `kf-tower-*` keys are full-color tiles with the
+  base/border/glow baked in, so a flat icon wouldn't suit them). `OVERRIDABLE_KEYS`
+  lists every key; `ART_CREDITS` drives the menu **Credits** modal (the required
+  CC-BY attribution; the "ⓘ Credits" link shows only when it's non-empty). The
+  source SVGs were recolored to white and had their background square stripped.
 
 ## Audio + visual polish
 

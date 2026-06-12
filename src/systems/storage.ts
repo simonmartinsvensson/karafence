@@ -82,6 +82,9 @@ export function loadMeta(): MetaProgress {
     towerLevels: { ...base.towerLevels, ...saved.towerLevels },
     unlockedTowers: { ...base.unlockedTowers, ...saved.unlockedTowers },
     unlocks: { ...base.unlocks, ...saved.unlocks },
+    fans: typeof saved.fans === 'number' ? saved.fans : base.fans,
+    fanStars: typeof saved.fanStars === 'number' ? saved.fanStars : base.fanStars,
+    daily: saved.daily,
     lifetime: { ...base.lifetime, ...saved.lifetime },
   };
 }

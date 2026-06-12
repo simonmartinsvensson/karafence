@@ -30,8 +30,11 @@ import {
   towerBonusFor,
   isTowerAvailable,
   isUnlocked,
+  bankFans,
   type MetaProgress,
 } from '../data/meta';
+import { questById, FIRST_WIN_FANS, dateKey, type RunStats } from '../data/quests';
+import { pickSetlist } from '../data/setlist';
 import type { GameMode } from '../data/modes';
 import { beatsAfterWave, nextChapter, CHAPTER_ORDER } from '../data/story';
 import {
@@ -68,6 +71,7 @@ const TILE_TEXTURE: Record<TileType, string> = {
 const SINGER_MAX_HP = 30;
 const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
 const COMBO_BONUS = 0.15; // gold bonus per combo step
+const OVERDRIVE_SECONDS = 4; // duration of the x2-fans Encore overdrive window
 const INTERMISSION_SECONDS = 12;
 
 // Screen-furniture depths (scene root). The board container sits below these.
@@ -138,6 +142,14 @@ export class GameScene extends Phaser.Scene {
   // This-run tallies (endless "you survived" screen).
   private runKills = 0;
   private goldEarned = 0;
+  // Fans earned this run (kills×combo, waves, milestones, crate); banked at run
+  // end (win OR loss) into the meta fan meter → bonus stars. See data/meta.ts.
+  private runFans = 0;
+  private endlessFanMilestone = 0; // last endless wave that paid a fan milestone
+  private endlessBestAtStart = 0; // best endless wave when this run began (chase)
+  private overdriveTimer = 0; // seconds left of the Encore overdrive (x2 fans)
+  private runFanMult = 1; // Tonight's Setlist fan multiplier (endless only)
+  private setlistName = ''; // active setlist name (endless), '' = none
 
   // Crowd Hype combo.
   private combo = 0;
@@ -191,6 +203,11 @@ export class GameScene extends Phaser.Scene {
   private endBestWave = 0; // endless: best wave after this run
   private endNewRecord = false; // endless: did this run set a new best?
   private nextChapterId: LevelId | null = null; // story: chapter to advance to
+  // Fan-meter payout for the just-ended run (shown on the end screen).
+  private endFanGain = 0;
+  private endFanStars = 0;
+  private endQuestNames: string[] = [];
+  private endFirstWin = false; // first won run of the day (bonus paid)
   private endOverlay: Phaser.GameObjects.GameObject[] = [];
 
   private resizeHandler = () => this.relayout();
@@ -223,6 +240,11 @@ export class GameScene extends Phaser.Scene {
     this.gold = STARTING_GOLD;
     this.runKills = 0;
     this.goldEarned = 0;
+    this.runFans = 0;
+    this.endlessFanMilestone = 0;
+    this.overdriveTimer = 0;
+    this.runFanMult = 1;
+    this.setlistName = '';
     this.buildTarget = null;
     this.gameOver = false;
     this.paused = false;
@@ -258,6 +280,10 @@ export class GameScene extends Phaser.Scene {
     this.endBestWave = 0;
     this.endNewRecord = false;
     this.nextChapterId = null;
+    this.endFanGain = 0;
+    this.endFanStars = 0;
+    this.endQuestNames = [];
+    this.endFirstWin = false;
     this.endOverlay = [];
   }
 
@@ -272,6 +298,7 @@ export class GameScene extends Phaser.Scene {
 
     // Load meta-progression and apply its permanent modifiers to this run.
     this.meta = loadMeta();
+    this.endlessBestAtStart = this.mode === 'endless' ? loadEndlessBest() : 0;
     const mods = metaModifiers(this.meta);
     this.gold = Math.round((this.map.startingGold ?? STARTING_GOLD) * mods.startingGoldMult);
     this.towerCostMult = mods.towerCostMult;
@@ -285,6 +312,16 @@ export class GameScene extends Phaser.Scene {
     this.drawControlBar();
     this.drawMap(this.layout);
 
+    // Endless: apply today's "Tonight's Setlist" twist to the wave profile and
+    // its fan reward multiplier (a fresh daily reason to replay the same map).
+    let profile = this.map.waveProfile ?? ENDLESS_PROFILE;
+    if (this.mode === 'endless') {
+      const setlist = pickSetlist(dateKey(new Date()));
+      profile = setlist.tweak(profile);
+      this.runFanMult = setlist.fanMult;
+      this.setlistName = setlist.fanMult > 1 ? setlist.name : '';
+    }
+
     this.waves = new WaveManager(
       this,
       this.map,
@@ -296,7 +333,7 @@ export class GameScene extends Phaser.Scene {
         onBossSpawn: (enemy) => this.onBossSpawn(enemy),
       },
       this.layers.enemies,
-      this.map.waveProfile ?? ENDLESS_PROFILE,
+      profile,
       this.mode === 'endless',
     );
 
@@ -366,8 +403,11 @@ export class GameScene extends Phaser.Scene {
 
   /** A brief centered "now playing: {venue}" title card that fades on entry. */
   private showVenueCard(): void {
+    const name = this.setlistName
+      ? `🎤 ${this.map.name}\n🎵 Tonight: ${this.setlistName} · ${this.runFanMult}× fans`
+      : `🎤 ${this.map.name}`;
     const card = this.add
-      .text(this.sw / 2, this.sh * 0.32, `🎤 ${this.map.name}`, {
+      .text(this.sw / 2, this.sh * 0.32, name, {
         fontFamily: 'monospace',
         fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 22, 18, 34))}px`,
         color: '#ffffff',
@@ -463,6 +503,7 @@ export class GameScene extends Phaser.Scene {
     this.waves.update(dt);
     this.towers.update(dt);
     this.tickCombo(dt);
+    if (this.overdriveTimer > 0) this.overdriveTimer = Math.max(0, this.overdriveTimer - dt);
     this.tickIntermission(dt);
     this.driveBoss(dt);
     this.refreshHud();
@@ -1307,7 +1348,26 @@ export class GameScene extends Phaser.Scene {
     this.startPrompt?.destroy(true);
     this.startPrompt = undefined;
     this.waves.start();
+    this.maybeSpawnScout();
     this.saveRunState();
+  }
+
+  /**
+   * Rare "scout in the crowd" surprise: a short while into a wave, drop one bonus
+   * VIP worth a fat fan pop. Reuses the existing VIP enemy + WaveManager.spawnAt.
+   * Skipped on the tutorial so first-timers aren't thrown by an off-pool foe.
+   */
+  private maybeSpawnScout(): void {
+    if (this.levelId === 'level1') return;
+    if (Math.random() > 0.14) return;
+    const lanes = this.map.laneRows.length;
+    const lane = Math.floor(Math.random() * lanes);
+    this.time.delayedCall(900 + Math.random() * 1600, () => {
+      if (this.gameOver) return;
+      const scout = this.waves.spawnAt('vip', lane);
+      scout.bonusFans = 40;
+      this.screenFloat('📸 A scout is in the crowd!', '#74c0fc');
+    });
   }
 
   // --- Game flow -----------------------------------------------------------
@@ -1355,6 +1415,17 @@ export class GameScene extends Phaser.Scene {
 
     this.gold += gain;
     this.goldEarned += gain;
+    // Fans scale with the combo — mastery (long combos) is the main fan source,
+    // so the addictive loop and the skill ceiling reinforce each other. During
+    // an Encore overdrive (high-combo reward window) fan gain is doubled.
+    let fanGain = 1 + Math.floor(this.combo / 4);
+    if (this.overdriveTimer > 0) fanGain *= 2;
+    this.runFans += fanGain;
+    // The "scout in the crowd" surprise: silencing it pays a fat fan bonus.
+    if (enemy.bonusFans > 0) {
+      this.runFans += enemy.bonusFans;
+      this.floatText(enemy.x, enemy.y - 14, `📸 +${enemy.bonusFans} fans!`, '#74c0fc');
+    }
 
     this.floatText(
       enemy.x,
@@ -1365,6 +1436,9 @@ export class GameScene extends Phaser.Scene {
     this.updateComboHud(true);
     if (this.combo >= 2) audio.sfx('comboTick', { combo: this.combo });
     if (this.combo >= 5 && this.combo % 5 === 0) this.crowdGoesWild();
+    // x10+ milestones kick off an Encore overdrive: a few seconds of doubled
+    // fans + fan-rain. Escalates mastery into a visible payoff.
+    if (this.combo >= 10 && this.combo % 5 === 0) this.triggerOverdrive();
     if (enemy === this.activeBoss) this.clearBoss();
     this.refreshHud();
   }
@@ -1638,6 +1712,57 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Encore overdrive: a high-combo reward window (doubled fans for a few
+   * seconds, see onEnemyKilled) announced with a banner + a burst of fan-rain.
+   * Refreshes its own timer if re-triggered while already active.
+   */
+  private triggerOverdrive(): void {
+    const fresh = this.overdriveTimer <= 0;
+    this.overdriveTimer = OVERDRIVE_SECONDS;
+    if (fresh) {
+      const banner = this.add
+        .text(this.sw / 2, this.sh / 2 + 6, '🎤 ENCORE OVERDRIVE — 2× FANS!', {
+          fontFamily: 'monospace',
+          fontSize: '18px',
+          color: '#ffd166',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_OVERLAY + 41);
+      this.tweens.add({
+        targets: banner,
+        alpha: 0,
+        y: banner.y - 18,
+        duration: 1100,
+        onComplete: () => banner.destroy(),
+      });
+    }
+    this.fanRain();
+  }
+
+  /** A quick shower of fan hearts/mics from the top edge (overdrive flourish). */
+  private fanRain(): void {
+    const glyphs = ['💖', '🎤', '⭐', '🎶'];
+    for (let i = 0; i < 10; i++) {
+      const x = 20 + Math.random() * (this.sw - 40);
+      const t = this.add
+        .text(x, -16, glyphs[i % glyphs.length], { fontSize: '18px' })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_OVERLAY + 39)
+        .setAlpha(0.95);
+      this.tweens.add({
+        targets: t,
+        y: this.sh * (0.4 + Math.random() * 0.4),
+        alpha: 0,
+        duration: 900 + Math.random() * 700,
+        delay: Math.random() * 250,
+        ease: 'Sine.easeIn',
+        onComplete: () => t.destroy(),
+      });
+    }
+  }
+
   /** Board-space floating text (e.g. "+gold" over a killed enemy). */
   private floatText(x: number, y: number, msg: string, color: string): void {
     const t = this.add
@@ -1687,6 +1812,35 @@ export class GameScene extends Phaser.Scene {
       this.screenFloat(`+${interest}g in tips 🎶`, '#69db7c');
       audio.sfx('gold');
     }
+
+    // Fans for clearing the wave — a combo-independent baseline so even a rough
+    // clear advances the meter; plus an endless milestone pop and the occasional
+    // surprise crate (variable reward) to keep "one more wave" pulling.
+    this.runFans += 5;
+    // Comeback: held the stage by a thread → turn the near-loss into a highlight.
+    if (this.singerHp > 0 && this.singerHp <= 2) {
+      this.runFans += 25;
+      this.screenFloat('😅 Saved the show! +25 fans', '#69db7c');
+    }
+    if (
+      this.mode === 'endless' &&
+      clearedWave % 5 === 0 &&
+      clearedWave > this.endlessFanMilestone
+    ) {
+      this.endlessFanMilestone = clearedWave;
+      this.runFans += 20;
+      this.screenFloat(`🎉 Wave ${clearedWave} milestone — +20 fans`, '#ffd166');
+    }
+    // Best-wave chase: nudge as the run closes in on (then beats) the record.
+    if (this.mode === 'endless' && this.endlessBestAtStart > 0) {
+      if (clearedWave + 1 === this.endlessBestAtStart) {
+        this.screenFloat('🔥 1 wave from your best!', '#ff9ed8');
+      } else if (clearedWave === this.endlessBestAtStart) {
+        this.screenFloat('🏆 New personal best — keep going!', '#ffd43b');
+      }
+    }
+    this.maybeDropCrate(clearedWave);
+
     this.refreshHud();
     if (this.mode === 'story') this.recordStoryWave(clearedWave);
 
@@ -1705,6 +1859,26 @@ export class GameScene extends Phaser.Scene {
       // Only story reaches here (endless always has a next wave).
       this.storyChapterComplete(clearedWave);
     }
+  }
+
+  /**
+   * Variable reward: ~1-in-3 wave clears drops an "encore crate" — a small
+   * surprise of either fans or gold. The unpredictability is the point (it keeps
+   * each clear a little exciting); it's always a bonus, never a penalty.
+   */
+  private maybeDropCrate(clearedWave: number): void {
+    if (Math.random() > 0.34) return;
+    if (Math.random() < 0.5) {
+      const fans = 10 + Math.floor(Math.random() * 31); // 10-40
+      this.runFans += fans;
+      this.screenFloat(`🎁 Encore crate — +${fans} fans!`, '#ff9ed8');
+    } else {
+      const gold = 15 + clearedWave * 3 + Math.floor(Math.random() * 20);
+      this.gold += gold;
+      this.goldEarned += gold;
+      this.screenFloat(`🎁 Encore crate — +${gold}g!`, '#ffd43b');
+    }
+    audio.sfx('gold');
   }
 
   /** Persist how far the campaign has reached on the current chapter. */
@@ -1730,6 +1904,7 @@ export class GameScene extends Phaser.Scene {
     const { stars, gained } = this.scoreStars();
     this.endStars = stars;
     this.endGained = gained;
+    this.bankRunFans(true);
 
     const prog = loadStoryProgress() ?? {
       levelId: this.levelId,
@@ -1754,6 +1929,54 @@ export class GameScene extends Phaser.Scene {
     };
     if (beats.length > 0) this.dialogue.show(beats, after);
     else after();
+  }
+
+  /**
+   * Bank this run's fans into the meta fan meter (win OR loss, both modes) — the
+   * unifying "every run advances you" payout. Adds a best-combo flourish bonus,
+   * resolves any daily quests this run satisfied, converts the total to fans +
+   * bonus ★, persists, and stashes a summary for the end screen. Idempotent per
+   * run (guarded by endFanGain so a re-render never double-banks).
+   */
+  private bankRunFans(won: boolean): void {
+    if (this.endFanGain > 0) return; // already banked this run
+
+    this.runFans += Math.floor(this.highestCombo * 1.5); // combo flourish
+
+    const stats: RunStats = {
+      mode: this.mode,
+      won,
+      wavesReached: this.waves.currentWaveNumber,
+      livesLost: SINGER_MAX_HP - this.singerHp,
+      bestCombo: this.highestCombo,
+      kills: this.runKills,
+    };
+    let questFans = 0;
+    const questNames: string[] = [];
+    for (const q of this.meta.daily?.quests ?? []) {
+      if (q.done) continue;
+      const def = questById(q.id);
+      if (def && def.satisfied(stats)) {
+        q.done = true;
+        questFans += def.reward;
+        questNames.push(def.label);
+      }
+    }
+
+    // First won run of the day pays a return-hook bonus (resets daily via rollDaily).
+    if (won && this.meta.daily && !this.meta.daily.firstWinClaimed) {
+      this.meta.daily.firstWinClaimed = true;
+      questFans += FIRST_WIN_FANS;
+      this.endFirstWin = true;
+    }
+
+    // Tonight's Setlist multiplies the in-run fans (quest/first-win bonuses are
+    // fixed daily rewards, so they're added after the multiplier).
+    const total = Math.round(this.runFans * this.runFanMult) + questFans;
+    this.endFanGain = total;
+    this.endFanStars = bankFans(this.meta, total);
+    this.endQuestNames = questNames;
+    saveMeta(this.meta);
   }
 
   /** Score the run: one star per goal met; bank the best per level. */
@@ -1855,6 +2078,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionUi = undefined;
     audio.playMusic('inWave');
     this.waves.startNextWave();
+    this.maybeSpawnScout();
     this.resumeWaveIndex = this.waves.currentWaveIndex;
     this.saveRunState();
   }
@@ -1877,6 +2101,9 @@ export class GameScene extends Phaser.Scene {
     // Persist lifetime progress; the failed run is not resumable.
     saveMeta(this.meta);
     clearRun(this.mode, this.levelId);
+    // Even a loss earns: bank this run's fans → bonus stars (the "never wasted"
+    // loop). Banks lifetime + fan meter together.
+    this.bankRunFans(false);
     // Endless: bank the best wave reached (new record only if strictly higher).
     if (this.mode === 'endless') {
       const reached = this.waves.currentWaveNumber;
@@ -1919,6 +2146,7 @@ export class GameScene extends Phaser.Scene {
     } else if (this.endState === 'gameover') {
       line(-30, "SHOW'S OVER", 30, '#ff6b6b');
       line(6, `Booed off at wave ${this.waves.currentWaveNumber}`, 13, '#9aa0b0');
+      this.fanSummaryLines().forEach((s, i) => line(34 + i * 18, s, 12, '#ff9ed8'));
       this.overlayButton('Back to menu', cx, this.endButtonY(), 0x51cf66, () =>
         this.fadeToScene('MenuScene'),
       );
@@ -1945,6 +2173,11 @@ export class GameScene extends Phaser.Scene {
         13,
         this.endGained > 0 ? '#ffd43b' : '#777f8f',
       );
+      let dy = 92;
+      this.fanSummaryLines().forEach((s) => {
+        line(dy, s, 11, '#ff9ed8');
+        dy += 16;
+      });
 
       if (final) {
         this.overlayButton('Continue →', cx, this.endButtonY(), 0x51cf66, () =>
@@ -1953,13 +2186,29 @@ export class GameScene extends Phaser.Scene {
       } else {
         const next = this.nextChapterId;
         const nextName = next ? LEVEL_BY_ID[next].name : '';
-        line(94, `Next up: ${nextName}`, 12, '#cfd3dc');
+        line(dy, `Next up: ${nextName}`, 12, '#cfd3dc');
         this.overlayButton('On to the next stage →', cx, this.endButtonY(), 0x4dabf7, () => {
           if (next) this.restartScene({ mode: 'story', levelId: next, resume: false });
           else this.fadeToScene('MenuScene');
         });
       }
     }
+  }
+
+  /** Short "what this run earned you" lines shared by every end screen. */
+  private fanSummaryLines(): string[] {
+    const out: string[] = [];
+    if (this.endFanGain > 0) {
+      out.push(
+        this.endFanStars > 0
+          ? `🎤 +${this.endFanGain} fans → +${this.endFanStars} ★ bonus!`
+          : `🎤 +${this.endFanGain} fans`,
+      );
+    }
+    if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
+    for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
+    if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
+    return out;
   }
 
   /** Endless "you survived" results — wave reached, run stats, best, 2 buttons. */
@@ -1977,6 +2226,7 @@ export class GameScene extends Phaser.Scene {
       13,
       this.endNewRecord ? '#ffd43b' : '#777f8f',
     );
+    this.fanSummaryLines().forEach((s, i) => line(66 + i * 18, s, 12, '#ff9ed8'));
     const y = this.endButtonY();
     const gap = 12;
     const bw = Math.min(170, (this.sw - 24 - gap) / 2);

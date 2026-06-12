@@ -1,6 +1,7 @@
 import type { LevelId } from './levels';
 import { CAMPAIGN } from './campaign';
 import { TOWER_LIST, type TowerTypeKey } from './towers';
+import type { DailyState } from './quests';
 
 /**
  * Meta-progression: a star you earn per level (best result kept) is a currency
@@ -67,6 +68,12 @@ export interface MetaProgress {
   unlockedTowers: Partial<Record<TowerTypeKey, boolean>>;
   /** Account-wide feature unlocks (e.g. 2× speed). */
   unlocks: Record<UnlockKey, boolean>;
+  /** Fan-meter progress toward the next bonus star (0..FAN_PER_STAR). */
+  fans: number;
+  /** Bonus stars earned from the fan meter (counts toward the star pool). */
+  fanStars: number;
+  /** Daily-quest + login-streak state (rolled on menu entry). */
+  daily?: DailyState;
   lifetime: LifetimeStats;
 }
 
@@ -81,8 +88,31 @@ export function defaultMeta(): MetaProgress {
     towerLevels,
     unlockedTowers: {},
     unlocks: { speed2x: false },
+    fans: 0,
+    fanStars: 0,
     lifetime: { kills: 0, waves: 0, highestCombo: 0 },
   };
+}
+
+// --- Fan meter -------------------------------------------------------------
+//
+// Fans are earned from play in EVERY run (kills × combo, waves, quests, crates,
+// endless milestones) and banked even on a loss. They fill a meter that grants
+// a bonus ★ each time it tops up — so every session advances the (single) star
+// economy, and a wipe is never wasted. Stars stay the only thing you spend.
+
+export const FAN_PER_STAR = 300;
+
+/** Add fans to the meter; returns how many bonus stars it just granted. */
+export function bankFans(meta: MetaProgress, fans: number): number {
+  meta.fans = (meta.fans ?? 0) + Math.max(0, Math.round(fans));
+  let gained = 0;
+  while (meta.fans >= FAN_PER_STAR) {
+    meta.fans -= FAN_PER_STAR;
+    meta.fanStars = (meta.fanStars ?? 0) + 1;
+    gained += 1;
+  }
+  return gained;
 }
 
 // --- Tower RPG leveling ----------------------------------------------------
@@ -186,8 +216,44 @@ export function nextTierCost(def: MetaUpgradeDef, currentTier: number): number |
   return def.tierCosts[currentTier];
 }
 
-export function totalStarsEarned(meta: MetaProgress): number {
+/** Stars earned from level ratings only (the campaign "collection" total). */
+export function ratingStarsEarned(meta: MetaProgress): number {
   return Object.values(meta.stars).reduce((a, b) => a + b, 0);
+}
+
+/** Total spendable stars ever earned: level ratings + fan-meter bonus stars. */
+export function totalStarsEarned(meta: MetaProgress): number {
+  return ratingStarsEarned(meta) + (meta.fanStars ?? 0);
+}
+
+// --- Performer rank --------------------------------------------------------
+//
+// A long-horizon "career ladder" derived purely from total stars ever earned
+// (monotonic — never decreases). No new storage; just a flavourful title shown
+// on the menu + Records, giving a sense of growth beyond the spend economy.
+
+export interface PerformerRank {
+  min: number; // total stars to reach this rank
+  title: string;
+}
+
+export const PERFORMER_RANKS: PerformerRank[] = [
+  { min: 0, title: 'Open Mic Hopeful' },
+  { min: 5, title: 'Regular' },
+  { min: 12, title: 'Rising Act' },
+  { min: 22, title: 'Local Favorite' },
+  { min: 35, title: 'Headliner' },
+  { min: 50, title: 'Chart-Topper' },
+  { min: 70, title: 'Legend' },
+];
+
+/** The rank for a star total, plus the next rank's threshold (null if maxed). */
+export function performerRank(stars: number): { rank: PerformerRank; next: PerformerRank | null } {
+  let idx = 0;
+  for (let i = 0; i < PERFORMER_RANKS.length; i++) {
+    if (stars >= PERFORMER_RANKS[i].min) idx = i;
+  }
+  return { rank: PERFORMER_RANKS[idx], next: PERFORMER_RANKS[idx + 1] ?? null };
 }
 
 export function starsSpent(meta: MetaProgress): number {

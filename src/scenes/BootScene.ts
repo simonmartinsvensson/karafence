@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { generateTextures } from '../systems/textures';
+import { queueSpriteOverrides, applySpriteOverrides } from '../systems/spriteOverrides';
 
 /**
  * BootScene is the first scene in the flow. It confirms Phaser is alive
@@ -14,10 +15,14 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     generateTextures(this);
     this.makeSparkTexture();
+    // Queue any opt-in real-sprite overrides (no-op if none configured).
+    queueSpriteOverrides(this);
   }
 
   create(): void {
     console.log('boot');
+    // Swap in any sprites that loaded over their procedural textures.
+    applySpriteOverrides(this);
     this.scene.start('MenuScene');
   }
 

@@ -10,6 +10,8 @@ import {
   maxTier,
   starsAvailable,
   totalStarsEarned,
+  ratingStarsEarned,
+  performerRank,
   TOWER_MAX_LEVEL,
   towerUpgradeCost,
   towerUpgradeEffectLabel,
@@ -20,9 +22,14 @@ import {
   isUnlocked,
   UNLOCK_COST,
   UNLOCK_NAME,
+  FAN_PER_STAR,
+  bankFans,
   type UnlockKey,
   type MetaProgress,
 } from '../data/meta';
+import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
+import { pickSetlist } from '../data/setlist';
+import { ART_CREDITS } from '../systems/spriteOverrides';
 import {
   loadMeta,
   saveMeta,
@@ -46,7 +53,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-10 15:06 CEST';
+const LAST_PATCH = '2026-06-12 15:30 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -66,6 +73,8 @@ export class MenuScene extends Phaser.Scene {
   private metaTab: 'upgrades' | 'towers' = 'upgrades';
   /** Objects belonging to the currently open modal (destroyed on close). */
   private modal: Phaser.GameObjects.GameObject[] = [];
+  /** Today's login-streak bonus, shown as a one-off toast on entry. */
+  private loginBonus?: { fans: number; stars: number; streak: number };
   private resizeHandler = () => {
     this.closeModal();
     this.rebuild();
@@ -85,13 +94,60 @@ export class MenuScene extends Phaser.Scene {
   create(): void {
     this.modal = [];
     this.meta = loadMeta();
+    this.refreshDaily();
     this.cameras.main.setBackgroundColor('#0b0b12');
     this.cameras.main.fadeIn(350, 11, 11, 18);
     addNeonCameraFX(this.cameras.main);
     audio.playMusic('menu');
     this.rebuild();
+    if (this.loginBonus) this.showLoginToast();
     this.scale.on('resize', this.resizeHandler);
     this.events.once('shutdown', () => this.scale.off('resize', this.resizeHandler));
+  }
+
+  /**
+   * Roll today's daily quests + login streak (no-op if already current). A new
+   * day banks a streak fan bonus (×streak, capped) — the "come back tomorrow"
+   * hook, feeding the same fan meter as everything else.
+   */
+  private refreshDaily(): void {
+    const now = new Date();
+    const { state, loginFans } = rollDaily(this.meta.daily, dateKey(now), yesterdayKey(now));
+    this.meta.daily = state;
+    if (loginFans > 0) {
+      const stars = bankFans(this.meta, loginFans);
+      this.loginBonus = { fans: loginFans, stars, streak: state.streak };
+    }
+    saveMeta(this.meta);
+  }
+
+  /** One-off centered toast celebrating the daily login streak + fan bonus. */
+  private showLoginToast(): void {
+    const b = this.loginBonus;
+    if (!b) return;
+    this.loginBonus = undefined; // show only once per entry
+    const msg =
+      `🔥 Day ${b.streak} streak! +${b.fans} fans` + (b.stars > 0 ? ` → +${b.stars} ★` : '');
+    const t = this.add
+      .text(this.sw / 2, this.sh - TOUCH_MIN * 2 - 24, msg, {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#ffd166',
+        backgroundColor: '#1b1320cc',
+        padding: { x: 12, y: 8 },
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(5000);
+    this.tweens.add({
+      targets: t,
+      y: t.y - 26,
+      alpha: { from: 1, to: 0 },
+      delay: 1600,
+      duration: 900,
+      ease: 'Sine.easeIn',
+      onComplete: () => t.destroy(),
+    });
   }
 
   /** Redraw the whole menu for the current viewport size. */
@@ -105,12 +161,13 @@ export class MenuScene extends Phaser.Scene {
 
     const titleY = Math.max(34, sh * 0.09);
     this.drawNeonTitle(sw / 2, titleY);
+    const rank = performerRank(totalStarsEarned(this.meta)).rank;
     this.text(
       sw / 2,
       titleY + 30,
-      'Karaoke night gone hostile — pick your stage',
-      '#9aa0b0',
-      Math.min(12, sw / 34),
+      `🎙 ${rank.title}`,
+      '#f783ac',
+      Math.min(13, sw / 30),
     );
     this.text(
       sw / 2,
@@ -120,7 +177,8 @@ export class MenuScene extends Phaser.Scene {
       12,
     );
 
-    this.drawModeCards(portrait, titleY + 72);
+    this.drawFanMeter(sw / 2, titleY + 76, Math.min(360, sw - 40));
+    this.drawModeCards(portrait, titleY + 112);
 
     // Bottom action buttons (always >=44px tall, reachable at screen bottom).
     const by = sh - TOUCH_MIN / 2 - 14;
@@ -163,6 +221,54 @@ export class MenuScene extends Phaser.Scene {
           color: '#5b6172',
         })
         .setOrigin(0, 1),
+    );
+
+    // Art-credits link (bottom-right) — only when sprite attributions exist.
+    if (ART_CREDITS.length > 0) {
+      const credit = this.add
+        .text(sw - 8, sh - 6, 'ⓘ Credits', {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: '#74c0fc',
+        })
+        .setOrigin(1, 1)
+        .setInteractive({ useHandCursor: true });
+      credit.on('pointerdown', () => this.openCreditsPanel());
+      this.root.add(credit);
+    }
+  }
+
+  /** Lists the art attributions (CC BY etc.) from ART_CREDITS. */
+  private openCreditsPanel(): void {
+    this.closeModal();
+    const { sw, sh } = this;
+    const w = Math.min(sw - 16, 360);
+    const h = 70 + ART_CREDITS.length * 22 + TOUCH_MIN;
+    this.pushBackdrop();
+    this.modal.push(
+      this.add
+        .rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0x74c0fc, 0.9)
+        .setDepth(310)
+        .setInteractive()
+        .on('pointerdown', STOP),
+    );
+    const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 20, '🎨 ART CREDITS', '#74c0fc', 15);
+    ART_CREDITS.forEach((lineStr, i) =>
+      this.modalText(sw / 2, top + 50 + i * 22, lineStr, '#cfd3dc', 11),
+    );
+    this.modal.push(
+      ...this.button({
+        x: sw / 2,
+        y: top + h - 14 - TOUCH_MIN / 2,
+        w: Math.min(140, w - 40),
+        h: TOUCH_MIN,
+        label: 'Close',
+        color: 0xff6b6b,
+        depth: 311,
+        onClick: () => this.closeModal(),
+      }),
     );
   }
 
@@ -288,6 +394,56 @@ export class MenuScene extends Phaser.Scene {
 
   // --- Mode cards ----------------------------------------------------------
 
+  /**
+   * The unifying fan meter — every system (kills, waves, quests, crates, daily
+   * streak) feeds this single bar; filling it grants a bonus ★. Drawn under the
+   * star line with a goal tease (campaign % + the next act to unlock) so there's
+   * always a visible "next thing" without a new screen.
+   */
+  private drawFanMeter(cx: number, cy: number, width: number): void {
+    const fans = this.meta.fans ?? 0;
+    const pct = Phaser.Math.Clamp(fans / FAN_PER_STAR, 0, 1);
+    const barH = 12;
+
+    this.text(cx, cy - 15, `🎤 ${fans} / ${FAN_PER_STAR} fans to your next bonus ★`, '#ff9ed8', 11);
+
+    this.root.add(
+      this.add.rectangle(cx, cy, width, barH, 0x241a2b, 0.95).setStrokeStyle(1, 0xff5fae, 0.5),
+    );
+    if (pct > 0) {
+      const fillW = Math.max(3, width * pct);
+      this.root.add(
+        this.add.rectangle(cx - width / 2 + fillW / 2, cy, fillW, barH - 4, 0xff5fae, 0.95),
+      );
+    }
+
+    const maxStars = CHAPTER_ORDER.length * 3;
+    const got = ratingStarsEarned(this.meta);
+    const completion = Math.round((got / maxStars) * 100);
+    this.text(
+      cx,
+      cy + 16,
+      `Campaign ${completion}% · ${got}/${maxStars} ★ · ${this.nextUnlockTease()}`,
+      '#9aa0b0',
+      10,
+    );
+  }
+
+  /** A one-line "here's your next unlock" goal tease for the menu. */
+  private nextUnlockTease(): string {
+    const reached = this.highestUnlockedIndex() + 1;
+    const locked = TOWER_LIST.filter(
+      (t) => !isTowerAvailable(this.meta, reached, t.key),
+    ).sort(
+      (a, b) => (TOWER_STORY_UNLOCK[a.key] ?? 99) - (TOWER_STORY_UNLOCK[b.key] ?? 99),
+    )[0];
+    if (locked) {
+      return `Next act: ${locked.name} (lvl ${TOWER_STORY_UNLOCK[locked.key]} or ★${TOWER_UNLOCK_COST[locked.key]})`;
+    }
+    if (!isUnlocked(this.meta, 'speed2x')) return `Unlock 2× Speed for ★${UNLOCK_COST.speed2x}`;
+    return 'All acts unlocked — keep chasing stars!';
+  }
+
   private drawModeCards(portrait: boolean, top: number): void {
     const { sw, sh } = this;
     const bottom = sh - TOUCH_MIN - 28;
@@ -348,8 +504,12 @@ export class MenuScene extends Phaser.Scene {
     let resumable: boolean;
     if (mode.key === 'endless') {
       const best = loadEndlessBest();
-      detail = best > 0 ? `Best: wave ${best}` : 'No record yet';
+      detail = best > 0 ? `Best: wave ${best} — beat it!` : 'No record yet';
       resumable = hasRun('endless', 'endless');
+      const sl = pickSetlist(dateKey(new Date()));
+      if (sl.fanMult > 1) {
+        this.text(cx, cardTop + 142, `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, '#ff9ed8', 10);
+      }
     } else {
       const progress = loadStoryProgress();
       const done = progress?.completedChapters.length ?? 0;
@@ -671,7 +831,9 @@ export class MenuScene extends Phaser.Scene {
     );
     const left = sw / 2 - w / 2;
     const top = sh / 2 - h / 2;
-    this.modalText(sw / 2, top + 18, '🗺 SELECT LEVEL', '#69db7c', 15);
+    const got = ratingStarsEarned(this.meta);
+    const maxStars = CHAPTER_ORDER.length * 3;
+    this.modalText(sw / 2, top + 18, `🗺 SELECT LEVEL · ${got}/${maxStars} ★`, '#69db7c', 14);
 
     const unlockedMax = this.highestUnlockedIndex();
     const gridLeft = left + pad + cell / 2;
@@ -681,9 +843,12 @@ export class MenuScene extends Phaser.Scene {
       const cy = gridTop + Math.floor(i / cols) * (cell + gap);
       const unlocked = i <= unlockedMax;
       const stars = this.meta.stars[id] ?? 0;
+      // Unlocked-but-not-3★ levels get an amber border to flag stars still on
+      // the table; fully-starred ones go bright green; locked ones stay grey.
+      const border = !unlocked ? 0x444455 : stars >= 3 ? 0x69db7c : 0xffd43b;
       const rect = this.add
         .rectangle(cx, cy, cell, cell, unlocked ? 0x232336 : 0x1a1a22)
-        .setStrokeStyle(2, unlocked ? 0x69db7c : 0x444455, unlocked ? 0.9 : 0.6)
+        .setStrokeStyle(2, border, unlocked ? 0.9 : 0.6)
         .setDepth(311);
       this.modal.push(rect);
       this.modal.push(
@@ -754,7 +919,11 @@ export class MenuScene extends Phaser.Scene {
     this.closeModal();
     const { sw, sh } = this;
     const w = Math.min(sw - 16, 340);
-    const h = 96 + 5 * 26 + TOUCH_MIN;
+    const daily = this.meta.daily;
+    const quests = daily?.quests ?? [];
+    const recordRows = 6;
+    const dailyH = 30 + quests.length * 24 + 8;
+    const h = 96 + recordRows * 26 + dailyH + TOUCH_MIN;
     this.pushBackdrop();
     this.modal.push(
       this.add
@@ -765,23 +934,28 @@ export class MenuScene extends Phaser.Scene {
         .on('pointerdown', STOP),
     );
     const top = sh / 2 - h / 2;
+    const lx = sw / 2 - w / 2 + 20;
+    const rx = sw / 2 + w / 2 - 20;
     this.modalText(sw / 2, top + 20, '🏆 RECORDS', '#74c0fc', 15);
 
     const lt = this.meta.lifetime;
     const best = loadEndlessBest();
+    const totalStars = totalStarsEarned(this.meta);
+    const { rank, next } = performerRank(totalStars);
     const lines: [string, string][] = [
+      ['Performer rank', rank.title],
       ['Enemies silenced', `${lt.kills}`],
       ['Waves survived', `${lt.waves}`],
       ['Highest combo', `x${lt.highestCombo}`],
       ['Best endless wave', best > 0 ? `${best}` : '—'],
-      ['Stars earned', `${totalStarsEarned(this.meta)}`],
+      ['Stars earned', next ? `${totalStars}  (★${next.min} → ${next.title})` : `${totalStars}`],
     ];
     lines.forEach(([label, value], i) => {
       const y = top + 56 + i * 26;
-      this.modalText(sw / 2 - w / 2 + 20, y, label, '#cfd3dc', 12, 0);
+      this.modalText(lx, y, label, '#cfd3dc', 12, 0);
       this.modal.push(
         this.add
-          .text(sw / 2 + w / 2 - 20, y, value, {
+          .text(rx, y, value, {
             fontFamily: 'monospace',
             fontSize: '12px',
             color: '#ffd43b',
@@ -790,6 +964,31 @@ export class MenuScene extends Phaser.Scene {
           .setDepth(311),
       );
     });
+
+    // --- Daily quests + streak (the come-back-tomorrow hook). ---------------
+    let dy = top + 56 + recordRows * 26 + 4;
+    this.modalText(lx, dy, `📅 DAILY  ·  🔥 Day ${daily?.streak ?? 1} streak`, '#ffd166', 12, 0);
+    dy += 24;
+    if (quests.length === 0) {
+      this.modalText(lx, dy, 'Play to roll today’s quests.', '#9aa0b0', 11, 0);
+    }
+    for (const q of quests) {
+      const def = questById(q.id);
+      if (!def) continue;
+      const mark = q.done ? '✓' : '○';
+      this.modalText(lx, dy, `${mark} ${def.label}`, q.done ? '#69db7c' : '#cfd3dc', 11, 0);
+      this.modal.push(
+        this.add
+          .text(rx, dy, q.done ? 'done' : `+${def.reward} fans`, {
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: q.done ? '#69db7c' : '#ff9ed8',
+          })
+          .setOrigin(1, 0.5)
+          .setDepth(311),
+      );
+      dy += 24;
+    }
 
     this.modal.push(
       ...this.button({

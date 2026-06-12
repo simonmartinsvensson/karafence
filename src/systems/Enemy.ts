@@ -30,6 +30,8 @@ export class Enemy {
   arrivedAtStage = false;
   /** Set once hp hits zero. */
   dead = false;
+  /** Bonus fans paid on kill (the "scout in the crowd" surprise); 0 = normal. */
+  bonusFans = 0;
 
   private readonly scene: Phaser.Scene;
   private readonly map: MapDefinition;

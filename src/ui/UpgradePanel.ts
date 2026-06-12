@@ -100,9 +100,10 @@ export class UpgradePanel {
 
     let y = top + headerH + gap + rowH / 2;
     if (showUpgrades) {
-      parts.push(...this.pathRow(tower, 'A', gold, y, w, cb));
+      const recommended = this.bestBuy(tower, gold);
+      parts.push(...this.pathRow(tower, 'A', gold, y, w, cb, recommended === 'A'));
       y += rowH + gap;
-      parts.push(...this.pathRow(tower, 'B', gold, y, w, cb));
+      parts.push(...this.pathRow(tower, 'B', gold, y, w, cb, recommended === 'B'));
       y += rowH + gap;
     }
 
@@ -136,6 +137,24 @@ export class UpgradePanel {
     this.container = this.scene.add.container(vw / 2, cy, parts).setDepth(300);
   }
 
+  /**
+   * The recommended affordable upgrade: the cheapest buyable next tier across
+   * both paths (A wins ties). Returns null if nothing is affordable. Used to
+   * gently steer spending toward a sensible next buy.
+   */
+  private bestBuy(tower: Tower, gold: number): UpgradePathKey | null {
+    let best: UpgradePathKey | null = null;
+    let bestCost = Infinity;
+    for (const p of ['A', 'B'] as UpgradePathKey[]) {
+      const next = tower.nextTier(p);
+      if (next && tower.canUpgrade(p) && gold >= next.cost && next.cost < bestCost) {
+        best = p;
+        bestCost = next.cost;
+      }
+    }
+    return best;
+  }
+
   private pathRow(
     tower: Tower,
     path: UpgradePathKey,
@@ -143,6 +162,7 @@ export class UpgradePanel {
     y: number,
     w: number,
     cb: UpgradePanelCallbacks,
+    recommended: boolean,
   ): Phaser.GameObjects.GameObject[] {
     const tier = tower.tiers[path];
     const pips = '●'.repeat(tier) + '○'.repeat(MAX_TIER - tier);
@@ -160,16 +180,19 @@ export class UpgradePanel {
       text = `${path} ${pips}  LOCKED (other path committed)`;
       color = '#777777';
     } else if (next) {
-      text = `${path} ${pips}  ▶ ${next.label}  ${next.cost}g`;
+      text = `${path} ${pips}  ▶ ${next.label}  ${next.cost}g${recommended ? '  ⭐' : ''}`;
       color = affordable ? '#ffffff' : '#cc8888';
     } else {
       text = `${path} ${pips}`;
       color = '#777777';
     }
 
+    // The recommended buy gets a gold border + warmer fill to draw the eye.
+    const fill = recommended ? 0x2e2a16 : affordable ? 0x233323 : 0x232336;
+    const stroke = recommended ? 0xffd43b : affordable ? 0x51cf66 : 0x444455;
     const row = this.scene.add
-      .rectangle(0, y, w - 20, TOUCH_MIN, affordable ? 0x233323 : 0x232336)
-      .setStrokeStyle(1, affordable ? 0x51cf66 : 0x444455, 0.9);
+      .rectangle(0, y, w - 20, TOUCH_MIN, fill)
+      .setStrokeStyle(recommended ? 2 : 1, stroke, 0.9);
     if (affordable) {
       row.setInteractive({ useHandCursor: true });
       row.on('pointerdown', (
