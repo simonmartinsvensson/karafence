@@ -50,6 +50,8 @@ import {
   saveStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { haptics } from '../systems/haptics';
+import { pressFeedback } from '../systems/touch';
 import { addNeonCameraFX } from '../systems/fx';
 import { DialogueOverlay } from '../ui/DialogueOverlay';
 import { TX, enemyTextureKey } from '../systems/textures';
@@ -585,6 +587,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Brief red flash on a tile the player can't build on. */
   private flashInvalidTile(col: number, row: number): void {
+    haptics.play('error');
     const { x, y } = tileToWorld(this.layout, col, row);
     const ts = this.layout.tileSize;
     const flash = this.add
@@ -607,6 +610,7 @@ export class GameScene extends Phaser.Scene {
       this.gold -= cost;
       this.goldSpent += cost;
       this.towers.placeTower(type, target.col, target.row, cost);
+      haptics.play('place');
       const { x, y } = tileToWorld(this.layout, target.col, target.row);
       this.fxBurst(x, y, TOWER_TYPES[type].color);
       this.refreshHud();
@@ -734,12 +738,29 @@ export class GameScene extends Phaser.Scene {
 
     const w = Math.max(200, Math.min(300, this.sw * 0.7));
 
-    // Mute toggle.
-    this.pauseButton(cx, cy - 54, w, audio.muted ? '🔇 Sound: OFF' : '🔊 Sound: ON',
-      audio.muted ? 0xff6b6b : 0x51cf66, () => {
-        audio.toggleMuted();
-        this.renderPauseMenu();
-      });
+    // Sound toggle — paired with a Haptics toggle on the same row where the
+    // device supports vibration (Android), else full-width.
+    if (haptics.supported) {
+      const half = (w - 10) / 2;
+      this.pauseButton(cx - half / 2 - 5, cy - 54, half, audio.muted ? '🔇 Sound' : '🔊 Sound',
+        audio.muted ? 0xff6b6b : 0x51cf66, () => {
+          audio.toggleMuted();
+          this.renderPauseMenu();
+        });
+      this.pauseButton(cx + half / 2 + 5, cy - 54, half,
+        haptics.isEnabled() ? '📳 Buzz' : '📴 Buzz',
+        haptics.isEnabled() ? 0x51cf66 : 0xff6b6b, () => {
+          haptics.toggle();
+          haptics.play('tap'); // a sample buzz so the toggle is self-demonstrating
+          this.renderPauseMenu();
+        });
+    } else {
+      this.pauseButton(cx, cy - 54, w, audio.muted ? '🔇 Sound: OFF' : '🔊 Sound: ON',
+        audio.muted ? 0xff6b6b : 0x51cf66, () => {
+          audio.toggleMuted();
+          this.renderPauseMenu();
+        });
+    }
 
     // Volume stepper: − [ ====  ] +
     const volPct = Math.round(audio.volume * 100);
@@ -912,6 +933,7 @@ export class GameScene extends Phaser.Scene {
       .text(x, y, label, { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' })
       .setOrigin(0.5)
       .setDepth(DEPTH_OVERLAY + 2);
+    pressFeedback(rect, [rect, text], { rect, base: 0x232336, active: 0x33334d });
     this.pauseUi.push(rect, text);
   }
 
@@ -957,6 +979,7 @@ export class GameScene extends Phaser.Scene {
     const spent = tower.applyUpgrade(path);
     this.gold -= spent;
     this.goldSpent += spent;
+    haptics.play('place');
     this.fxBurst(tower.x, tower.y, tower.type.projectileColor);
     this.refreshHud();
     this.saveRunState();
@@ -964,6 +987,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private sellTower(tower: Tower): void {
+    haptics.play('tap');
     this.gold += tower.sellValue;
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
     this.refreshHud();
@@ -1585,6 +1609,7 @@ export class GameScene extends Phaser.Scene {
     this.showBossBar(boss);
     audio.playMusic('boss');
     audio.sfx('bossEntrance');
+    haptics.play('heavy');
     this.cameras.main.shake(450, 0.012);
     this.cameras.main.flash(320, 120, 12, 30); // dark-red menace wash
   }
@@ -1917,6 +1942,7 @@ export class GameScene extends Phaser.Scene {
     this.meta.lifetime.waves += 1;
     saveMeta(this.meta);
     audio.sfx('waveClear');
+    haptics.play('soft');
 
     // Interest on banked gold (rate raised by the "Royalties" research node).
     const interest = Math.floor(this.gold * this.runMods.interestRate);
@@ -2036,6 +2062,7 @@ export class GameScene extends Phaser.Scene {
     this.nextChapterId = next;
 
     audio.playMusic('victory');
+    haptics.play('win');
     const beats = beatsAfterWave(this.levelId, clearedWave);
     const after = () => {
       this.endState = next ? 'chapter' : 'victory';
@@ -2204,6 +2231,7 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = true;
     this.waves.stop();
     audio.playMusic('gameover');
+    haptics.play('lose');
     this.cameras.main.shake(400, 0.01);
     this.towers.deselect();
     this.closeBuild();

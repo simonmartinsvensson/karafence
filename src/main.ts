@@ -6,7 +6,9 @@ import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  parent: 'game',
+  // Mount into the inner wrapper so Phaser measures the safe-area content box
+  // (the outer #game carries the env(safe-area-inset-*) padding). See index.html.
+  parent: 'game-inner',
   backgroundColor: COLORS.background,
   pixelArt: true,
   // Disable the right-click / long-press context menu on the canvas so a held
@@ -18,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
     // letterboxed. 1 game unit == 1 CSS pixel, so UI can size touch targets in
     // real pixels.
     mode: Phaser.Scale.RESIZE,
-    parent: 'game',
+    parent: 'game-inner',
     width: '100%',
     height: '100%',
   },

@@ -78,6 +78,22 @@ The whole game is playable on Android Chrome in both orientations.
   control; the build/upgrade panels (`src/ui/*`) and both scenes size their
   buttons/rows to at least that and center on the viewport. The UpgradePanel is
   anchored just above the control bar so Activate stays within thumb reach.
+- **Safe-area insets**: `index.html` mounts Phaser into an **inner wrapper**
+  (`#game-inner`) while the outer `#game` carries `padding: env(safe-area-inset-*)`
+  with `box-sizing: border-box`. Phaser measures the inner element
+  (`getBoundingClientRect`, which is padding-inclusive on the outer), so the
+  canvas sizes to the **safe area** — HUD/control-bar never sit under a camera
+  cut-out or the Android gesture bar. The dark body background shows through the
+  inset strips (matches the in-game background, so it reads as a frame).
+- **Portrait hint**: a CSS-only `#rotate-hint` pill (in `index.html`) shows under
+  `@media (orientation: portrait)` and self-fades; `pointer-events: none` so it
+  never blocks taps and never needs JS.
+- **Touch press feedback** (`src/systems/touch.ts`, `pressFeedback`): mobile has
+  no hover, so interactive controls dip in scale (+ brighten their fill) on
+  pointer-down and snap back on release — **event-driven, no tweens/timers**, so
+  it still animates while the pause menu has paused all tweens. Wired into the
+  shared `MenuScene.button` / `GameScene.pauseButton` helpers and BuildPanel
+  cards, so most buttons get it for free.
 
 ## Scene flow
 
@@ -435,6 +451,16 @@ swapped for real imported textures later by changing only what
   Audio unlocks on the first user gesture (browser autoplay policy). **To swap in
   real tracks/samples**, replace `playMusic` / `sfx` bodies per the header
   comment in `audio.ts` — call sites and the master bus stay unchanged.
+- **Haptics** (`src/systems/haptics.ts`, the `haptics` singleton) — the
+  Vibration API for **Android Chrome** (a no-op on iOS/desktop). Feature-detected
+  (`haptics.supported`) and user-toggleable (persisted via `storage.ts`
+  `loadHaptics`/`saveHaptics`, default on); `haptics.play(name)` is unconditional
+  at call sites (no-op when unsupported/disabled, with a 24ms coalesce so kill
+  flurries never stutter). Named patterns fire at: button presses (`tap`, via
+  `pressFeedback`), tower place/upgrade (`place`), invalid build (`error`), wave
+  clear (`soft`), boss arrival (`heavy`), achievement claim (`success`), prestige
+  & victory (`win`), game over (`lose`). The **pause menu** pairs a 📳 Buzz toggle
+  beside the Sound toggle (only when `haptics.supported`).
 - **Pause menu** — the bottom-bar **≡ Pause** button freezes the run
   (`time.paused` + `tweens.pauseAll`) and shows an overlay with a mute toggle, a
   volume stepper, **Resume**, and **Quit to menu**; it reflows on resize.

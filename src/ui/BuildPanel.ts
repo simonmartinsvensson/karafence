@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
 import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
 import { towerTextureKey } from '../systems/textures';
+import { pressFeedback } from '../systems/touch';
 
 /** Per-tower accent border color, so each card reads at a glance. */
 const ACCENT: Record<TowerTypeKey, number> = {
@@ -150,6 +151,7 @@ export class BuildPanel {
           ev?.stopPropagation();
           onSelect(tower.key);
         });
+        pressFeedback(cell, [cell], { rect: cell, base: 0x232336, active: 0x33334d, fillAlpha: 1 });
       }
     });
 

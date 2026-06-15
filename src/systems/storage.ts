@@ -18,6 +18,7 @@ import type { TargetingStrategy, TowerTypeKey, UpgradePathKey } from '../data/to
 const META_KEY = 'karafence:meta:v1';
 const RUN_PREFIX = 'karafence:run:v1:';
 const AUDIO_KEY = 'karafence:audio:v1';
+const HAPTICS_KEY = 'karafence:haptics:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const STORY_KEY = 'karafence:story:progress';
@@ -220,4 +221,16 @@ export function loadAudio(): AudioSettings {
 
 export function saveAudio(settings: AudioSettings): void {
   write(AUDIO_KEY, settings);
+}
+
+// --- Haptics setting -------------------------------------------------------
+
+/** Whether vibration feedback is enabled (Android). On by default. */
+export function loadHaptics(): boolean {
+  const v = read<boolean>(HAPTICS_KEY);
+  return typeof v === 'boolean' ? v : true;
+}
+
+export function saveHaptics(enabled: boolean): void {
+  write(HAPTICS_KEY, enabled);
 }

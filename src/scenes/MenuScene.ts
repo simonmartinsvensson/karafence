@@ -59,6 +59,8 @@ import {
   clearStoryProgress,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
+import { haptics } from '../systems/haptics';
+import { pressFeedback } from '../systems/touch';
 import { addNeonCameraFX } from '../systems/fx';
 import { TX } from '../systems/textures';
 
@@ -70,7 +72,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-15 14:30 CEST';
+const LAST_PATCH = '2026-06-15 15:30 CEST · Android feel';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -729,6 +731,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private doPrestige(): void {
+    haptics.play('win');
     this.meta.platinum = (this.meta.platinum ?? 0) + 1;
     // Reset campaign unlock progress (replay all levels); keep all meta.
     clearStoryProgress();
@@ -1190,6 +1193,7 @@ export class MenuScene extends Phaser.Scene {
         x: sw / 2 - (bw + gap) / 2, y: by, w: bw, h: TOUCH_MIN,
         label: `Claim +${fameReady}`, color: 0x51cf66, depth: 311,
         onClick: () => {
+          haptics.play('success');
           for (const a of ACHIEVEMENTS) claimAchievement(a, ctx);
           saveMeta(this.meta);
           this.rebuild();
@@ -1361,6 +1365,7 @@ export class MenuScene extends Phaser.Scene {
           ev?.stopPropagation();
           opts.onClick();
         });
+      pressFeedback(rect, [rect, text], { rect, base: 0x232336, active: 0x33334d });
     }
     if (!isModal) this.root.add([rect, text]);
     return [rect, text];
