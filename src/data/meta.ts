@@ -137,6 +137,12 @@ export interface MetaProgress {
   researchUnlocks: Partial<Record<MetaUpgradeKey, boolean>>;
   /** Stars granted by migration (legacy fan-stars), counted as earned. */
   starGrant: number;
+  /** Number of times the campaign has been prestiged ("Go Platinum"). */
+  platinum: number;
+  /** Claimed achievement ids. */
+  achievements: Partial<Record<string, boolean>>;
+  /** Epoch ms of the last menu visit (for offline-Fame on return). */
+  lastSeen: number;
   /** Daily-quest + login-streak state (rolled on menu entry). */
   daily?: DailyState;
   lifetime: LifetimeStats;
@@ -173,8 +179,23 @@ export function defaultMeta(): MetaProgress {
     branchUnlocks: {},
     researchUnlocks: {},
     starGrant: 0,
+    platinum: 0,
+    achievements: {},
+    lastSeen: 0,
     lifetime: { kills: 0, waves: 0, highestCombo: 0 },
   };
+}
+
+// --- Prestige ("Go Platinum") ----------------------------------------------
+//
+// Once the campaign's final chapter is cleared, the player can prestige: reset
+// campaign unlock progress (replay all 60 levels) for a permanent, stacking
+// Fame + gold multiplier. Their build (Fame, branches, research, stars, unlocks)
+// is kept — prestige is a long-horizon accelerator + flex, not a wipe.
+
+/** Permanent Fame/gold multiplier from prestige count. */
+export function platinumMult(meta: MetaProgress): number {
+  return 1 + 0.15 * (meta.platinum ?? 0);
 }
 
 /** Add Fame (the grind currency). Earned every run, win or loss. */
@@ -358,14 +379,15 @@ export function metaModifiers(meta: MetaProgress): {
   enemyHpMult: number;
 } {
   const t = (k: MetaUpgradeKey) => meta.upgrades?.[k] ?? 0;
+  const plat = platinumMult(meta); // prestige boosts Fame + gold
   return {
     startingGoldMult: 1 + 0.06 * t('startingGold'),
     towerCostMult: 1 - 0.03 * t('cheaperTowers'),
     comboWindowBonus: 0.3 * t('longerCombo'),
     allDamageMult: 1 + 0.04 * t('allDamage'),
-    goldMult: 1 + 0.05 * t('goldIncome'),
+    goldMult: (1 + 0.05 * t('goldIncome')) * plat,
     interestRate: 0.1 + 0.02 * t('interest'),
-    fameGainMult: 1 + 0.05 * t('fameGain'),
+    fameGainMult: (1 + 0.05 * t('fameGain')) * plat,
     enemyHpMult: 1 - 0.02 * t('enemyWeaken'),
   };
 }

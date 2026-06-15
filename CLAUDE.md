@@ -202,6 +202,19 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
   header. **Save migration** (`storage.loadMeta`): the pre-Fame shape
   (`fans`/`fanStars`/`towerLevels`) converts to `fame` + `starGrant` once, never
   losing earned spend power (stars only increase across the migration).
+- **Prestige / "Go Platinum"** (`meta.platinum`, `platinumMult`): once the
+  campaign's final chapter is cleared (`MenuScene.campaignComplete`), a Go
+  Platinum button resets campaign unlock progress (replay all 60) for a permanent
+  **+15%/✦ Fame & gold** multiplier (folded into `metaModifiers`). Build (Fame,
+  branches, research, stars, unlocks) is kept; the rank line shows a `✦N` badge.
+- **Achievements** (`src/data/achievements.ts`, pure): one-time goals computed
+  from existing state (ratings, lifetime, branches, endless best, prestige) that
+  pay Fame on claim (`meta.achievements[id]`). Shown in the Records modal's
+  **Goals** tab with a single "Claim +N" button; the menu Records button shows a
+  ● badge when something's claimable (`claimableCount`).
+- **Offline Fame** (`meta.lastSeen`, `MenuScene.grantOffline`): time-away since
+  the last menu visit grants capped Fame (rate scales with prestige), shown in a
+  "welcome back" toast alongside the login streak.
 - **Daily quests + streak** (`src/data/quests.ts`, pure): two date-seeded
   quests (`pickDailyQuests`) + a login streak, rolled on menu entry
   (`MenuScene.refreshDaily` → `rollDaily`, banking a streak fan bonus on a new

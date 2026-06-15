@@ -36,6 +36,14 @@ import {
   buyBranchLevel,
   respecTower,
 } from '../data/towerMeta';
+import {
+  ACHIEVEMENTS,
+  isAchieved,
+  isClaimed,
+  claimAchievement,
+  claimableCount,
+  type AchieveCtx,
+} from '../data/achievements';
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
 import { ART_CREDITS } from '../systems/spriteOverrides';
@@ -62,7 +70,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-15 12:00 CEST';
+const LAST_PATCH = '2026-06-15 14:30 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -82,10 +90,12 @@ export class MenuScene extends Phaser.Scene {
   private metaTab: 'research' | 'towers' | 'unlocks' = 'research';
   /** When set, the Towers tab shows this tower's branch sub-panel. */
   private branchTower: TowerTypeKey | null = null;
+  /** Active tab in the Records modal. */
+  private recordsTab: 'stats' | 'achievements' = 'stats';
   /** Objects belonging to the currently open modal (destroyed on close). */
   private modal: Phaser.GameObjects.GameObject[] = [];
-  /** Today's login-streak bonus, shown as a one-off toast on entry. */
-  private loginBonus?: { fame: number; streak: number };
+  /** "Welcome back" lines (offline Fame + login streak), shown once on entry. */
+  private welcomeLines: string[] = [];
   private resizeHandler = () => {
     this.closeModal();
     this.rebuild();
@@ -104,22 +114,42 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.modal = [];
+    this.welcomeLines = [];
     this.meta = loadMeta();
+    this.grantOffline();
     this.refreshDaily();
+    this.meta.lastSeen = Date.now();
+    saveMeta(this.meta);
     this.cameras.main.setBackgroundColor('#0b0b12');
     this.cameras.main.fadeIn(350, 11, 11, 18);
     addNeonCameraFX(this.cameras.main);
     audio.playMusic('menu');
     this.rebuild();
-    if (this.loginBonus) this.showLoginToast();
+    if (this.welcomeLines.length > 0) this.showWelcomeToast();
     this.scale.on('resize', this.resizeHandler);
     this.events.once('shutdown', () => this.scale.off('resize', this.resizeHandler));
   }
 
   /**
+   * Offline Fame: your fans keep talking while you're away. Grants capped Fame
+   * scaled by time since the last visit (and a little by prestige) — a gentle
+   * reason to come back, never a replacement for playing.
+   */
+  private grantOffline(): void {
+    const last = this.meta.lastSeen ?? 0;
+    if (last <= 0) return; // first ever visit — nothing to grant
+    const hours = Math.max(0, (Date.now() - last) / 3_600_000);
+    if (hours < 0.05) return; // ignore quick re-entries
+    const ratePerHour = 25 + 10 * (this.meta.platinum ?? 0);
+    const fame = Math.floor(Math.min(hours, 12) * ratePerHour); // cap 12h
+    if (fame <= 0) return;
+    addFame(this.meta, fame);
+    this.welcomeLines.push(`🎤 While you were away: +${fame} Fame`);
+  }
+
+  /**
    * Roll today's daily quests + login streak (no-op if already current). A new
-   * day banks a streak fan bonus (×streak, capped) — the "come back tomorrow"
-   * hook, feeding the same fan meter as everything else.
+   * day banks a streak Fame bonus — the "come back tomorrow" hook.
    */
   private refreshDaily(): void {
     const now = new Date();
@@ -127,17 +157,14 @@ export class MenuScene extends Phaser.Scene {
     this.meta.daily = state;
     if (loginFans > 0) {
       addFame(this.meta, loginFans);
-      this.loginBonus = { fame: loginFans, streak: state.streak };
+      this.welcomeLines.push(`🔥 Day ${state.streak} streak! +${loginFans} Fame`);
     }
-    saveMeta(this.meta);
   }
 
-  /** One-off centered toast celebrating the daily login streak + Fame bonus. */
-  private showLoginToast(): void {
-    const b = this.loginBonus;
-    if (!b) return;
-    this.loginBonus = undefined; // show only once per entry
-    const msg = `🔥 Day ${b.streak} streak! +${b.fame} Fame`;
+  /** One-off centered "welcome back" toast (login streak + offline Fame). */
+  private showWelcomeToast(): void {
+    const msg = this.welcomeLines.join('\n');
+    this.welcomeLines = [];
     const t = this.add
       .text(this.sw / 2, this.sh - TOUCH_MIN * 2 - 24, msg, {
         fontFamily: 'monospace',
@@ -153,8 +180,8 @@ export class MenuScene extends Phaser.Scene {
       targets: t,
       y: t.y - 26,
       alpha: { from: 1, to: 0 },
-      delay: 1600,
-      duration: 900,
+      delay: 2000,
+      duration: 1000,
       ease: 'Sine.easeIn',
       onComplete: () => t.destroy(),
     });
@@ -172,11 +199,12 @@ export class MenuScene extends Phaser.Scene {
     const titleY = Math.max(34, sh * 0.09);
     this.drawNeonTitle(sw / 2, titleY);
     const rank = performerRank(totalStarsEarned(this.meta)).rank;
+    const plat = this.meta.platinum ?? 0;
     this.text(
       sw / 2,
       titleY + 30,
-      `🎙 ${rank.title}`,
-      '#f783ac',
+      plat > 0 ? `🎙 ${rank.title}  ✦${plat}` : `🎙 ${rank.title}`,
+      plat > 0 ? '#e9d8ff' : '#f783ac',
       Math.min(13, sw / 30),
     );
     this.text(
@@ -188,7 +216,19 @@ export class MenuScene extends Phaser.Scene {
     );
 
     this.drawFanMeter(sw / 2, titleY + 76, Math.min(360, sw - 40));
-    this.drawModeCards(portrait, titleY + 112);
+
+    // "Go Platinum" appears once the campaign's final chapter is cleared.
+    let cardsTop = titleY + 112;
+    if (this.campaignComplete()) {
+      const py = titleY + 104;
+      this.button({
+        x: sw / 2, y: py, w: Math.min(260, sw - 60), h: TOUCH_MIN - 4,
+        label: '✦ GO PLATINUM', color: 0xc9b6ff,
+        onClick: () => this.requestPrestige(),
+      });
+      cardsTop = py + 30;
+    }
+    this.drawModeCards(portrait, cardsTop);
 
     // Bottom action buttons (always >=44px tall, reachable at screen bottom).
     const by = sh - TOUCH_MIN / 2 - 14;
@@ -217,7 +257,7 @@ export class MenuScene extends Phaser.Scene {
       y: by,
       w: bw,
       h: TOUCH_MIN,
-      label: '🏆 Records',
+      label: claimableCount(this.achieveCtx()) > 0 ? '🏆 Records ●' : '🏆 Records',
       color: 0x74c0fc,
       onClick: () => this.openRecordsPanel(),
     });
@@ -666,6 +706,38 @@ export class MenuScene extends Phaser.Scene {
     return `#${color.toString(16).padStart(6, '0')}`;
   }
 
+  // --- Prestige ("Go Platinum") --------------------------------------------
+
+  /** Campaign's final chapter cleared → prestige is available. */
+  private campaignComplete(): boolean {
+    const last = CHAPTER_ORDER[CHAPTER_ORDER.length - 1];
+    return (loadStoryProgress()?.completedChapters ?? []).includes(last);
+  }
+
+  private requestPrestige(): void {
+    const next = (this.meta.platinum ?? 0) + 1;
+    this.confirmModal(
+      'Go Platinum?',
+      [
+        `Reset campaign progress and replay all ${CHAPTER_ORDER.length} levels.`,
+        `Permanent reward: +15% Fame & gold per ✦ (you'll be ✦${next}).`,
+        'Your Fame, upgrades, stars & unlocks are all kept.',
+      ],
+      '✦ Go Platinum',
+      () => this.doPrestige(),
+    );
+  }
+
+  private doPrestige(): void {
+    this.meta.platinum = (this.meta.platinum ?? 0) + 1;
+    // Reset campaign unlock progress (replay all levels); keep all meta.
+    clearStoryProgress();
+    CHAPTER_ORDER.forEach((id) => clearRun('story', id));
+    saveStoryProgress({ levelId: CHAPTER_ORDER[0], completedChapters: [], wavesCleared: 0 });
+    saveMeta(this.meta);
+    this.rebuild();
+  }
+
   // --- Meta-upgrade tree ---------------------------------------------------
 
   private openMetaPanel(): void {
@@ -1056,35 +1128,96 @@ export class MenuScene extends Phaser.Scene {
 
   // --- Records (lifetime stats + endless best) -----------------------------
 
+  private achieveCtx(): AchieveCtx {
+    return {
+      meta: this.meta,
+      bestWave: loadEndlessBest(),
+      completedChapters: loadStoryProgress()?.completedChapters ?? [],
+    };
+  }
+
   private openRecordsPanel(): void {
     this.closeModal();
     const { sw, sh } = this;
-    const w = Math.min(sw - 16, 340);
-    const daily = this.meta.daily;
-    const quests = daily?.quests ?? [];
-    const recordRows = 6;
-    const dailyH = 30 + quests.length * 24 + 8;
-    const h = 96 + recordRows * 26 + dailyH + TOUCH_MIN;
+    const w = Math.min(sw - 16, 360);
+    const ach = this.recordsTab === 'achievements';
+    const headH = 78; // title + tabs
+    const closeArea = TOUCH_MIN + 14;
+
+    // Body height per tab (clamped to the viewport).
+    const quests = this.meta.daily?.quests ?? [];
+    const statsBodyH = 6 * 26 + (30 + quests.length * 24 + 8);
+    const maxBody = sh - 12 - headH - closeArea;
+    const achRowH = Math.max(20, Math.min(26, Math.floor(maxBody / ACHIEVEMENTS.length)));
+    const bodyH = ach ? ACHIEVEMENTS.length * achRowH : statsBodyH;
+    const h = Math.min(sh - 12, headH + bodyH + closeArea);
     this.pushBackdrop();
     this.modal.push(
-      this.add
-        .rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
-        .setStrokeStyle(2, 0x74c0fc, 0.9)
-        .setDepth(310)
-        .setInteractive()
-        .on('pointerdown', STOP),
+      this.add.rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0x74c0fc, 0.9).setDepth(310).setInteractive().on('pointerdown', STOP),
     );
     const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 18, '🏆 RECORDS', '#74c0fc', 15);
+
+    // Tabs.
+    const tabW = Math.min(140, (w - 36) / 2);
+    const tabY = top + 50;
+    const tab = (label: string, key: 'stats' | 'achievements', x: number) =>
+      this.modal.push(
+        ...this.button({
+          x, y: tabY, w: tabW, h: TOUCH_MIN - 8, label,
+          color: this.recordsTab === key ? 0x74c0fc : 0x555a66, depth: 311,
+          onClick: () => { this.recordsTab = key; this.openRecordsPanel(); },
+        }),
+      );
+    tab('Stats', 'stats', sw / 2 - tabW / 2 - 6);
+    tab('Goals', 'achievements', sw / 2 + tabW / 2 + 6);
+
+    if (ach) this.drawAchievements(w, top + headH, achRowH);
+    else this.drawStatsTab(w, top + headH);
+
+    // Footer: Claim-all (achievements, when any are ready) + Close.
+    const ctx = this.achieveCtx();
+    const claimable = ach ? claimableCount(ctx) : 0;
+    const by = top + h - 14 - TOUCH_MIN / 2;
+    if (claimable > 0) {
+      const fameReady = ACHIEVEMENTS
+        .filter((a) => isAchieved(a, ctx) && !isClaimed(this.meta, a.id))
+        .reduce((s, a) => s + a.fame, 0);
+      const gap = 10;
+      const bw = Math.min(150, (w - 40 - gap) / 2);
+      this.modal.push(...this.button({
+        x: sw / 2 - (bw + gap) / 2, y: by, w: bw, h: TOUCH_MIN,
+        label: `Claim +${fameReady}`, color: 0x51cf66, depth: 311,
+        onClick: () => {
+          for (const a of ACHIEVEMENTS) claimAchievement(a, ctx);
+          saveMeta(this.meta);
+          this.rebuild();
+          this.openRecordsPanel();
+        },
+      }));
+      this.modal.push(...this.button({
+        x: sw / 2 + (bw + gap) / 2, y: by, w: bw, h: TOUCH_MIN,
+        label: 'Close', color: 0xff6b6b, depth: 311, onClick: () => this.closeModal(),
+      }));
+    } else {
+      this.modal.push(...this.button({
+        x: sw / 2, y: by, w: Math.min(140, w - 40), h: TOUCH_MIN,
+        label: 'Close', color: 0xff6b6b, depth: 311, onClick: () => this.closeModal(),
+      }));
+    }
+  }
+
+  private drawStatsTab(w: number, bodyTop: number): void {
+    const { sw } = this;
     const lx = sw / 2 - w / 2 + 20;
     const rx = sw / 2 + w / 2 - 20;
-    this.modalText(sw / 2, top + 20, '🏆 RECORDS', '#74c0fc', 15);
-
     const lt = this.meta.lifetime;
     const best = loadEndlessBest();
     const totalStars = totalStarsEarned(this.meta);
     const { rank, next } = performerRank(totalStars);
     const lines: [string, string][] = [
-      ['Performer rank', rank.title],
+      ['Performer rank', this.meta.platinum > 0 ? `${rank.title} ✦${this.meta.platinum}` : rank.title],
       ['Enemies silenced', `${lt.kills}`],
       ['Waves survived', `${lt.waves}`],
       ['Highest combo', `x${lt.highestCombo}`],
@@ -1092,57 +1225,51 @@ export class MenuScene extends Phaser.Scene {
       ['Stars earned', next ? `${totalStars}  (★${next.min} → ${next.title})` : `${totalStars}`],
     ];
     lines.forEach(([label, value], i) => {
-      const y = top + 56 + i * 26;
+      const y = bodyTop + 8 + i * 26;
       this.modalText(lx, y, label, '#cfd3dc', 12, 0);
       this.modal.push(
-        this.add
-          .text(rx, y, value, {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: '#ffd43b',
-          })
-          .setOrigin(1, 0.5)
-          .setDepth(311),
+        this.add.text(rx, y, value, { fontFamily: 'monospace', fontSize: '12px', color: '#ffd43b' })
+          .setOrigin(1, 0.5).setDepth(311),
       );
     });
-
-    // --- Daily quests + streak (the come-back-tomorrow hook). ---------------
-    let dy = top + 56 + recordRows * 26 + 4;
+    let dy = bodyTop + 8 + 6 * 26 + 4;
+    const daily = this.meta.daily;
+    const quests = daily?.quests ?? [];
     this.modalText(lx, dy, `📅 DAILY  ·  🔥 Day ${daily?.streak ?? 1} streak`, '#ffd166', 12, 0);
     dy += 24;
-    if (quests.length === 0) {
-      this.modalText(lx, dy, 'Play to roll today’s quests.', '#9aa0b0', 11, 0);
-    }
+    if (quests.length === 0) this.modalText(lx, dy, 'Play to roll today’s quests.', '#9aa0b0', 11, 0);
     for (const q of quests) {
       const def = questById(q.id);
       if (!def) continue;
-      const mark = q.done ? '✓' : '○';
-      this.modalText(lx, dy, `${mark} ${def.label}`, q.done ? '#69db7c' : '#cfd3dc', 11, 0);
+      this.modalText(lx, dy, `${q.done ? '✓' : '○'} ${def.label}`, q.done ? '#69db7c' : '#cfd3dc', 11, 0);
       this.modal.push(
-        this.add
-          .text(rx, dy, q.done ? 'done' : `+${def.reward} fans`, {
-            fontFamily: 'monospace',
-            fontSize: '11px',
-            color: q.done ? '#69db7c' : '#ff9ed8',
-          })
-          .setOrigin(1, 0.5)
-          .setDepth(311),
+        this.add.text(rx, dy, q.done ? 'done' : `+${def.reward} Fame`, {
+          fontFamily: 'monospace', fontSize: '11px', color: q.done ? '#69db7c' : '#ff9ed8',
+        }).setOrigin(1, 0.5).setDepth(311),
       );
       dy += 24;
     }
+  }
 
-    this.modal.push(
-      ...this.button({
-        x: sw / 2,
-        y: top + h - 14 - TOUCH_MIN / 2,
-        w: Math.min(140, w - 40),
-        h: TOUCH_MIN,
-        label: 'Close',
-        color: 0xff6b6b,
-        depth: 311,
-        onClick: () => this.closeModal(),
-      }),
-    );
+  private drawAchievements(w: number, bodyTop: number, rowH: number): void {
+    const { sw } = this;
+    const lx = sw / 2 - w / 2 + 18;
+    const rx = sw / 2 + w / 2 - 18;
+    const ctx = this.achieveCtx();
+    ACHIEVEMENTS.forEach((a, i) => {
+      const y = bodyTop + rowH / 2 + i * rowH;
+      const claimed = isClaimed(this.meta, a.id);
+      const ready = !claimed && isAchieved(a, ctx);
+      const mark = claimed ? '✓' : ready ? '★' : '🔒';
+      const color = claimed ? '#69db7c' : ready ? '#ffd166' : '#7a8090';
+      this.modalText(lx, y, `${mark} ${a.name}`, color, 11, 0);
+      this.modal.push(
+        this.add.text(rx, y, claimed ? 'claimed' : ready ? `+${a.fame} ★ready` : `+${a.fame}`, {
+          fontFamily: 'monospace', fontSize: '10px',
+          color: claimed ? '#69db7c' : ready ? '#ffd166' : '#7a8090',
+        }).setOrigin(1, 0.5).setDepth(311),
+      );
+    });
   }
 
   // --- Modal / draw helpers ------------------------------------------------
