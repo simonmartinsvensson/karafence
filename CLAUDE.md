@@ -88,6 +88,15 @@ The whole game is playable on Android Chrome in both orientations.
 - **Portrait hint**: a CSS-only `#rotate-hint` pill (in `index.html`) shows under
   `@media (orientation: portrait)` and self-fades; `pointer-events: none` so it
   never blocks taps and never needs JS.
+- **High-DPI rendering** (`src/systems/hidpi.ts`, `installHiDPI` from `main.ts`):
+  supersamples the canvas to `cssSize × devicePixelRatio` (capped 3×) so visuals
+  are crisp on Retina/Android while the whole game stays authored in **CSS pixels**
+  (no scene/layout changes). It sets the canvas backing + renderer (hence the
+  postFX render targets) to physical size, and maps each camera's CSS world onto
+  that buffer with a pure ×dpr (`origin (0,0)`, `zoom = dpr`, `scroll = 0` — origin-0
+  so `scrollFactor: 0` UI lands right too), with `displayScale = dpr` so input
+  inverts straight back to CSS-world coords. No-op at dpr 1. Verified headless at
+  dpr 1/2/3 incl. exact tap→tile mapping.
 - **Touch press feedback** (`src/systems/touch.ts`, `pressFeedback`): mobile has
   no hover, so interactive controls dip in scale (+ brighten their fill) on
   pointer-down and snap back on release — **event-driven, no tweens/timers**, so

@@ -72,7 +72,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-15 15:30 CEST · Android feel';
+const LAST_PATCH = '2026-06-15 16:30 CEST · Hi-DPI + late-game tuning';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume

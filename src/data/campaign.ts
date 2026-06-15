@@ -139,7 +139,9 @@ function makeLevel(i: number): CampaignLevel {
     countPerWave: tutorial ? 0 : 0.4 + i * 0.03,
     hpPerWave: tutorial ? 0 : 0.05 + i * 0.004,
     speedPerWave: tutorial ? 0 : 0.015 + i * 0.0009,
-    speedCap: Math.min(2.6, 1.5 + i * 0.02),
+    // Speed is the scariest late knob (probe: ~4.8× at L60 with lives floored at
+    // 5). Pull the per-wave ceiling in a touch so the top end stays hard-but-fair.
+    speedCap: Math.min(2.3, 1.5 + i * 0.02),
     bossEvery: i < 3 ? 0 : i < 12 ? 5 : i < 30 ? 4 : 3,
     bossHpPerCycle: 0.12,
     enemyPool: poolForLevel(i),
@@ -149,12 +151,15 @@ function makeLevel(i: number): CampaignLevel {
     id: `level${i + 1}`,
     name: nameFor(i),
     lanes,
-    enemySpeedMultiplier: tutorial ? 0.62 : Math.min(2.2, 0.8 + i * 0.018),
-    startingGold: tutorial ? 420 : Math.max(180, 300 - i * 2),
+    enemySpeedMultiplier: tutorial ? 0.62 : Math.min(2.0, 0.8 + i * 0.018),
+    // Floor raised 180→210: late levels widen to 7 lanes while starting gold
+    // falls, so give a little more opening budget to cover the board.
+    startingGold: tutorial ? 420 : Math.max(210, 300 - i * 2),
     waveProfile: profile,
     starGoals: {
       // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5).
-      maxLivesLost: Math.max(4, 12 - Math.floor(i / 8)),
+      // Floor raised 4→6 so the fast, wide late levels leave a little margin.
+      maxLivesLost: Math.max(6, 12 - Math.floor(i / 8)),
       // "Thrifty" star scales the budget with level size.
       maxGoldSpent: 600 + i * 60,
       minCombo: 3 + Math.floor(i / 3),

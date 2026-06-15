@@ -3,6 +3,7 @@ import { COLORS } from './config';
 import { BootScene } from './scenes/BootScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { installHiDPI } from './systems/hidpi';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -28,6 +29,9 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+// Render at the device pixel ratio for crisp visuals on high-DPI (Android/Retina)
+// screens while keeping all layout in CSS pixels. See systems/hidpi.ts.
+installHiDPI(game);
 // Expose the game instance for debugging + headless smoke tests.
 (window as unknown as { game: Phaser.Game }).game = game;
 
