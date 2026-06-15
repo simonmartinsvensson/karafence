@@ -86,51 +86,85 @@ const NAMES = [
   'Sound Check Arena',
   'Curtain Call Hall',
   'Highnote Heights',
-  'The Grand Stage', // named in the level-19 dialogue
-  'The Final Countdown', // 20
+  'The Encore Estate',
+  "Pitchy's Place", // 20
+  'The Key Change',
+  'Tempo Tap House',
+  'The Falsetto Factory',
+  'Harmony Hall',
+  'The Riff Raff',
+  'Decibel Den',
+  'The Chord Cave',
+  'Vinyl Resting Place',
+  'The Acapella Alley',
+  'Stage Left Lounge', // 30
+  'The Headliner Hideaway',
+  'Backbeat Ballroom',
+  'The Glee Club',
+  'Octave Outpost',
+  'The Power Ballad Palace',
+  'Whistle Register',
+  'The Diva Dome',
+  'Sing Sing Sing Hall',
+  'The Money Note',
+  'Grand Finale Grounds', // 40
 ];
 
-/** Difficulty curve for level index `i` (0-based). */
+// Procedural punny names fill the back stretch; the last two are fixed for the
+// finale dialogue ("The Grand Stage" at level 59, "The Final Countdown" at 60).
+const NAME_ADJ = ['Encore', 'Velvet', 'Neon', 'Midnight', 'Golden', 'Electric', 'Smoky', 'Platinum', 'Wild', 'Roaring'];
+const NAME_NOUN = ['Amphitheatre', 'Mainstage', 'Coliseum', 'Ballroom', 'Dome', 'Auditorium', 'Rooftop', 'Pavilion', 'Megadome', 'Opera House'];
+
+function nameFor(i: number): string {
+  if (i === 58) return 'The Grand Stage'; // named in the level-59 dialogue
+  if (i === 59) return 'The Final Countdown'; // finale (level 60)
+  if (i < NAMES.length) return NAMES[i];
+  const a = NAME_ADJ[(i * 7) % NAME_ADJ.length];
+  const n = NAME_NOUN[(i * 13 + 3) % NAME_NOUN.length];
+  return `The ${a} ${n}`;
+}
+
+/**
+ * Difficulty curve for level index `i` (0-based) across a 60-level campaign.
+ * Slopes are gentler than a 20-level curve would be (they span 3× the levels);
+ * the brutal back third assumes meaningful meta investment (Fame branch trees +
+ * research). Tutorial (i===0) is a gentle on-ramp.
+ */
 function makeLevel(i: number): CampaignLevel {
   const tutorial = i === 0;
-  const lanes = i < 2 ? 3 : i < 6 ? 4 : i < 12 ? 5 : 6;
+  const lanes = i < 2 ? 3 : i < 8 ? 4 : i < 20 ? 5 : i < 40 ? 6 : 7;
   const profile: WaveProfile = {
-    // Tutorial is a gentle on-ramp: 3 short waves of a few slow hecklers.
-    waveCount: tutorial ? 3 : Math.min(20, 5 + Math.floor(i * 0.8)),
-    baseCount: tutorial ? 2 : 4 + Math.floor(i * 0.5),
-    countPerWave: tutorial ? 0 : 0.4 + i * 0.06,
-    hpPerWave: tutorial ? 0 : 0.05 + i * 0.006,
-    speedPerWave: tutorial ? 0 : 0.015 + i * 0.0015,
-    speedCap: 1.5 + i * 0.04,
-    bossEvery: i < 3 ? 0 : i < 10 ? 5 : 4,
+    waveCount: tutorial ? 3 : Math.min(28, 5 + Math.floor(i * 0.45)),
+    baseCount: tutorial ? 2 : 4 + Math.floor(i * 0.35),
+    countPerWave: tutorial ? 0 : 0.4 + i * 0.03,
+    hpPerWave: tutorial ? 0 : 0.05 + i * 0.004,
+    speedPerWave: tutorial ? 0 : 0.015 + i * 0.0009,
+    speedCap: Math.min(2.6, 1.5 + i * 0.02),
+    bossEvery: i < 3 ? 0 : i < 12 ? 5 : i < 30 ? 4 : 3,
     bossHpPerCycle: 0.12,
     enemyPool: poolForLevel(i),
-    spawnDelay: tutorial ? 1500 : Math.max(380, 900 - i * 28),
+    spawnDelay: tutorial ? 1500 : Math.max(300, 900 - i * 11),
   };
   return {
     id: `level${i + 1}`,
-    name: NAMES[i],
+    name: nameFor(i),
     lanes,
-    enemySpeedMultiplier: tutorial ? 0.62 : 0.8 + i * 0.032,
-    startingGold: tutorial ? 420 : Math.max(210, 300 - i * 5),
+    enemySpeedMultiplier: tutorial ? 0.62 : Math.min(2.2, 0.8 + i * 0.018),
+    startingGold: tutorial ? 420 : Math.max(180, 300 - i * 2),
     waveProfile: profile,
     starGoals: {
-      // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5). Keep
-      // the clean-run star a real but achievable challenge — never so tight that
-      // a single boss leak auto-fails it on a long level.
-      maxLivesLost: Math.max(5, 12 - Math.floor(i / 3)),
-      // "Thrifty" star: scale the budget with the level's size so it rewards an
-      // efficient build (not maxing everything) instead of being free early and
-      // impossible late.
-      maxGoldSpent: 600 + i * 90,
-      minCombo: 3 + Math.floor(i / 2),
+      // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5).
+      maxLivesLost: Math.max(4, 12 - Math.floor(i / 8)),
+      // "Thrifty" star scales the budget with level size.
+      maxGoldSpent: 600 + i * 60,
+      minCombo: 3 + Math.floor(i / 3),
     },
-    colors: i >= 13 ? COOL_PALETTE : undefined,
+    colors: i >= 20 ? COOL_PALETTE : undefined,
     tutorial,
   };
 }
 
-export const CAMPAIGN: CampaignLevel[] = Array.from({ length: 20 }, (_, i) => makeLevel(i));
+export const CAMPAIGN: CampaignLevel[] = Array.from({ length: 60 }, (_, i) => makeLevel(i));
 
 /** Standalone endless map (a roomy 5-lane venue) + the endless wave profile. */
 export const ENDLESS_LEVEL: CampaignLevel = {

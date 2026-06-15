@@ -1,6 +1,9 @@
 import type { LevelId } from './levels';
 import { CAMPAIGN } from './campaign';
 
+/** Final wave of the last campaign level — when the closing beats play. */
+const FINALE_WAVES = CAMPAIGN[CAMPAIGN.length - 1].waveProfile.waveCount;
+
 /**
  * Story-mode content — ALL narrative + the tutorial script lives here so it can
  * be tuned without touching game logic. `GameScene` (story mode only) looks up
@@ -171,8 +174,8 @@ export const STORY_BEATS: Record<LevelId, StoryBeat[]> = {
     },
   ],
 
-  // Level 19 — The Grand Stage.
-  level19: [
+  // Level 59 — The Grand Stage.
+  level59: [
     {
       waveAfter: 0,
       character: 'vy',
@@ -180,20 +183,20 @@ export const STORY_BEATS: Record<LevelId, StoryBeat[]> = {
     },
   ],
 
-  // Level 20 — World Finals + the closing exchange.
-  level20: [
+  // Level 60 — World Finals + the closing exchange (fires after the final wave).
+  level60: [
     {
       waveAfter: 0,
       character: 'judge',
       lines: ['So you’re the one stirring up my circuit.', 'Let’s see if you can hold the biggest stage there is.'],
     },
     {
-      waveAfter: 20,
+      waveAfter: FINALE_WAVES,
       character: 'alex',
       lines: ['We did it, Vy. The whole world — on its feet.', "I didn’t think a night could feel like this."],
     },
     {
-      waveAfter: 20,
+      waveAfter: FINALE_WAVES,
       character: 'vy',
       lines: ['You did it. I just held the door.', 'Take your bow, headliner. You earned every note.'],
     },

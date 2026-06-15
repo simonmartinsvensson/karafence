@@ -6,27 +6,36 @@ import { CHAPTER_ORDER } from '../data/story';
 import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
 import {
   META_UPGRADES,
-  nextTierCost,
   maxTier,
   starsAvailable,
   totalStarsEarned,
   ratingStarsEarned,
   performerRank,
-  TOWER_MAX_LEVEL,
-  towerUpgradeCost,
-  towerUpgradeEffectLabel,
+  addFame,
+  researchTier,
+  nextResearchFameCost,
+  isResearchDeepUnlocked,
+  buyResearchTier,
+  unlockResearchDeep,
   isTowerUnlocked,
   isTowerAvailable,
   TOWER_UNLOCK_COST,
   TOWER_STORY_UNLOCK,
+  unlockBranch,
+  unlockBranchDeep,
   isUnlocked,
   UNLOCK_COST,
   UNLOCK_NAME,
-  FAN_PER_STAR,
-  bankFans,
-  type UnlockKey,
   type MetaProgress,
 } from '../data/meta';
+import {
+  TOWER_META_TREE,
+  branchLevel,
+  branchFameCost,
+  branchBuyBlock,
+  buyBranchLevel,
+  respecTower,
+} from '../data/towerMeta';
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
 import { ART_CREDITS } from '../systems/spriteOverrides';
@@ -53,7 +62,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-12 18:50 CEST';
+const LAST_PATCH = '2026-06-15 12:00 CEST';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -69,12 +78,14 @@ const LAST_PATCH = '2026-06-12 18:50 CEST';
 export class MenuScene extends Phaser.Scene {
   private meta!: MetaProgress;
   private root!: Phaser.GameObjects.Container;
-  /** Active tab in the meta-upgrade modal. */
-  private metaTab: 'upgrades' | 'towers' = 'upgrades';
+  /** Active tab in the Upgrades modal. */
+  private metaTab: 'research' | 'towers' | 'unlocks' = 'research';
+  /** When set, the Towers tab shows this tower's branch sub-panel. */
+  private branchTower: TowerTypeKey | null = null;
   /** Objects belonging to the currently open modal (destroyed on close). */
   private modal: Phaser.GameObjects.GameObject[] = [];
   /** Today's login-streak bonus, shown as a one-off toast on entry. */
-  private loginBonus?: { fans: number; stars: number; streak: number };
+  private loginBonus?: { fame: number; streak: number };
   private resizeHandler = () => {
     this.closeModal();
     this.rebuild();
@@ -115,19 +126,18 @@ export class MenuScene extends Phaser.Scene {
     const { state, loginFans } = rollDaily(this.meta.daily, dateKey(now), yesterdayKey(now));
     this.meta.daily = state;
     if (loginFans > 0) {
-      const stars = bankFans(this.meta, loginFans);
-      this.loginBonus = { fans: loginFans, stars, streak: state.streak };
+      addFame(this.meta, loginFans);
+      this.loginBonus = { fame: loginFans, streak: state.streak };
     }
     saveMeta(this.meta);
   }
 
-  /** One-off centered toast celebrating the daily login streak + fan bonus. */
+  /** One-off centered toast celebrating the daily login streak + Fame bonus. */
   private showLoginToast(): void {
     const b = this.loginBonus;
     if (!b) return;
     this.loginBonus = undefined; // show only once per entry
-    const msg =
-      `🔥 Day ${b.streak} streak! +${b.fans} fans` + (b.stars > 0 ? ` → +${b.stars} ★` : '');
+    const msg = `🔥 Day ${b.streak} streak! +${b.fame} Fame`;
     const t = this.add
       .text(this.sw / 2, this.sh - TOUCH_MIN * 2 - 24, msg, {
         fontFamily: 'monospace',
@@ -395,34 +405,20 @@ export class MenuScene extends Phaser.Scene {
   // --- Mode cards ----------------------------------------------------------
 
   /**
-   * The unifying fan meter — every system (kills, waves, quests, crates, daily
-   * streak) feeds this single bar; filling it grants a bonus ★. Drawn under the
-   * star line with a goal tease (campaign % + the next act to unlock) so there's
-   * always a visible "next thing" without a new screen.
+   * Fame banner — every system (kills, waves, quests, crates, daily streak)
+   * feeds this single grind currency, spent in the Upgrades tree. Drawn under
+   * the star line with a goal tease (campaign % + the next act to unlock) so
+   * there's always a visible "next thing".
    */
-  private drawFanMeter(cx: number, cy: number, width: number): void {
-    const fans = this.meta.fans ?? 0;
-    const pct = Phaser.Math.Clamp(fans / FAN_PER_STAR, 0, 1);
-    const barH = 12;
-
-    this.text(cx, cy - 15, `🎤 ${fans} / ${FAN_PER_STAR} fans to your next bonus ★`, '#ff9ed8', 11);
-
-    this.root.add(
-      this.add.rectangle(cx, cy, width, barH, 0x241a2b, 0.95).setStrokeStyle(1, 0xff5fae, 0.5),
-    );
-    if (pct > 0) {
-      const fillW = Math.max(3, width * pct);
-      this.root.add(
-        this.add.rectangle(cx - width / 2 + fillW / 2, cy, fillW, barH - 4, 0xff5fae, 0.95),
-      );
-    }
+  private drawFanMeter(cx: number, cy: number, _width: number): void {
+    this.text(cx, cy - 6, `🎤 ${Math.floor(this.meta.fame)} Fame — spend it in Upgrades`, '#ff9ed8', 12);
 
     const maxStars = CHAPTER_ORDER.length * 3;
     const got = ratingStarsEarned(this.meta);
     const completion = Math.round((got / maxStars) * 100);
     this.text(
       cx,
-      cy + 16,
+      cy + 14,
       `Campaign ${completion}% · ${got}/${maxStars} ★ · ${this.nextUnlockTease()}`,
       '#9aa0b0',
       10,
@@ -675,14 +671,21 @@ export class MenuScene extends Phaser.Scene {
   private openMetaPanel(): void {
     this.closeModal();
     const { sw, sh } = this;
-    const w = Math.min(sw - 16, 440);
-    const towers = this.metaTab === 'towers';
-    const rowCount = towers ? TOWER_LIST.length : META_UPGRADES.length + 1;
-    const headH = 96; // title + stars line + tab row
+    const w = Math.min(sw - 16, 460);
+
+    // A branch sub-panel (one tower's tree) is its own focused view.
+    if (this.metaTab === 'towers' && this.branchTower) {
+      this.drawBranchPanel(w);
+      return;
+    }
+
+    const rowCount =
+      this.metaTab === 'research' ? META_UPGRADES.length :
+      this.metaTab === 'towers' ? TOWER_LIST.length :
+      TOWER_LIST.length + 1; // unlocks: towers + 2× speed
+    const headH = 96;
     const closeArea = TOUCH_MIN + 14;
     const idealRowH = TOUCH_MIN + 18;
-    // Fit the panel to the screen, then size rows to the space that's left so
-    // they never spill past the panel / off-screen on short (landscape) viewports.
     const h = Math.min(sh - 12, headH + rowCount * idealRowH + closeArea);
     const rowH = Math.max(30, Math.floor((h - headH - closeArea) / rowCount));
     this.pushBackdrop();
@@ -697,44 +700,39 @@ export class MenuScene extends Phaser.Scene {
     );
     const left = sw / 2 - w / 2;
     const top = sh / 2 - h / 2;
-    this.modalText(sw / 2, top + 16, '⭐ META UPGRADES', '#ffd166', 15);
-    this.modalText(sw / 2, top + 34, `${starsAvailable(this.meta)} stars to spend`, '#ffd43b', 12);
+    this.modalText(sw / 2, top + 16, '⭐ UPGRADES', '#ffd166', 15);
+    this.modalText(
+      sw / 2, top + 34,
+      `★ ${starsAvailable(this.meta)} stars  ·  🎤 ${Math.floor(this.meta.fame)} Fame`,
+      '#ffd43b', 12,
+    );
 
-    // Tabs.
-    const tabW = Math.min(150, (w - 36) / 2);
+    // Tabs: Research (Fame) / Towers (Fame branches) / Unlocks (Stars).
+    const tabW = Math.min(120, (w - 40) / 3);
     const tabY = top + 60;
-    const tab = (label: string, key: 'upgrades' | 'towers', x: number) =>
+    const tab = (label: string, key: 'research' | 'towers' | 'unlocks', x: number) =>
       this.modal.push(
         ...this.button({
-          x,
-          y: tabY,
-          w: tabW,
-          h: TOUCH_MIN - 6,
-          label,
+          x, y: tabY, w: tabW, h: TOUCH_MIN - 6, label,
           color: this.metaTab === key ? 0xffd166 : 0x555a66,
           depth: 311,
-          onClick: () => {
-            this.metaTab = key;
-            this.openMetaPanel();
-          },
+          onClick: () => { this.metaTab = key; this.branchTower = null; this.openMetaPanel(); },
         }),
       );
-    tab('Upgrades', 'upgrades', sw / 2 - tabW / 2 - 6);
-    tab('Towers', 'towers', sw / 2 + tabW / 2 + 6);
+    tab('Research', 'research', sw / 2 - tabW - 8);
+    tab('Towers', 'towers', sw / 2);
+    tab('Unlocks', 'unlocks', sw / 2 + tabW + 8);
 
     const rowTop = top + headH;
-    if (towers) this.drawTowerRows(left, w, rowTop, rowH);
-    else this.drawUpgradeRows(left, w, rowTop, rowH);
+    if (this.metaTab === 'research') this.drawResearchRows(left, w, rowTop, rowH);
+    else if (this.metaTab === 'towers') this.drawTowerRows(left, w, rowTop, rowH);
+    else this.drawUnlockRows(left, w, rowTop, rowH);
 
     this.modal.push(
       ...this.button({
-        x: sw / 2,
-        y: top + h - 14 - TOUCH_MIN / 2,
-        w: Math.min(140, w - 40),
-        h: TOUCH_MIN,
-        label: 'Close',
-        color: 0xff6b6b,
-        depth: 311,
+        x: sw / 2, y: top + h - 14 - TOUCH_MIN / 2,
+        w: Math.min(140, w - 40), h: TOUCH_MIN,
+        label: 'Close', color: 0xff6b6b, depth: 311,
         onClick: () => this.closeModal(),
       }),
     );
@@ -772,118 +770,158 @@ export class MenuScene extends Phaser.Scene {
     );
   }
 
-  private drawUpgradeRows(left: number, w: number, rowTop: number, rowH: number): void {
+  /** Research tree: Fame buys each tier; deep tiers need a one-time Star unlock. */
+  private drawResearchRows(left: number, w: number, rowTop: number, rowH: number): void {
     const avail = starsAvailable(this.meta);
+    const fame = Math.floor(this.meta.fame);
     META_UPGRADES.forEach((def, i) => {
       const rowY = rowTop + i * rowH;
-      const tier = this.meta.upgrades[def.key] ?? 0;
+      const tier = researchTier(this.meta, def.key);
       const max = maxTier(def);
-      const cost = nextTierCost(def, tier);
       const pips = '●'.repeat(tier) + '○'.repeat(max - tier);
-      const affordable = cost !== null && avail >= cost;
-      this.metaRow(
-        left,
-        w,
-        rowY,
-        rowH,
-        `${def.name}  ${pips}`,
-        tier > 0 ? def.effectLabel(tier) : 'Not purchased',
-        cost === null ? 'MAXED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
-        affordable,
-        () => this.buyUpgrade(def.key),
-      );
+      const subtitle = tier > 0 ? def.effectLabel(tier) : 'Not purchased';
+      if (tier >= max) {
+        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, subtitle, 'MAXED', false, () => undefined);
+      } else if (tier >= def.freeTiers && !isResearchDeepUnlocked(this.meta, def.key)) {
+        const ok = avail >= def.deepStars;
+        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, `Deep tier — unlock with stars`,
+          ok ? `Unlock ★${def.deepStars}` : `Need ★${def.deepStars}`, ok,
+          () => { if (unlockResearchDeep(this.meta, def.key)) this.commitMeta(); });
+      } else {
+        const cost = nextResearchFameCost(def, tier) ?? 0;
+        const ok = fame >= cost;
+        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, subtitle,
+          `🎤 ${cost}`, ok, () => { if (buyResearchTier(this.meta, def.key)) this.commitMeta(); });
+      }
     });
-    // Feature unlock: 2× speed.
-    const rowY = rowTop + META_UPGRADES.length * rowH;
+  }
+
+  /** Towers tab: a summary row per tower; tap to open its branch tree. */
+  private drawTowerRows(left: number, w: number, rowTop: number, rowH: number): void {
+    TOWER_LIST.forEach((tower, i) => {
+      const rowY = rowTop + i * rowH;
+      const branches = TOWER_META_TREE[tower.key].branches;
+      const summary = branches
+        .map((b) => `${b.name} ${branchLevel(this.meta, tower.key, b.key)}`)
+        .join(' · ');
+      this.metaRow(left, w, rowY, rowH, `${tower.icon} ${tower.name}`, summary, 'View ▸', true, () => {
+        this.branchTower = tower.key;
+        this.openMetaPanel();
+      });
+    });
+  }
+
+  /** Unlocks tab (Stars): tower unlocks + the 2× speed feature. */
+  private drawUnlockRows(left: number, w: number, rowTop: number, rowH: number): void {
+    const avail = starsAvailable(this.meta);
+    TOWER_LIST.forEach((tower, i) => {
+      const rowY = rowTop + i * rowH;
+      const owned = isTowerUnlocked(this.meta, tower.key);
+      const cost = TOWER_UNLOCK_COST[tower.key];
+      const ok = !owned && avail >= cost;
+      this.metaRow(left, w, rowY, rowH,
+        `${tower.icon} ${tower.name}  ${owned ? '●' : '🔒'}`,
+        owned ? 'Available' : `Auto-unlocks at level ${TOWER_STORY_UNLOCK[tower.key]} — or buy now`,
+        owned ? 'OWNED' : ok ? `Unlock ★${cost}` : `Need ★${cost}`, ok,
+        () => { this.meta.unlockedTowers[tower.key] = true; this.commitMeta(); });
+    });
+    const rowY = rowTop + TOWER_LIST.length * rowH;
     const owned = isUnlocked(this.meta, 'speed2x');
     const cost = UNLOCK_COST.speed2x;
-    const affordable = !owned && avail >= cost;
-    this.metaRow(
-      left,
-      w,
-      rowY,
-      rowH,
-      `${UNLOCK_NAME.speed2x}  ${owned ? '●' : '○'}`,
+    const ok = !owned && avail >= cost;
+    this.metaRow(left, w, rowY, rowH, `${UNLOCK_NAME.speed2x}  ${owned ? '●' : '○'}`,
       'Toggle 1×/2× game speed in a run',
-      owned ? 'OWNED' : affordable ? `Buy ★${cost}` : `Need ★${cost}`,
-      affordable,
-      () => this.buyUnlock('speed2x'),
+      owned ? 'OWNED' : ok ? `Buy ★${cost}` : `Need ★${cost}`, ok,
+      () => { this.meta.unlocks.speed2x = true; this.commitMeta(); });
+  }
+
+  /** Per-tower branch tree: invest Fame per branch, with star gates + respec. */
+  private drawBranchPanel(w: number): void {
+    const tower = this.branchTower!;
+    const { sw, sh } = this;
+    const branches = TOWER_META_TREE[tower].branches;
+    const def = TOWER_LIST.find((t) => t.key === tower)!;
+    const rowCount = branches.length;
+    const headH = 78;
+    const closeArea = TOUCH_MIN * 2 + 22; // respec + back/close
+    const idealRowH = TOUCH_MIN + 22;
+    const h = Math.min(sh - 12, headH + rowCount * idealRowH + closeArea);
+    const rowH = Math.max(36, Math.floor((h - headH - closeArea) / rowCount));
+    this.pushBackdrop();
+    this.modal.push(
+      this.add.rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0xffd166, 0.9).setDepth(310).setInteractive().on('pointerdown', STOP),
+    );
+    const left = sw / 2 - w / 2;
+    const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 16, `${def.icon} ${def.name}`, '#ffffff', 15);
+    this.modalText(sw / 2, top + 34, `🎤 ${Math.floor(this.meta.fame)} Fame  ·  ★ ${starsAvailable(this.meta)}`, '#ffd43b', 11);
+
+    const avail = starsAvailable(this.meta);
+    const fame = Math.floor(this.meta.fame);
+    const rowTop = top + headH;
+    branches.forEach((b, i) => {
+      const rowY = rowTop + i * rowH;
+      const lvl = branchLevel(this.meta, tower, b.key);
+      const pips = '●'.repeat(lvl) + '○'.repeat(b.maxLevel - lvl);
+      const eff = this.branchEffectLabel(b.axis, b.perLevel, lvl, b.capstone?.label);
+      const block = branchBuyBlock(this.meta, tower, b, fame);
+      let label: string;
+      let enabled = false;
+      let onClick: () => void = () => undefined;
+      if (block === 'maxed') label = 'MAX';
+      else if (block === 'locked') {
+        enabled = avail >= b.unlockStars;
+        label = enabled ? `Unlock ★${b.unlockStars}` : `Need ★${b.unlockStars}`;
+        onClick = () => { if (unlockBranch(this.meta, tower, b.key)) this.commitMeta(); };
+      } else if (block === 'needsDeepStar') {
+        enabled = avail >= b.deepStars;
+        label = enabled ? `Deep ★${b.deepStars}` : `Need ★${b.deepStars}`;
+        onClick = () => { if (unlockBranchDeep(this.meta, tower, b.key)) this.commitMeta(); };
+      } else {
+        const cost = branchFameCost(b, lvl + 1);
+        enabled = block === null;
+        label = `🎤 ${cost}`;
+        onClick = () => { if (buyBranchLevel(this.meta, tower, b.key)) this.commitMeta(); };
+      }
+      this.metaRow(left, w, rowY, rowH, `${b.name}  ${pips}`, eff, label, enabled, onClick);
+    });
+
+    const by = top + h - 14 - TOUCH_MIN / 2;
+    const backY = by - TOUCH_MIN - 8;
+    const invested = branches.reduce((s, b) => {
+      let t = 0;
+      for (let l = 1; l <= branchLevel(this.meta, tower, b.key); l++) t += branchFameCost(b, l);
+      return s + t;
+    }, 0);
+    this.modal.push(
+      ...this.button({
+        x: sw / 2, y: backY, w: Math.min(220, w - 40), h: TOUCH_MIN,
+        label: invested > 0 ? `↺ Respec  (+${invested} Fame)` : '↺ Respec',
+        color: invested > 0 ? 0xffa94d : 0x555555, enabled: invested > 0, depth: 311,
+        onClick: () => { respecTower(this.meta, tower); this.commitMeta(); },
+      }),
+    );
+    this.modal.push(
+      ...this.button({
+        x: sw / 2, y: by, w: Math.min(140, w - 40), h: TOUCH_MIN,
+        label: '← Back', color: 0x74c0fc, depth: 311,
+        onClick: () => { this.branchTower = null; this.openMetaPanel(); },
+      }),
     );
   }
 
-  private drawTowerRows(left: number, w: number, rowTop: number, rowH: number): void {
-    const avail = starsAvailable(this.meta);
-    const reached = this.highestUnlockedIndex() + 1; // 1-based campaign level reached
-    TOWER_LIST.forEach((tower, i) => {
-      const rowY = rowTop + i * rowH;
-      const available = isTowerAvailable(this.meta, reached, tower.key);
-      if (!available) {
-        // Auto-unlocks by reaching its story level — or buy it early with stars.
-        const cost = TOWER_UNLOCK_COST[tower.key];
-        const affordable = avail >= cost;
-        this.metaRow(
-          left,
-          w,
-          rowY,
-          rowH,
-          `${tower.icon} ${tower.name}  🔒`,
-          `Unlocks at level ${TOWER_STORY_UNLOCK[tower.key]} — or buy now`,
-          affordable ? `Unlock ★${cost}` : `Need ★${cost}`,
-          affordable,
-          () => this.unlockTower(tower.key),
-        );
-        return;
-      }
-      const level = this.meta.towerLevels[tower.key] ?? 0;
-      const cost = towerUpgradeCost(level);
-      const affordable = cost !== null && avail >= cost;
-      const pips = '●'.repeat(level) + '○'.repeat(TOWER_MAX_LEVEL - level);
-      this.metaRow(
-        left,
-        w,
-        rowY,
-        rowH,
-        `${tower.icon} ${tower.name}  ${pips}`,
-        level > 0 ? towerUpgradeEffectLabel(level) : 'Base stats',
-        cost === null ? 'MAX' : affordable ? `Lvl ★${cost}` : `Need ★${cost}`,
-        affordable,
-        () => this.buyTowerLevel(tower.key),
-      );
-    });
+  private branchEffectLabel(axis: string, perLevel: number, lvl: number, capstone?: string): string {
+    const pct = Math.round(perLevel * lvl * 100);
+    let s: string;
+    if (axis === 'damage') s = lvl > 0 ? `+${pct}% damage` : 'Damage';
+    else if (axis === 'range') s = lvl > 0 ? `+${(perLevel * lvl).toFixed(2)} range` : 'Range';
+    else if (axis === 'attackSpeed') s = lvl > 0 ? `+${pct}% fire rate` : 'Fire rate';
+    else s = lvl > 0 ? `+${pct}% aura strength` : 'Aura strength';
+    return capstone ? `${s} · max: ${capstone}` : s;
   }
 
-  private buyUpgrade(key: (typeof META_UPGRADES)[number]['key']): void {
-    const def = META_UPGRADES.find((u) => u.key === key);
-    if (!def) return;
-    const tier = this.meta.upgrades[key] ?? 0;
-    const cost = nextTierCost(def, tier);
-    if (cost === null || starsAvailable(this.meta) < cost) return;
-    this.meta.upgrades[key] = tier + 1;
-    this.commitMeta();
-  }
-
-  private buyTowerLevel(key: TowerTypeKey): void {
-    const level = this.meta.towerLevels[key] ?? 0;
-    const cost = towerUpgradeCost(level);
-    if (cost === null || starsAvailable(this.meta) < cost) return;
-    this.meta.towerLevels[key] = level + 1;
-    this.commitMeta();
-  }
-
-  private unlockTower(key: TowerTypeKey): void {
-    if (isTowerUnlocked(this.meta, key)) return;
-    if (starsAvailable(this.meta) < TOWER_UNLOCK_COST[key]) return;
-    this.meta.unlockedTowers[key] = true;
-    this.commitMeta();
-  }
-
-  private buyUnlock(key: UnlockKey): void {
-    if (isUnlocked(this.meta, key) || starsAvailable(this.meta) < UNLOCK_COST[key]) return;
-    this.meta.unlocks[key] = true;
-    this.commitMeta();
-  }
-
-  /** Persist + refresh the available-stars line and the (re)open the modal. */
+  /** Persist + refresh the menu balances and re-open the modal. */
   private commitMeta(): void {
     saveMeta(this.meta);
     this.rebuild();
@@ -908,11 +946,19 @@ export class MenuScene extends Phaser.Scene {
     const w = Math.min(sw - 16, 460);
     const cols = 5;
     const rows = Math.ceil(CHAPTER_ORDER.length / cols);
-    const pad = 14;
-    const gap = 8;
-    const headerH = 40;
-    const cell = Math.floor((w - pad * 2 - gap * (cols - 1)) / cols);
-    const h = Math.min(sh - 16, headerH + rows * (cell + gap) + pad + TOUCH_MIN);
+    const pad = 12;
+    const gap = 6;
+    const headerH = 34;
+    const closeArea = TOUCH_MIN + 16;
+    // 60 levels: size cells to fit BOTH width and the available height so the
+    // whole campaign shows without scrolling, even on short screens.
+    const widthCell = Math.floor((w - pad * 2 - gap * (cols - 1)) / cols);
+    const maxGridH = sh - 12 - headerH - closeArea;
+    const heightCell = Math.floor((maxGridH - gap * (rows - 1)) / rows);
+    const cell = Math.max(28, Math.min(widthCell, heightCell));
+    const gridH = rows * cell + (rows - 1) * gap;
+    const h = headerH + gridH + closeArea;
+    const showStars = cell >= 52; // star row only legible on bigger cells
     this.pushBackdrop();
     this.modal.push(
       this.add
@@ -922,14 +968,14 @@ export class MenuScene extends Phaser.Scene {
         .setInteractive()
         .on('pointerdown', STOP),
     );
-    const left = sw / 2 - w / 2;
     const top = sh / 2 - h / 2;
     const got = ratingStarsEarned(this.meta);
     const maxStars = CHAPTER_ORDER.length * 3;
-    this.modalText(sw / 2, top + 18, `🗺 SELECT LEVEL · ${got}/${maxStars} ★`, '#69db7c', 14);
+    this.modalText(sw / 2, top + 16, `🗺 SELECT LEVEL · ${got}/${maxStars} ★`, '#69db7c', 14);
 
     const unlockedMax = this.highestUnlockedIndex();
-    const gridLeft = left + pad + cell / 2;
+    const gridW = cols * cell + (cols - 1) * gap;
+    const gridLeft = sw / 2 - gridW / 2 + cell / 2;
     const gridTop = top + headerH + cell / 2;
     CHAPTER_ORDER.forEach((id, i) => {
       const cx = gridLeft + (i % cols) * (cell + gap);
@@ -946,25 +992,27 @@ export class MenuScene extends Phaser.Scene {
       this.modal.push(rect);
       this.modal.push(
         this.add
-          .text(cx, cy - cell * 0.12, unlocked ? `${i + 1}` : '🔒', {
+          .text(cx, showStars ? cy - cell * 0.12 : cy, unlocked ? `${i + 1}` : '🔒', {
             fontFamily: 'monospace',
-            fontSize: `${Math.round(cell * 0.34)}px`,
+            fontSize: `${Math.round(cell * (showStars ? 0.34 : 0.4))}px`,
             color: unlocked ? '#ffffff' : '#888888',
           })
           .setOrigin(0.5)
           .setDepth(312),
       );
       if (unlocked) {
-        this.modal.push(
-          this.add
-            .text(cx, cy + cell * 0.28, '★'.repeat(stars) + '☆'.repeat(3 - stars), {
-              fontFamily: 'monospace',
-              fontSize: `${Math.round(cell * 0.16)}px`,
-              color: '#ffd43b',
-            })
-            .setOrigin(0.5)
-            .setDepth(312),
-        );
+        if (showStars) {
+          this.modal.push(
+            this.add
+              .text(cx, cy + cell * 0.28, '★'.repeat(stars) + '☆'.repeat(3 - stars), {
+                fontFamily: 'monospace',
+                fontSize: `${Math.round(cell * 0.16)}px`,
+                color: '#ffd43b',
+              })
+              .setOrigin(0.5)
+              .setDepth(312),
+          );
+        }
         rect
           .setInteractive({ useHandCursor: true })
           .on('pointerdown', (

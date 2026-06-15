@@ -56,6 +56,7 @@ export class WaveManager {
     enemyLayer: Phaser.GameObjects.Container,
     profile: WaveProfile,
     endless = false,
+    enemyHpMult = 1,
   ) {
     this.scene = scene;
     this.map = map;
@@ -64,7 +65,11 @@ export class WaveManager {
     this.enemyLayer = enemyLayer;
     this.profile = profile;
     this.endless = endless;
+    this.enemyHpMult = enemyHpMult;
   }
+
+  /** Account-wide enemy-HP multiplier from the "Stage Fright" research node. */
+  private readonly enemyHpMult: number = 1;
 
   get currentWaveNumber(): number {
     return Math.max(1, this.waveIndex + 1);
@@ -174,7 +179,7 @@ export class WaveManager {
       this.layout,
       type,
       laneIndex,
-      isBoss ? this.bossHpScale : this.hpScale,
+      (isBoss ? this.bossHpScale : this.hpScale) * this.enemyHpMult,
       speedScale,
       startCol ?? this.map.spawnCol,
       this.enemyLayer,

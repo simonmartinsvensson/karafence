@@ -27,10 +27,11 @@ import { BOSS_CONFIG, ENEMY_TYPES, type EnemyType } from '../data/enemies';
 import { ENDLESS_PROFILE } from '../data/waves';
 import {
   metaModifiers,
+  defaultMeta,
+  addFame,
   towerBonusFor,
   isTowerAvailable,
   isUnlocked,
-  bankFans,
   type MetaProgress,
 } from '../data/meta';
 import { questById, FIRST_WIN_FANS, dateKey, type RunStats } from '../data/quests';
@@ -151,6 +152,7 @@ export class GameScene extends Phaser.Scene {
   private endlessBestAtStart = 0; // best endless wave when this run began (chase)
   private overdriveTimer = 0; // seconds left of the Encore overdrive (x2 fans)
   private runFanMult = 1; // Tonight's Setlist fan multiplier (endless only)
+  private runMods = metaModifiers(defaultMeta()); // research modifiers for this run
   private setlistName = ''; // active setlist name (endless), '' = none
 
   // Crowd Hype combo.
@@ -205,9 +207,8 @@ export class GameScene extends Phaser.Scene {
   private endBestWave = 0; // endless: best wave after this run
   private endNewRecord = false; // endless: did this run set a new best?
   private nextChapterId: LevelId | null = null; // story: chapter to advance to
-  // Fan-meter payout for the just-ended run (shown on the end screen).
+  // Fame payout for the just-ended run (shown on the end screen).
   private endFanGain = 0;
-  private endFanStars = 0;
   private endQuestNames: string[] = [];
   private endFirstWin = false; // first won run of the day (bonus paid)
   private endOverlay: Phaser.GameObjects.GameObject[] = [];
@@ -283,7 +284,6 @@ export class GameScene extends Phaser.Scene {
     this.endNewRecord = false;
     this.nextChapterId = null;
     this.endFanGain = 0;
-    this.endFanStars = 0;
     this.endQuestNames = [];
     this.endFirstWin = false;
     this.endOverlay = [];
@@ -302,6 +302,7 @@ export class GameScene extends Phaser.Scene {
     this.meta = loadMeta();
     this.endlessBestAtStart = this.mode === 'endless' ? loadEndlessBest() : 0;
     const mods = metaModifiers(this.meta);
+    this.runMods = mods;
     this.gold = Math.round((this.map.startingGold ?? STARTING_GOLD) * mods.startingGoldMult);
     this.towerCostMult = mods.towerCostMult;
     this.comboWindow = COMBO_WINDOW + mods.comboWindowBonus;
@@ -337,6 +338,7 @@ export class GameScene extends Phaser.Scene {
       this.layers.enemies,
       profile,
       this.mode === 'endless',
+      mods.enemyHpMult,
     );
 
     this.towers = new TowerManager(
@@ -345,7 +347,11 @@ export class GameScene extends Phaser.Scene {
       this.layout,
       this.waves.enemies,
       this.layers,
-      (key) => towerBonusFor(this.meta, key),
+      // Fold the global "Amplifier" research into every tower's damage bonus.
+      (key) => {
+        const b = towerBonusFor(this.meta, key);
+        return { ...b, damageMult: b.damageMult * mods.allDamageMult };
+      },
     );
     this.towers.onSelectionChange = (tower) => this.onTowerSelection(tower);
     this.buildPanel = new BuildPanel(this);
@@ -1519,6 +1525,7 @@ export class GameScene extends Phaser.Scene {
     const bonus = Math.round(reward * COMBO_BONUS * this.combo);
     let gain = reward + bonus;
     if (hype.goldMult > 1) gain = Math.round(gain * hype.goldMult);
+    if (this.runMods.goldMult > 1) gain = Math.round(gain * this.runMods.goldMult); // Merch Table
 
     this.gold += gain;
     this.goldEarned += gain;
@@ -1911,8 +1918,8 @@ export class GameScene extends Phaser.Scene {
     saveMeta(this.meta);
     audio.sfx('waveClear');
 
-    // Interest: +1 gold per 10 banked.
-    const interest = Math.floor(this.gold / 10);
+    // Interest on banked gold (rate raised by the "Royalties" research node).
+    const interest = Math.floor(this.gold * this.runMods.interestRate);
     if (interest > 0) {
       this.gold += interest;
       this.goldEarned += interest;
@@ -2077,11 +2084,12 @@ export class GameScene extends Phaser.Scene {
       this.endFirstWin = true;
     }
 
-    // Tonight's Setlist multiplies the in-run fans (quest/first-win bonuses are
-    // fixed daily rewards, so they're added after the multiplier).
-    const total = Math.round(this.runFans * this.runFanMult) + questFans;
+    // Tonight's Setlist multiplies the in-run fans; the "Going Viral" research
+    // node multiplies the whole haul. Quest/first-win bonuses are fixed.
+    const earned = Math.round(this.runFans * this.runFanMult) + questFans;
+    const total = Math.round(earned * this.runMods.fameGainMult);
     this.endFanGain = total;
-    this.endFanStars = bankFans(this.meta, total);
+    addFame(this.meta, total);
     this.endQuestNames = questNames;
     saveMeta(this.meta);
   }
@@ -2306,11 +2314,7 @@ export class GameScene extends Phaser.Scene {
   private fanSummaryLines(): string[] {
     const out: string[] = [];
     if (this.endFanGain > 0) {
-      out.push(
-        this.endFanStars > 0
-          ? `🎤 +${this.endFanGain} fans → +${this.endFanStars} ★ bonus!`
-          : `🎤 +${this.endFanGain} fans`,
-      );
+      out.push(`🎤 +${this.endFanGain} Fame`);
     }
     if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
     for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);

@@ -72,21 +72,54 @@ function remove(key: string): void {
 // --- Meta progression ------------------------------------------------------
 
 export function loadMeta(): MetaProgress {
-  const saved = read<Partial<MetaProgress>>(META_KEY);
+  const saved = read<any>(META_KEY);
   const base = defaultMeta();
   if (!saved) return base;
+
   // Merge defensively so older / partial saves keep working.
-  return {
+  const meta: MetaProgress = {
     stars: { ...base.stars, ...saved.stars },
     upgrades: { ...base.upgrades, ...saved.upgrades },
-    towerLevels: { ...base.towerLevels, ...saved.towerLevels },
     unlockedTowers: { ...base.unlockedTowers, ...saved.unlockedTowers },
     unlocks: { ...base.unlocks, ...saved.unlocks },
-    fans: typeof saved.fans === 'number' ? saved.fans : base.fans,
-    fanStars: typeof saved.fanStars === 'number' ? saved.fanStars : base.fanStars,
+    fame: typeof saved.fame === 'number' ? saved.fame : 0,
+    towerBranches: mergeBranches(base.towerBranches, saved.towerBranches),
+    branchUnlocks: { ...saved.branchUnlocks },
+    researchUnlocks: { ...saved.researchUnlocks },
+    starGrant: typeof saved.starGrant === 'number' ? saved.starGrant : 0,
     daily: saved.daily,
     lifetime: { ...base.lifetime, ...saved.lifetime },
   };
+
+  // One-time migration from the pre-Fame save shape (had `fans`/`fanStars`/
+  // `towerLevels`, no `fame`). Convert WITHOUT losing earned spend power:
+  //  - leftover fan-meter progress → Fame
+  //  - earned bonus stars (fanStars) → starGrant (still counts as earned stars)
+  //  - old star-bought tower levels → a generous Fame refund (re-invest in the
+  //    new branch trees). Stars only ever INCREASE across this migration since
+  //    the new `starsSpent` no longer subtracts tower-level / global-tier costs.
+  if (typeof saved.fame !== 'number') {
+    meta.fame += saved.fans ?? 0;
+    meta.starGrant = saved.fanStars ?? 0;
+    const lv = (saved.towerLevels ?? {}) as Record<string, number>;
+    for (const key of Object.keys(lv)) meta.fame += (lv[key] ?? 0) * 150;
+  }
+  return meta;
+}
+
+/** Ensure every tower has an {A,B,C} branch record, carrying saved levels. */
+function mergeBranches(
+  base: MetaProgress['towerBranches'],
+  saved: any,
+): MetaProgress['towerBranches'] {
+  const out = { ...base } as MetaProgress['towerBranches'];
+  if (saved && typeof saved === 'object') {
+    for (const key of Object.keys(out) as (keyof typeof out)[]) {
+      const s = saved[key];
+      if (s) out[key] = { A: s.A ?? 0, B: s.B ?? 0, C: s.C ?? 0 };
+    }
+  }
+  return out;
 }
 
 export function saveMeta(meta: MetaProgress): void {

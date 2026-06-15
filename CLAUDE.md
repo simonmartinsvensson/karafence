@@ -109,7 +109,7 @@ Two modes, picked on the mode-select screen and persisted (`karafence:mode`);
 Combat is **pure passive** in both modes — towers auto-attack; there are no
 per-tower active abilities and no shop power-ups (see "Towers / combat").
 
-- **Story** — a **20-level campaign** (`src/data/campaign.ts`). Level 1
+- **Story** — a **60-level campaign** (`src/data/campaign.ts`). Level 1
   ("The Garage") is a guided tutorial; difficulty ramps to "World Finals". A
   fresh run opens a **planning phase** with a manual **▶ Start Wave 1** button
   (build first, no timer); resume goes straight in. Between waves, `GameScene`
@@ -138,8 +138,8 @@ per-tower active abilities and no shop power-ups (see "Towers / combat").
 
 ## Campaign (src/data/campaign.ts)
 
-The 20 story levels are generated from a single difficulty curve, not hand-painted:
-`CAMPAIGN` is 20 `CampaignLevel` entries (`makeLevel(i)`) carrying lanes, enemy
+The 60 story levels are generated from a single difficulty curve, not hand-painted:
+`CAMPAIGN` is 60 `CampaignLevel` entries (`makeLevel(i)`) carrying lanes, enemy
 speed, starting gold, palette, `starGoals` and a **`WaveProfile`**; `buildMap`
 turns each into a `MapDefinition` via an ASCII layout template (`makeAscii`) +
 `parseMap`. `ENDLESS_LEVEL` is the standalone endless map. Levels unlock
@@ -171,37 +171,37 @@ zone, with a `damageSinger()` hook for when enemies reach the stage.
 
 ## Meta-progression / save-load
 
-- **Stars** (`src/data/meta.ts`): finishing a level scores 0-3 stars — one each
-  for losing ≤ `maxLivesLost`, spending ≤ `maxGoldSpent`, and reaching `minCombo`
-  (thresholds live in the map's `starGoals`). The **best** rating per level is
-  kept. Total stars earned across levels are a spendable currency; available =
-  earned − spent.
-- **Meta-upgrade tree** (`META_UPGRADES`): permanent, account-wide, bought with
-  stars — *Opening Act Budget* (+5%/tier starting gold), *Group Discount*
-  (−5%/tier tower cost), *Crowd Memory* (+0.5s/tier combo window). `metaModifiers`
-  turns purchased tiers into the run modifiers `GameScene` applies (starting gold,
-  `towerCost()`, `comboWindow`).
-- **RPG meta** (`src/data/meta.ts`, Infinitode-style): permanent **per-tower
-  leveling** (`towerLevels`; `towerBonus` adds +dmg/+range/+rate per level,
-  applied at placement via `TowerManager`→`Tower.baseStats`), **tower unlocks**
-  (`unlockedTowers`; start with Lead Singer + Drummer, the rest cost stars; the
-  BuildPanel only shows unlocked towers), and **feature unlocks** (`unlocks`,
-  e.g. `speed2x`). `starsSpent` accounts for all of these; the menu's
-  **Upgrades** modal has a per-tower **Towers** tab.
-- **Fan meter** (`meta.fans`/`meta.fanStars`, `FAN_PER_STAR`/`bankFans` in
-  `meta.ts`): a single unifying "addictive loop" currency that **every** system
-  feeds, so no run is ever wasted and stars accrue continuously. Fans are earned
-  during play — kills (scaled by the combo), wave clears, an endless milestone
-  every 5 waves, the occasional **encore crate** (`maybeDropCrate`, a variable
-  reward of fans or gold), a best-combo flourish, daily quests, and the daily
-  login streak — and **banked at run end (win OR loss, both modes)** via
-  `GameScene.bankRunFans`. Each `FAN_PER_STAR` fans grants a **bonus ★** that
-  counts toward the same spendable star pool (`totalStarsEarned` =
-  `ratingStarsEarned` + `fanStars`). Stars remain the only thing you spend; the
-  meter just makes every session advance you. The end screens show the run's fan
-  payout (`fanSummaryLines`); the menu shows a fan-meter bar + goal tease
-  (`drawFanMeter`/`nextUnlockTease`: campaign % + the next act to unlock), and
-  endless surfaces a best-wave chase ("1 wave from your best!").
+**Two-currency Infinitode-style economy** (`src/data/meta.ts` + `towerMeta.ts`):
+- **Fame** (`meta.fame`) — the **grind currency**, earned every run (win OR loss)
+  and spent on depth. Earned from kills (combo-scaled), wave clears, endless
+  milestones, the **encore crate** (`maybeDropCrate`), a best-combo flourish,
+  daily quests, the login streak, and the first-win-of-day bonus; multiplied by
+  the daily Setlist + the "Going Viral" research node. Banked via
+  `GameScene.bankRunFans` → `addFame`. End screens show "+N Fame"; the menu shows
+  the Fame balance + a goal tease (`drawFanMeter`/`nextUnlockTease`).
+- **Stars** — the **unlock currency**, from 0-3 per-level campaign ratings
+  (`starGoals`: ≤`maxLivesLost`, ≤`maxGoldSpent`, ≥`minCombo`; best kept; 60×3 =
+  180 max) + a one-time `starGrant` (migrated legacy bonus stars). Spent **only on
+  unlocks**: tower unlocks, per-tower branch + deep-tier gates, research deep-tier
+  gates, `speed2x`. `starsAvailable = totalStarsEarned − starsSpent`.
+- **Per-tower branch trees** (`towerMeta.ts`, `TOWER_META_TREE`): each tower has
+  2-3 permanent **branches** (e.g. Belt/Stage Presence/Piercing Note) you level
+  with Fame (escalating cost), some gated behind a Star unlock; maxing a branch
+  grants a **capstone** flag (pierce/stun/slow/multiTarget). Effects aggregate in
+  `towerBonusFor` → `TowerManager` → `Tower.baseStats` (capstones applied before
+  run-tier upgrades, with max/min merges). **Respec** refunds a tower's Fame fully.
+  Support towers' branches widen (range) + strengthen (`auraMult`) their aura.
+- **Research tree** (`META_UPGRADES`, Fame-funded): ~8 nodes (Amplifier +all
+  damage, Merch Table +gold, Opening Act Budget +start gold, Royalties +interest,
+  Going Viral +Fame, Crowd Memory +combo window, Group Discount −tower cost, Stage
+  Fright −enemy HP). Tiers cost Fame; deep tiers need a Star unlock. `metaModifiers`
+  turns tiers into run modifiers `GameScene`/`WaveManager` apply.
+- **Upgrades modal** (`MenuScene`) has three tabs — **Research** (Fame) /
+  **Towers** (tap a tower → its branch sub-panel with Fame buys, star gates, and
+  Respec) / **Unlocks** (Stars: tower + speed unlocks) — with a dual Fame+Stars
+  header. **Save migration** (`storage.loadMeta`): the pre-Fame shape
+  (`fans`/`fanStars`/`towerLevels`) converts to `fame` + `starGrant` once, never
+  losing earned spend power (stars only increase across the migration).
 - **Daily quests + streak** (`src/data/quests.ts`, pure): two date-seeded
   quests (`pickDailyQuests`) + a login streak, rolled on menu entry
   (`MenuScene.refreshDaily` → `rollDaily`, banking a streak fan bonus on a new

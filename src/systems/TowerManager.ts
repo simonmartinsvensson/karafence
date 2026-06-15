@@ -6,9 +6,8 @@ import { Tower } from './Tower';
 import { Projectile } from './Projectile';
 import { TOWER_TYPES, type TowerTypeKey } from '../data/towers';
 import type { TowerBonus } from '../data/meta';
+import { NO_BONUS } from '../data/towerMeta';
 import type { TowerSave } from './storage';
-
-const NO_BONUS: TowerBonus = { damageMult: 1, rangeAdd: 0, attackSpeedMult: 1 };
 
 /**
  * Owns all placed towers and their projectiles. Handles placement validation,
@@ -161,10 +160,12 @@ export class TowerManager {
     for (const source of this.towers.values()) {
       const buff = source.type.buffAttackSpeed;
       if (!buff) continue;
+      // Meta "Stronger Harmony" branch scales the bonus portion of the aura.
+      const scaled = 1 + (buff - 1) * source.auraStrength;
       for (const tower of this.towers.values()) {
         if (tower === source || !tower.attacks) continue;
         if (source.coversPoint(tower.x, tower.y)) {
-          tower.setSupportBuff(Math.max(tower.supportBuff, buff));
+          tower.setSupportBuff(Math.max(tower.supportBuff, scaled));
         }
       }
     }
@@ -179,7 +180,11 @@ export class TowerManager {
     let comboBoost = false;
     for (const tower of this.towers.values()) {
       if (!tower.coversPoint(x, y)) continue;
-      if (tower.type.goldBoost) goldMult = Math.max(goldMult, tower.type.goldBoost);
+      if (tower.type.goldBoost) {
+        // "Louder Hype" branch scales the bonus portion of the gold aura.
+        const scaled = 1 + (tower.type.goldBoost - 1) * tower.auraStrength;
+        goldMult = Math.max(goldMult, scaled);
+      }
       if (tower.type.comboBoost) comboBoost = true;
     }
     return { goldMult, comboBoost };

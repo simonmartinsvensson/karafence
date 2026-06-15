@@ -16,8 +16,15 @@ import {
   SELL_REFUND,
 } from '../data/towers';
 import type { TowerBonus } from '../data/meta';
+import type { CapstoneFlag } from '../data/towerMeta';
 
-const NO_BONUS: TowerBonus = { damageMult: 1, rangeAdd: 0, attackSpeedMult: 1 };
+const NO_BONUS: TowerBonus = {
+  damageMult: 1,
+  rangeAdd: 0,
+  attackSpeedMult: 1,
+  auraMult: 1,
+  capstones: [],
+};
 
 /** Effective combat stats after applying purchased upgrade tiers. */
 interface RuntimeStats {
@@ -193,6 +200,11 @@ export class Tower {
     return this.type.knockbackTiles ?? 0;
   }
 
+  /** Support-aura strength multiplier from this tower's meta branches (1 = base). */
+  get auraStrength(): number {
+    return this.metaBonus.auraMult ?? 1;
+  }
+
   get hasUpgrades(): boolean {
     return UPGRADES[this.type.key] !== undefined;
   }
@@ -214,7 +226,7 @@ export class Tower {
 
   private baseStats(): RuntimeStats {
     const b = this.metaBonus;
-    return {
+    const s: RuntimeStats = {
       damage: this.type.damage * b.damageMult,
       rangeTiles: this.type.range + b.rangeAdd,
       attackSpeed: this.type.attackSpeed * b.attackSpeedMult,
@@ -228,23 +240,42 @@ export class Tower {
       stunOnHit: false,
       stunDuration: 0,
     };
+    // Permanent capstones from maxed meta branches (applied before run tiers).
+    for (const c of b.capstones ?? []) this.applyCapstone(s, c);
+    return s;
+  }
+
+  /** Merge a meta-branch capstone into the stats (never regresses a value). */
+  private applyCapstone(s: RuntimeStats, c: CapstoneFlag): void {
+    if (c.kind === 'pierce') s.pierce = Math.max(s.pierce, c.value);
+    else if (c.kind === 'multiTarget') s.multiTarget = Math.max(s.multiTarget, c.value);
+    else if (c.kind === 'doubleFire') s.doubleFire = true;
+    else if (c.kind === 'slowOnHit') {
+      s.slowOnHit = true;
+      s.slowFactor = Math.min(s.slowFactor, c.factor);
+      s.slowDuration = Math.max(s.slowDuration, c.duration);
+    } else if (c.kind === 'stunOnHit') {
+      s.stunOnHit = true;
+      s.stunDuration = Math.max(s.stunDuration, c.duration);
+    }
   }
 
   private applyTier(s: RuntimeStats, t: UpgradeTier): void {
     if (t.damage) s.damage += t.damage;
     if (t.rangeTiles) s.rangeTiles += t.rangeTiles;
     if (t.attackSpeed) s.attackSpeed += t.attackSpeed;
-    if (t.pierce !== undefined) s.pierce = t.pierce;
-    if (t.multiTarget !== undefined) s.multiTarget = t.multiTarget;
+    // max/min merges so a run tier never regresses a permanent capstone.
+    if (t.pierce !== undefined) s.pierce = Math.max(s.pierce, t.pierce);
+    if (t.multiTarget !== undefined) s.multiTarget = Math.max(s.multiTarget, t.multiTarget);
     if (t.doubleFire) s.doubleFire = true;
     if (t.slowOnHit) {
       s.slowOnHit = true;
-      s.slowFactor = t.slowOnHit.factor;
-      s.slowDuration = t.slowOnHit.duration;
+      s.slowFactor = Math.min(s.slowFactor, t.slowOnHit.factor);
+      s.slowDuration = Math.max(s.slowDuration, t.slowOnHit.duration);
     }
     if (t.stunOnHit) {
       s.stunOnHit = true;
-      s.stunDuration = t.stunOnHit.duration;
+      s.stunDuration = Math.max(s.stunDuration, t.stunOnHit.duration);
     }
   }
 
