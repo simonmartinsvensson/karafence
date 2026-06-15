@@ -22,6 +22,8 @@ export type BossKind = 'hecklerKing' | 'micGrabber' | 'djWontStop' | 'talentJudg
 export interface EnemyType {
   key: EnemyTypeKey;
   name: string;
+  /** One-line description shown in the pause-menu Enemy Guide. */
+  blurb: string;
   /** Hit points. */
   hp: number;
   /** Movement speed in tiles per second. */
@@ -60,6 +62,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   heckler: {
     key: 'heckler',
     name: 'Heckler',
+    blurb: "Basic crowd — weak, but comes in numbers.",
     hp: 30,
     speed: 1.6,
     armor: 0,
@@ -72,6 +75,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   phoneScroller: {
     key: 'phoneScroller',
     name: 'Phone Scroller',
+    blurb: "Oblivious and slow, but soaks up tons of damage.",
     hp: 120,
     speed: 0.9,
     armor: 1,
@@ -84,6 +88,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   drunkUncle: {
     key: 'drunkUncle',
     name: 'Drunk Uncle',
+    blurb: "Fast and weaves between lanes — hard to pin down.",
     hp: 16,
     speed: 2.6,
     armor: 0,
@@ -97,6 +102,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   stageRusher: {
     key: 'stageRusher',
     name: 'Stage Rusher',
+    blurb: "Sprints for the stage; ignores the first tower to hit it.",
     hp: 14,
     speed: 3.6,
     armor: 0,
@@ -111,6 +117,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   critic: {
     key: 'critic',
     name: 'Critic',
+    blurb: "Cuts the gold of any foe that dies near its bad-review aura.",
     hp: 60,
     speed: 1.4,
     armor: 0,
@@ -126,6 +133,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   superfan: {
     key: 'superfan',
     name: 'Superfan',
+    blurb: "Tanky; splits into two Hecklers when downed.",
     hp: 150,
     speed: 0.8,
     armor: 0,
@@ -140,6 +148,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   vip: {
     key: 'vip',
     name: 'VIP',
+    blurb: "Armored and often deflects hits — but pays out big.",
     hp: 80,
     speed: 1.3,
     armor: 2,
@@ -155,6 +164,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   hecklerKing: {
     key: 'hecklerKing',
     name: 'The Heckler King',
+    blurb: "Boss: taunts that briefly freeze nearby towers.",
     hp: 650,
     speed: 0.55,
     armor: 1,
@@ -168,6 +178,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   micGrabber: {
     key: 'micGrabber',
     name: 'The Mic Grabber',
+    blurb: "Boss: steals gold and resets your combo if it reaches the stage.",
     hp: 420,
     speed: 1.4,
     armor: 0,
@@ -181,6 +192,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   djWontStop: {
     key: 'djWontStop',
     name: "The DJ Who Wouldn't Stop",
+    blurb: "Boss: shielded, and keeps summoning more Hecklers.",
     hp: 520,
     speed: 1.0,
     armor: 0,
@@ -195,6 +207,7 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
   talentJudge: {
     key: 'talentJudge',
     name: 'The Talent Show Judge',
+    blurb: "Boss: multi-phase finale — speeds up and rushes you late.",
     hp: 1000,
     speed: 1.9,
     armor: 3,

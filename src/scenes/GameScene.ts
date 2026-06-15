@@ -23,7 +23,7 @@ import {
   type TowerTypeKey,
   type UpgradePathKey,
 } from '../data/towers';
-import { BOSS_CONFIG } from '../data/enemies';
+import { BOSS_CONFIG, ENEMY_TYPES, type EnemyType } from '../data/enemies';
 import { ENDLESS_PROFILE } from '../data/waves';
 import {
   metaModifiers,
@@ -51,7 +51,7 @@ import {
 import { audio } from '../systems/audio';
 import { addNeonCameraFX } from '../systems/fx';
 import { DialogueOverlay } from '../ui/DialogueOverlay';
-import { TX } from '../systems/textures';
+import { TX, enemyTextureKey } from '../systems/textures';
 import { TileType } from '../types/map';
 
 /** A venue-signage control-bar button: neon glow + framed rect + label. */
@@ -123,6 +123,8 @@ export class GameScene extends Phaser.Scene {
   private gameOver = false;
   private paused = false;
   private pauseUi: Phaser.GameObjects.GameObject[] = [];
+  /** Which pause view is showing: the menu, or the enemy guide. */
+  private pauseView: 'menu' | 'bestiary' = 'menu';
 
   // Singer (stage performer) — kept so it can bounce when nearby foes fall.
   private singer?: Phaser.GameObjects.Container;
@@ -471,7 +473,7 @@ export class GameScene extends Phaser.Scene {
     if (sel) this.openUpgradePanel(sel);
 
     if (this.endState !== 'none') this.renderEndScreen();
-    if (this.paused) this.renderPauseMenu();
+    if (this.paused) this.renderPause();
     this.dialogue?.relayout();
   }
 
@@ -671,16 +673,24 @@ export class GameScene extends Phaser.Scene {
   private openPauseMenu(): void {
     if (this.gameOver || this.paused) return;
     this.paused = true;
+    this.pauseView = 'menu';
     this.towers.deselect();
     this.closeBuild();
     this.time.paused = true;
     this.tweens.pauseAll();
-    this.renderPauseMenu();
+    this.renderPause();
+  }
+
+  /** Draw whichever pause view is active (menu or enemy guide). */
+  private renderPause(): void {
+    if (this.pauseView === 'bestiary') this.renderBestiary();
+    else this.renderPauseMenu();
   }
 
   private closePauseMenu(): void {
     if (!this.paused) return;
     this.paused = false;
+    this.pauseView = 'menu';
     this.time.paused = false;
     this.tweens.resumeAll();
     this.pauseUi.forEach((o) => o.destroy());
@@ -761,11 +771,108 @@ export class GameScene extends Phaser.Scene {
         .setDepth(DEPTH_OVERLAY + 2),
     );
 
-    // Resume + Quit.
+    // Resume + Enemy Guide + Quit.
     this.pauseButton(cx, cy + 66, w, '▶ Resume', 0x51cf66, () => this.closePauseMenu());
-    this.pauseButton(cx, cy + 66 + TOUCH_MIN + 10, w, '≡ Quit to menu', 0x9aa0b0, () => {
+    this.pauseButton(cx, cy + 66 + TOUCH_MIN + 10, w, '📖 Enemy Guide', 0x4dabf7, () => {
+      this.pauseView = 'bestiary';
+      this.renderPause();
+    });
+    this.pauseButton(cx, cy + 66 + (TOUCH_MIN + 10) * 2, w, '≡ Quit to menu', 0x9aa0b0, () => {
       this.closePauseMenu();
       this.quitToMenu();
+    });
+  }
+
+  /**
+   * The Enemy Guide: a scrollable-free list of every foe — its tinted sprite,
+   * name and a one-line "what it does" blurb — so players can learn the cast
+   * without leaving the run. Sized to fit the viewport (rows shrink on short
+   * screens). Reuses the paused overlay; "Back" returns to the pause menu.
+   */
+  private renderBestiary(): void {
+    this.pauseUi.forEach((o) => o.destroy());
+    this.pauseUi = [];
+    if (!this.paused) return;
+    const cx = this.sw / 2;
+    const track = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      this.pauseUi.push(o);
+      return o;
+    };
+    track(
+      this.add
+        .rectangle(cx, this.sh / 2, this.sw, this.sh, 0x000000, 0.82)
+        .setDepth(DEPTH_OVERLAY)
+        .setInteractive(),
+    );
+
+    const list = Object.values(ENEMY_TYPES) as EnemyType[];
+    const w = Math.min(this.sw - 16, 400);
+    const left = cx - w / 2;
+    const top = 16;
+    const headerH = 34;
+    const footerH = TOUCH_MIN + 16;
+    // Fit all rows between header + footer, clamped to a comfortable range.
+    const avail = this.sh - top - headerH - footerH;
+    const rowH = Phaser.Math.Clamp(Math.floor(avail / list.length), 30, 46);
+
+    track(
+      this.add
+        .text(cx, top + headerH / 2, '📖 ENEMY GUIDE', {
+          fontFamily: 'monospace',
+          fontSize: '16px',
+          color: '#4dd2ff',
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_OVERLAY + 1),
+    );
+
+    let y = top + headerH;
+    for (const e of list) {
+      const rowCy = y + rowH / 2;
+      track(
+        this.add
+          .rectangle(cx, rowCy, w, rowH - 4, e.boss ? 0x2a1622 : 0x1b1b26, 0.96)
+          .setStrokeStyle(1, e.color, e.boss ? 0.9 : 0.55)
+          .setDepth(DEPTH_OVERLAY + 1),
+      );
+      const icon = Math.min(rowH - 12, 30);
+      track(
+        this.add
+          .image(left + 8 + icon / 2, rowCy, enemyTextureKey(e.key))
+          .setDisplaySize(icon, icon)
+          .setTint(e.color)
+          .setDepth(DEPTH_OVERLAY + 2),
+      );
+      const textX = left + 16 + icon;
+      track(
+        this.add
+          .text(textX, rowCy - 9, e.name, {
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: e.boss ? '#ff8fb1' : '#ffffff',
+            fontStyle: e.boss ? 'bold' : 'normal',
+          })
+          .setOrigin(0, 0.5)
+          .setDepth(DEPTH_OVERLAY + 2),
+      );
+      track(
+        this.add
+          .text(textX, rowCy + 8, e.blurb, {
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            color: '#9aa0b0',
+            wordWrap: { width: w - icon - 28 },
+          })
+          .setOrigin(0, 0.5)
+          .setDepth(DEPTH_OVERLAY + 2),
+      );
+      y += rowH;
+    }
+
+    const bw = Math.max(160, Math.min(280, this.sw * 0.6));
+    this.pauseButton(cx, this.sh - footerH / 2 - 6, bw, '← Back', 0x9aa0b0, () => {
+      this.pauseView = 'menu';
+      this.renderPause();
     });
   }
 
