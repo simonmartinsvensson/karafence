@@ -3,6 +3,7 @@ import { TOUCH_MIN } from '../config';
 import { computeScreenLayout } from '../systems/grid';
 import { MAX_TIER, describeTier, type UpgradePathKey } from '../data/towers';
 import type { Tower } from '../systems/Tower';
+import { makeTreeNode, type TreeNodeState } from './treeNode';
 
 export interface UpgradePanelCallbacks {
   onUpgrade: (path: UpgradePathKey) => void;
@@ -45,9 +46,9 @@ export class UpgradePanel {
     const headerH = TOUCH_MIN;
     const rowH = TOUCH_MIN;
     const showUpgrades = tower.hasUpgrades;
-    // Body rows: (two upgrade paths) + sell.
-    const bodyRows = (showUpgrades ? 2 : 0) + 1;
-    const h = pad + headerH + (bodyRows + 1) * gap + bodyRows * rowH + pad;
+    // A two-branch node fork (A/B) when the tower has upgrade paths, else just sell.
+    const forkH = showUpgrades ? 142 : 0;
+    const h = pad + headerH + gap + forkH + (showUpgrades ? gap : 0) + rowH + pad;
 
     const parts: Phaser.GameObjects.GameObject[] = [];
     const bg = this.scene.add
@@ -107,13 +108,11 @@ export class UpgradePanel {
       );
     }
 
-    let y = top + headerH + gap + rowH / 2;
+    let y = top + headerH + gap + rowH / 2; // sell-row centre when no upgrades
     if (showUpgrades) {
-      const recommended = this.bestBuy(tower, gold);
-      parts.push(...this.pathRow(tower, 'A', gold, y, w, cb, recommended === 'A'));
-      y += rowH + gap;
-      parts.push(...this.pathRow(tower, 'B', gold, y, w, cb, recommended === 'B'));
-      y += rowH + gap;
+      const forkTop = top + headerH + gap;
+      parts.push(...this.drawFork(tower, gold, forkTop, w, cb));
+      y = forkTop + forkH + gap + rowH / 2;
     }
 
     // Sell button.
@@ -147,97 +146,96 @@ export class UpgradePanel {
   }
 
   /**
-   * The recommended affordable upgrade: the cheapest buyable next tier across
-   * both paths (A wins ties). Returns null if nothing is affordable. Used to
-   * gently steer spending toward a sensible next buy.
+   * The two upgrade paths drawn as a node fork branching from a tower root:
+   * column A (power) and B (utility), each a chain of MAX_TIER nodes. The next
+   * buyable tier glows (tap to buy — GameScene guards gold/path so a tap while
+   * short or on a committed-out path no-ops); a locked path dims. The next
+   * tier's cost + effect sit under each column.
    */
-  private bestBuy(tower: Tower, gold: number): UpgradePathKey | null {
-    let best: UpgradePathKey | null = null;
-    let bestCost = Infinity;
-    for (const p of ['A', 'B'] as UpgradePathKey[]) {
-      const next = tower.nextTier(p);
-      if (next && tower.canUpgrade(p) && gold >= next.cost && next.cost < bestCost) {
-        best = p;
-        bestCost = next.cost;
-      }
-    }
-    return best;
-  }
-
-  private pathRow(
+  private drawFork(
     tower: Tower,
-    path: UpgradePathKey,
     gold: number,
-    y: number,
+    top: number,
     w: number,
     cb: UpgradePanelCallbacks,
-    recommended: boolean,
   ): Phaser.GameObjects.GameObject[] {
-    const tier = tower.tiers[path];
-    const pips = '●'.repeat(tier) + '○'.repeat(MAX_TIER - tier);
-    const next = tower.nextTier(path);
-    const maxed = tier >= MAX_TIER;
-    const locked = tower.isLocked(path);
-    const affordable = !!next && tower.canUpgrade(path) && gold >= next.cost;
+    const out: Phaser.GameObjects.GameObject[] = [];
+    const accent = tower.type.color;
+    const rootX = 0;
+    const rootY = top + 8;
+    const labelY = rootY + 22;
+    const firstY = labelY + 24;
+    const gap = 24;
+    const r = 9;
+    const cols: { p: UpgradePathKey; x: number }[] = [
+      { p: 'A', x: -w * 0.24 },
+      { p: 'B', x: w * 0.24 },
+    ];
 
-    let text: string;
-    let color: string;
-    if (maxed) {
-      text = `${path} ${pips}  ${tower.pathName(path)} · MAX`;
-      color = '#a0e0a0';
-    } else if (locked) {
-      text = `${path} ${pips}  LOCKED (other path committed)`;
-      color = '#777777';
-    } else if (next) {
-      text = `${path} ${pips}  ▶ ${next.label}  ${next.cost}g${recommended ? '  ⭐' : ''}`;
-      color = affordable ? '#ffffff' : '#cc8888';
-    } else {
-      text = `${path} ${pips}`;
-      color = '#777777';
-    }
+    const links = this.scene.add.graphics();
+    out.push(links);
+    out.push(this.scene.add.circle(rootX, rootY, r + 4, 0x232336, 0.98).setStrokeStyle(2, accent, 0.9));
+    out.push(this.scene.add.text(rootX, rootY, tower.type.icon, { fontFamily: 'monospace', fontSize: '13px' }).setOrigin(0.5));
 
-    // The recommended buy gets a gold border + warmer fill to draw the eye.
-    const fill = recommended ? 0x2e2a16 : affordable ? 0x233323 : 0x232336;
-    const stroke = recommended ? 0xffd43b : affordable ? 0x51cf66 : 0x444455;
-    const row = this.scene.add
-      .rectangle(0, y, w - 20, TOUCH_MIN, fill)
-      .setStrokeStyle(recommended ? 2 : 1, stroke, 0.9);
-    if (affordable) {
-      row.setInteractive({ useHandCursor: true });
-      row.on('pointerdown', (
-        _p: Phaser.Input.Pointer,
-        _x: number,
-        _y: number,
-        ev?: Phaser.Types.Input.EventData,
-      ) => {
-        ev?.stopPropagation();
-        cb.onUpgrade(path);
-      });
-    }
-    // What the next upgrade actually does — derived from its stat deltas/flags,
-    // so the player sees the effect, not just the name. Only the next buyable
-    // tier has one (maxed/locked rows show just the head line, centered).
-    const effect = next && !maxed && !locked ? describeTier(next) : '';
-    const out: Phaser.GameObjects.GameObject[] = [row];
-    out.push(
-      this.scene.add
-        .text(-w / 2 + 14, effect ? y - 8 : y, text, {
-          fontFamily: 'monospace',
-          fontSize: '11px',
-          color,
-        })
-        .setOrigin(0, 0.5),
-    );
-    if (effect) {
+    for (const { p, x } of cols) {
+      const tier = tower.tiers[p];
+      const maxed = tier >= MAX_TIER;
+      const locked = tower.isLocked(p);
+      const next = tower.nextTier(p);
+
+      links.lineStyle(3, 0x44445a, 0.8);
+      links.beginPath();
+      links.moveTo(rootX, rootY + r);
+      links.lineTo(x, firstY - r);
+      links.strokePath();
+
       out.push(
         this.scene.add
-          .text(-w / 2 + 26, y + 9, effect, {
-            fontFamily: 'monospace',
-            fontSize: '9px',
-            color: affordable ? '#a9b0c0' : '#8a7878',
+          .text(x, labelY - 3, `${p}· ${tower.pathName(p)}`, {
+            fontFamily: 'monospace', fontSize: '10px', color: locked ? '#8a8a96' : '#cfd3dc',
           })
-          .setOrigin(0, 0.5),
+          .setOrigin(0.5),
       );
+      const affordable = !!next && gold >= next.cost;
+      const note = maxed ? 'MAX' : locked ? 'locked' : next ? `▶ ${next.cost}g` : '';
+      if (note) {
+        const noteColor = maxed ? '#69db7c' : locked ? '#8a8a96' : affordable ? '#ffd166' : '#cc8888';
+        out.push(
+          this.scene.add
+            .text(x, labelY + 9, note, { fontFamily: 'monospace', fontSize: '9px', color: noteColor })
+            .setOrigin(0.5),
+        );
+      }
+
+      for (let j = 1; j <= MAX_TIER; j++) {
+        const ny = firstY + (j - 1) * gap;
+        if (j > 1) {
+          const on = j <= tier;
+          links.lineStyle(3, on ? accent : 0x33333f, on ? 0.95 : 0.7);
+          links.beginPath();
+          links.moveTo(x, ny - gap + r);
+          links.lineTo(x, ny - r);
+          links.strokePath();
+        }
+        let state: TreeNodeState = 'future';
+        let action: (() => void) | null = null;
+        if (j <= tier) state = 'owned';
+        else if (j === tier + 1 && !maxed && !locked && next) {
+          state = 'next';
+          action = () => cb.onUpgrade(p);
+        } else if (locked) state = 'locked';
+        out.push(...makeTreeNode(this.scene, x, ny, r, { state, accent, action }));
+      }
+
+      if (next && !maxed && !locked) {
+        out.push(
+          this.scene.add
+            .text(x, firstY + (MAX_TIER - 1) * gap + r + 10, describeTier(next), {
+              fontFamily: 'monospace', fontSize: '8px', color: '#a9b0c0', align: 'center', wordWrap: { width: w * 0.44 },
+            })
+            .setOrigin(0.5, 0),
+        );
+      }
     }
     return out;
   }

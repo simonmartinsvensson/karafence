@@ -53,6 +53,7 @@ import {
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
 import { ENDLESS_MILESTONES } from '../data/waves';
+import { makeTreeNode } from '../ui/treeNode';
 import { ART_CREDITS } from '../systems/spriteOverrides';
 import {
   loadMeta,
@@ -83,7 +84,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Skill-tree research ladders';
+const LAST_PATCH = '2026-06-16 · Skill-tree upgrades everywhere';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -1172,7 +1173,7 @@ export class MenuScene extends Phaser.Scene {
     );
   }
 
-  /** One skill-tree node (circle, or a gold diamond for a capstone). */
+  /** One skill-tree node (delegates to the shared primitive; depth 311+). */
   private drawBranchNode(
     x: number,
     y: number,
@@ -1185,59 +1186,7 @@ export class MenuScene extends Phaser.Scene {
       action: (() => void) | null;
     },
   ): void {
-    const { state, accent, capstone, costLabel, action } = opts;
-    const owned = state === 'owned';
-    const next = state === 'next';
-    const gate = state === 'gate';
-    const active = next || gate;
-    // A soft halo draws the eye to the actionable (buyable / unlockable) node.
-    if (active) {
-      this.modal.push(
-        this.add
-          .image(x, y, TX.glow)
-          .setDisplaySize(r * 5, r * 5)
-          .setTint(gate ? 0xffd166 : accent)
-          .setAlpha(0.5)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(311),
-      );
-    }
-    const fill = owned ? accent : active ? 0x232336 : 0x171720;
-    const stroke = owned ? 0xffffff : next ? accent : gate ? 0xffd166 : state === 'locked' ? 0x6b6b75 : 0x33333f;
-    const alpha = owned || active ? 0.98 : 0.65;
-    let shape: Phaser.GameObjects.Shape;
-    if (capstone) {
-      shape = this.add
-        .rectangle(x, y, r * 1.8, r * 1.8, owned ? 0xffd166 : fill, alpha)
-        .setStrokeStyle(active ? 3 : 2, owned ? 0xffffff : stroke, 1)
-        .setAngle(45)
-        .setDepth(312);
-    } else {
-      shape = this.add.circle(x, y, r, fill, alpha).setStrokeStyle(next ? 3 : 2, stroke, 1).setDepth(312);
-    }
-    this.modal.push(shape);
-    if (capstone && owned) {
-      this.modal.push(
-        this.add.text(x, y, '★', { fontFamily: 'monospace', fontSize: `${Math.round(r)}px`, color: '#1a1a22' })
-          .setOrigin(0.5).setDepth(313),
-      );
-    }
-    if (costLabel) {
-      this.modal.push(
-        this.add.text(x, y + r + 9, costLabel, { fontFamily: 'monospace', fontSize: '10px', color: '#ffd166' })
-          .setOrigin(0.5).setDepth(313),
-      );
-    }
-    if (action) {
-      const hs = Math.max(TOUCH_MIN, r * 2.6);
-      const hit = this.add.rectangle(x, y, hs, hs, 0xffffff, 0.001).setDepth(314).setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev?: Phaser.Types.Input.EventData) => {
-        ev?.stopPropagation();
-        action();
-      });
-      pressFeedback(hit, [shape]);
-      this.modal.push(hit);
-    }
+    this.modal.push(...makeTreeNode(this, x, y, r, { ...opts, depth: 311 }));
   }
 
   private branchAxisShort(axis: string): string {
