@@ -19,6 +19,7 @@ const META_KEY = 'karafence:meta:v1';
 const RUN_PREFIX = 'karafence:run:v1:';
 const AUDIO_KEY = 'karafence:audio:v1';
 const HAPTICS_KEY = 'karafence:haptics:v1';
+const SEEN_RANK_KEY = 'karafence:seenrank:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const STORY_KEY = 'karafence:story:progress';
@@ -233,4 +234,15 @@ export function loadHaptics(): boolean {
 
 export function saveHaptics(enabled: boolean): void {
   write(HAPTICS_KEY, enabled);
+}
+
+// --- Performer rank seen (for the rank-up flourish) ------------------------
+
+/** The performer-rank title last shown to the player (''=never). */
+export function loadSeenRank(): string {
+  return read<string>(SEEN_RANK_KEY) ?? '';
+}
+
+export function saveSeenRank(rank: string): void {
+  write(SEEN_RANK_KEY, rank);
 }

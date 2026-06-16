@@ -460,6 +460,16 @@ swapped for real imported textures later by changing only what
   Audio unlocks on the first user gesture (browser autoplay policy). **To swap in
   real tracks/samples**, replace `playMusic` / `sfx` bodies per the header
   comment in `audio.ts` — call sites and the master bus stay unchanged.
+- **Milestone juice** — the meta-progression payoff moments get sound + haptic
+  (+ a flourish): `reward` SFX on achievement claim, `levelUp` on a tower
+  branch maxing, `fanfare` + a camera flash on **prestige**, and `fanfare` +
+  a "🌟 Ranked up: <title>!" welcome-toast line when the performer rank advances
+  (tracked via `storage.ts` `loadSeenRank`/`saveSeenRank`, checked on menu entry).
+  Generic meta purchases play the `gold` blip through `MenuScene.commitMeta`.
+- **Progress-visibility readouts**: the end-of-run summary (`GameScene.fanSummaryLines`)
+  surfaces "🏆 N goals ready — claim in Records!" via `claimableCount`, and the
+  **pause menu** shows the active multipliers powering the run (✦ Platinum,
+  Amplifier +%dmg, Tonight's Setlist ×fans) from `runMods`/`meta`.
 - **Haptics** (`src/systems/haptics.ts`, the `haptics` singleton) — the
   Vibration API for **Android Chrome** (a no-op on iOS/desktop). Feature-detected
   (`haptics.supported`) and user-toggleable (persisted via `storage.ts`

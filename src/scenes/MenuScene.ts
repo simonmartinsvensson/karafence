@@ -57,6 +57,8 @@ import {
   loadStoryProgress,
   saveStoryProgress,
   clearStoryProgress,
+  loadSeenRank,
+  saveSeenRank,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
@@ -72,7 +74,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-15 16:30 CEST · Hi-DPI + late-game tuning';
+const LAST_PATCH = '2026-06-16 · Milestone juice + goal/buff readouts';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -120,6 +122,7 @@ export class MenuScene extends Phaser.Scene {
     this.meta = loadMeta();
     this.grantOffline();
     this.refreshDaily();
+    this.checkRankUp();
     this.meta.lastSeen = Date.now();
     saveMeta(this.meta);
     this.cameras.main.setBackgroundColor('#0b0b12');
@@ -161,6 +164,22 @@ export class MenuScene extends Phaser.Scene {
       addFame(this.meta, loginFans);
       this.welcomeLines.push(`🔥 Day ${state.streak} streak! +${loginFans} Fame`);
     }
+  }
+
+  /**
+   * Performer rank-up flourish: if the career title has advanced since the
+   * player last saw the menu, queue a toast line + play the fanfare. Monotonic
+   * (stars only ever increase), so any change is a promotion.
+   */
+  private checkRankUp(): void {
+    const title = performerRank(totalStarsEarned(this.meta)).rank.title;
+    const seen = loadSeenRank();
+    if (seen && seen !== title) {
+      this.welcomeLines.push(`🌟 Ranked up: ${title}!`);
+      audio.sfx('fanfare');
+      haptics.play('win');
+    }
+    saveSeenRank(title);
   }
 
   /** One-off centered "welcome back" toast (login streak + offline Fame). */
@@ -732,6 +751,8 @@ export class MenuScene extends Phaser.Scene {
 
   private doPrestige(): void {
     haptics.play('win');
+    audio.sfx('fanfare');
+    this.cameras.main.flash(420, 255, 215, 120); // warm platinum wash
     this.meta.platinum = (this.meta.platinum ?? 0) + 1;
     // Reset campaign unlock progress (replay all levels); keep all meta.
     clearStoryProgress();
@@ -957,7 +978,12 @@ export class MenuScene extends Phaser.Scene {
         const cost = branchFameCost(b, lvl + 1);
         enabled = block === null;
         label = `🎤 ${cost}`;
-        onClick = () => { if (buyBranchLevel(this.meta, tower, b.key)) this.commitMeta(); };
+        onClick = () => {
+          if (buyBranchLevel(this.meta, tower, b.key)) {
+            const maxed = branchLevel(this.meta, tower, b.key) >= b.maxLevel;
+            this.commitMeta(maxed ? 'levelUp' : 'gold');
+          }
+        };
       }
       this.metaRow(left, w, rowY, rowH, `${b.name}  ${pips}`, eff, label, enabled, onClick);
     });
@@ -997,7 +1023,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   /** Persist + refresh the menu balances and re-open the modal. */
-  private commitMeta(): void {
+  private commitMeta(sound: 'gold' | 'levelUp' | null = 'gold'): void {
+    if (sound) audio.sfx(sound);
     saveMeta(this.meta);
     this.rebuild();
     this.openMetaPanel();
@@ -1151,7 +1178,9 @@ export class MenuScene extends Phaser.Scene {
     const quests = this.meta.daily?.quests ?? [];
     const statsBodyH = 6 * 26 + (30 + quests.length * 24 + 8);
     const maxBody = sh - 12 - headH - closeArea;
-    const achRowH = Math.max(20, Math.min(26, Math.floor(maxBody / ACHIEVEMENTS.length)));
+    // Let rows shrink to fit short (landscape) viewports — the old max(20) floor
+    // overran the panel/footer with 12 goals on screens ≲380px tall.
+    const achRowH = Math.max(14, Math.min(26, Math.floor(maxBody / ACHIEVEMENTS.length)));
     const bodyH = ach ? ACHIEVEMENTS.length * achRowH : statsBodyH;
     const h = Math.min(sh - 12, headH + bodyH + closeArea);
     this.pushBackdrop();
@@ -1194,6 +1223,7 @@ export class MenuScene extends Phaser.Scene {
         label: `Claim +${fameReady}`, color: 0x51cf66, depth: 311,
         onClick: () => {
           haptics.play('success');
+          audio.sfx('reward');
           for (const a of ACHIEVEMENTS) claimAchievement(a, ctx);
           saveMeta(this.meta);
           this.rebuild();
@@ -1260,16 +1290,19 @@ export class MenuScene extends Phaser.Scene {
     const lx = sw / 2 - w / 2 + 18;
     const rx = sw / 2 + w / 2 - 18;
     const ctx = this.achieveCtx();
+    // Scale text down with the row so tight (landscape) layouts stay legible.
+    const nameFont = Math.max(9, Math.min(11, rowH - 4));
+    const valFont = Math.max(8, Math.min(10, rowH - 5));
     ACHIEVEMENTS.forEach((a, i) => {
       const y = bodyTop + rowH / 2 + i * rowH;
       const claimed = isClaimed(this.meta, a.id);
       const ready = !claimed && isAchieved(a, ctx);
       const mark = claimed ? '✓' : ready ? '★' : '🔒';
       const color = claimed ? '#69db7c' : ready ? '#ffd166' : '#7a8090';
-      this.modalText(lx, y, `${mark} ${a.name}`, color, 11, 0);
+      this.modalText(lx, y, `${mark} ${a.name}`, color, nameFont, 0);
       this.modal.push(
         this.add.text(rx, y, claimed ? 'claimed' : ready ? `+${a.fame} ★ready` : `+${a.fame}`, {
-          fontFamily: 'monospace', fontSize: '10px',
+          fontFamily: 'monospace', fontSize: `${valFont}px`,
           color: claimed ? '#69db7c' : ready ? '#ffd166' : '#7a8090',
         }).setOrigin(1, 0.5).setDepth(311),
       );

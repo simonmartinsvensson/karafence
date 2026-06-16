@@ -45,7 +45,11 @@ export type SfxName =
   | 'comboTick'
   | 'bossEntrance'
   | 'ability'
-  | 'waveClear';
+  | 'waveClear'
+  // Menu / meta-progression flourishes (see MenuScene).
+  | 'reward' // achievement claimed
+  | 'levelUp' // a tower branch / research node maxed
+  | 'fanfare'; // prestige + rank-up
 
 // --- Note helpers ----------------------------------------------------------
 
@@ -403,6 +407,27 @@ class AudioManager {
         this.blip(523, 523, 0.18, 'triangle', 0.22);
         this.blip(659, 659, 0.18, 'triangle', 0.22, 0.05);
         this.blip(784, 784, 0.3, 'triangle', 0.22, 0.1);
+        break;
+      case 'reward':
+        // Bright two-tone "ding" with a high sparkle — a satisfying claim.
+        this.blip(784, 784, 0.1, 'triangle', 0.22);
+        this.blip(1047, 1047, 0.12, 'triangle', 0.22, 0.07);
+        this.blip(1568, 1568, 0.16, 'sine', 0.16, 0.14);
+        break;
+      case 'levelUp':
+        // Ascending C-E-G-C arpeggio — a small "mastered it" cue.
+        this.blip(523, 523, 0.1, 'square', 0.2);
+        this.blip(659, 659, 0.1, 'square', 0.2, 0.08);
+        this.blip(784, 784, 0.1, 'square', 0.2, 0.16);
+        this.blip(1047, 1047, 0.22, 'square', 0.2, 0.24);
+        break;
+      case 'fanfare':
+        // Brassy rising flourish + shimmer — prestige / rank-up.
+        this.blip(392, 392, 0.14, 'sawtooth', 0.22);
+        this.blip(523, 523, 0.14, 'sawtooth', 0.22, 0.1);
+        this.blip(659, 659, 0.14, 'sawtooth', 0.22, 0.2);
+        this.blip(1047, 1047, 0.34, 'square', 0.24, 0.3);
+        this.noise(0.3, 0.05);
         break;
     }
   }

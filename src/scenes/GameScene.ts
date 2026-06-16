@@ -49,6 +49,7 @@ import {
   loadStoryProgress,
   saveStoryProgress,
 } from '../systems/storage';
+import { claimableCount } from '../data/achievements';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
 import { pressFeedback } from '../systems/touch';
@@ -735,6 +736,26 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(DEPTH_OVERLAY + 1),
     );
+
+    // Active-buffs readout — make the meta investment powering this run visible.
+    const buffs: string[] = [];
+    const plat = this.meta.platinum ?? 0;
+    if (plat > 0) buffs.push(`✦${plat} Platinum`);
+    const dmgPct = Math.round((this.runMods.allDamageMult - 1) * 100);
+    if (dmgPct > 0) buffs.push(`+${dmgPct}% dmg`);
+    if (this.runFanMult > 1) buffs.push(`🎵 ${this.runFanMult}× fans`);
+    if (buffs.length > 0) {
+      track(
+        this.add
+          .text(cx, cy - 90, buffs.join('   ·   '), {
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: '#ffd166',
+          })
+          .setOrigin(0.5)
+          .setDepth(DEPTH_OVERLAY + 1),
+      );
+    }
 
     const w = Math.max(200, Math.min(300, this.sw * 0.7));
 
@@ -2347,6 +2368,13 @@ export class GameScene extends Phaser.Scene {
     if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
     for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
     if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
+    // Nudge players toward claimable goals they'd otherwise only find in Records.
+    const ready = claimableCount({
+      meta: this.meta,
+      bestWave: loadEndlessBest(),
+      completedChapters: loadStoryProgress()?.completedChapters ?? [],
+    });
+    if (ready > 0) out.push(`🏆 ${ready} goal${ready > 1 ? 's' : ''} ready — claim in Records!`);
     return out;
   }
 
