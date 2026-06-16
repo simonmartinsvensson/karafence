@@ -83,7 +83,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Tower synergies + unlock phase 3';
+const LAST_PATCH = '2026-06-16 · Skill-tree branch panel';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -994,12 +994,10 @@ export class MenuScene extends Phaser.Scene {
     const { sw, sh } = this;
     const branches = TOWER_META_TREE[tower].branches;
     const def = TOWER_LIST.find((t) => t.key === tower)!;
-    const rowCount = branches.length;
-    const headH = 78;
-    const closeArea = TOUCH_MIN * 2 + 22; // respec + back/close
-    const idealRowH = TOUCH_MIN + 22;
-    const h = Math.min(sh - 12, headH + rowCount * idealRowH + closeArea);
-    const rowH = Math.max(36, Math.floor((h - headH - closeArea) / rowCount));
+    const headH = 76;
+    const footH = TOUCH_MIN * 2 + 26; // respec + back
+    const maxLevels = Math.max(...branches.map((b) => b.maxLevel));
+    const h = Math.min(sh - 12, headH + footH + 64 + maxLevels * 46);
     this.pushBackdrop();
     this.modal.push(
       this.add.rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
@@ -1012,37 +1010,106 @@ export class MenuScene extends Phaser.Scene {
 
     const avail = starsAvailable(this.meta);
     const fame = Math.floor(this.meta.fame);
-    const rowTop = top + headH;
+    const accent = def.color;
+
+    // --- Skill-tree layout: tower root → one node column per branch ---
+    const treeTop = top + headH;
+    const treeBottom = top + h - footH;
+    const nBr = branches.length;
+    const colW = w / nBr;
+    const rootX = sw / 2;
+    const rootY = treeTop + 14;
+    const labelY = rootY + 30; // branch name + axis
+    const firstY = labelY + 30; // first node of each branch
+    const gap = Phaser.Math.Clamp((treeBottom - firstY) / Math.max(1, maxLevels - 1), 30, 46);
+    const r = Math.min(13, Math.floor(gap * 0.32));
+
+    // Connector lines live under the nodes in a single Graphics.
+    const links = this.add.graphics().setDepth(311);
+    this.modal.push(links);
+
+    branches.forEach((_, i) => {
+      const x = left + colW * (i + 0.5);
+      links.lineStyle(3, 0x44445a, 0.8);
+      links.beginPath();
+      links.moveTo(rootX, rootY + r);
+      links.lineTo(x, firstY - r);
+      links.strokePath();
+    });
+
+    // Tower root node.
+    this.modal.push(
+      this.add.circle(rootX, rootY, r + 5, 0x232336, 0.98).setStrokeStyle(2, 0xffd166, 0.9).setDepth(312),
+    );
+    this.modal.push(
+      this.add.text(rootX, rootY, def.icon, { fontFamily: 'monospace', fontSize: `${Math.round(r * 1.3)}px` })
+        .setOrigin(0.5).setDepth(313),
+    );
+
     branches.forEach((b, i) => {
-      const rowY = rowTop + i * rowH;
+      const x = left + colW * (i + 0.5);
       const lvl = branchLevel(this.meta, tower, b.key);
-      const pips = '●'.repeat(lvl) + '○'.repeat(b.maxLevel - lvl);
-      const eff = this.branchEffectLabel(b.axis, b.perLevel, lvl, b.capstone?.label);
       const block = branchBuyBlock(this.meta, tower, b, fame);
-      let label: string;
-      let enabled = false;
-      let onClick: () => void = () => undefined;
-      if (block === 'maxed') label = 'MAX';
-      else if (block === 'locked') {
-        enabled = avail >= b.unlockStars;
-        label = enabled ? `Unlock ★${b.unlockStars}` : `Need ★${b.unlockStars}`;
-        onClick = () => { if (unlockBranch(this.meta, tower, b.key)) this.commitMeta(); };
-      } else if (block === 'needsDeepStar') {
-        enabled = avail >= b.deepStars;
-        label = enabled ? `Deep ★${b.deepStars}` : `Need ★${b.deepStars}`;
-        onClick = () => { if (unlockBranchDeep(this.meta, tower, b.key)) this.commitMeta(); };
-      } else {
-        const cost = branchFameCost(b, lvl + 1);
-        enabled = block === null;
-        label = `🎤 ${cost}`;
-        onClick = () => {
-          if (buyBranchLevel(this.meta, tower, b.key)) {
-            const maxed = branchLevel(this.meta, tower, b.key) >= b.maxLevel;
-            this.commitMeta(maxed ? 'levelUp' : 'gold');
+      const lockedBranch = block === 'locked';
+
+      this.modalText(x, labelY - 6, b.name, lockedBranch ? '#8a8a96' : this.hex(accent), 11);
+      this.modalText(x, labelY + 7, this.branchAxisShort(b.axis), '#9aa0b0', 9);
+
+      for (let j = 1; j <= b.maxLevel; j++) {
+        const y = firstY + (j - 1) * gap;
+        const isCap = !!b.capstone && j === b.maxLevel;
+        if (j > 1) {
+          const on = j <= lvl; // link filled only between two owned nodes
+          links.lineStyle(3, on ? accent : 0x33333f, on ? 0.95 : 0.7);
+          links.beginPath();
+          links.moveTo(x, y - gap + r);
+          links.lineTo(x, y - r);
+          links.strokePath();
+        }
+
+        let state: 'owned' | 'next' | 'gate' | 'locked' | 'future' = 'future';
+        let costLabel = '';
+        let action: (() => void) | null = null;
+        if (lockedBranch) {
+          state = 'locked';
+          if (j === 1) {
+            const can = avail >= b.unlockStars;
+            costLabel = `★${b.unlockStars}`;
+            if (can) {
+              state = 'gate';
+              action = () => { if (unlockBranch(this.meta, tower, b.key)) this.commitMeta(); };
+            }
           }
-        };
+        } else if (j <= lvl) {
+          state = 'owned';
+        } else if (j === lvl + 1) {
+          if (block === 'needsDeepStar') {
+            const can = avail >= b.deepStars;
+            costLabel = `★${b.deepStars}`;
+            if (can) {
+              state = 'gate';
+              action = () => { if (unlockBranchDeep(this.meta, tower, b.key)) this.commitMeta(); };
+            } else {
+              state = 'locked';
+            }
+          } else if (block === null) {
+            state = 'next';
+            costLabel = `🎤${branchFameCost(b, lvl + 1)}`;
+            action = () => {
+              if (buyBranchLevel(this.meta, tower, b.key)) {
+                const maxed = branchLevel(this.meta, tower, b.key) >= b.maxLevel;
+                this.commitMeta(maxed ? 'levelUp' : 'gold');
+              }
+            };
+          }
+        }
+        this.drawBranchNode(x, y, r, { state, accent, capstone: isCap, costLabel, action });
       }
-      this.metaRow(left, w, rowY, rowH, `${b.name}  ${pips}`, eff, label, enabled, onClick);
+
+      // Capstone effect caption under the column (so the payoff is legible).
+      if (b.capstone) {
+        this.modalText(x, firstY + (b.maxLevel - 1) * gap + r + 22, b.capstone.label, '#c9b6ff', 8);
+      }
     });
 
     const by = top + h - 14 - TOUCH_MIN / 2;
@@ -1069,14 +1136,79 @@ export class MenuScene extends Phaser.Scene {
     );
   }
 
-  private branchEffectLabel(axis: string, perLevel: number, lvl: number, capstone?: string): string {
-    const pct = Math.round(perLevel * lvl * 100);
-    let s: string;
-    if (axis === 'damage') s = lvl > 0 ? `+${pct}% damage` : 'Damage';
-    else if (axis === 'range') s = lvl > 0 ? `+${(perLevel * lvl).toFixed(2)} range` : 'Range';
-    else if (axis === 'attackSpeed') s = lvl > 0 ? `+${pct}% fire rate` : 'Fire rate';
-    else s = lvl > 0 ? `+${pct}% aura strength` : 'Aura strength';
-    return capstone ? `${s} · max: ${capstone}` : s;
+  /** One skill-tree node (circle, or a gold diamond for a capstone). */
+  private drawBranchNode(
+    x: number,
+    y: number,
+    r: number,
+    opts: {
+      state: 'owned' | 'next' | 'gate' | 'locked' | 'future';
+      accent: number;
+      capstone: boolean;
+      costLabel: string;
+      action: (() => void) | null;
+    },
+  ): void {
+    const { state, accent, capstone, costLabel, action } = opts;
+    const owned = state === 'owned';
+    const next = state === 'next';
+    const gate = state === 'gate';
+    const active = next || gate;
+    // A soft halo draws the eye to the actionable (buyable / unlockable) node.
+    if (active) {
+      this.modal.push(
+        this.add
+          .image(x, y, TX.glow)
+          .setDisplaySize(r * 5, r * 5)
+          .setTint(gate ? 0xffd166 : accent)
+          .setAlpha(0.5)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(311),
+      );
+    }
+    const fill = owned ? accent : active ? 0x232336 : 0x171720;
+    const stroke = owned ? 0xffffff : next ? accent : gate ? 0xffd166 : state === 'locked' ? 0x6b6b75 : 0x33333f;
+    const alpha = owned || active ? 0.98 : 0.65;
+    let shape: Phaser.GameObjects.Shape;
+    if (capstone) {
+      shape = this.add
+        .rectangle(x, y, r * 1.8, r * 1.8, owned ? 0xffd166 : fill, alpha)
+        .setStrokeStyle(active ? 3 : 2, owned ? 0xffffff : stroke, 1)
+        .setAngle(45)
+        .setDepth(312);
+    } else {
+      shape = this.add.circle(x, y, r, fill, alpha).setStrokeStyle(next ? 3 : 2, stroke, 1).setDepth(312);
+    }
+    this.modal.push(shape);
+    if (capstone && owned) {
+      this.modal.push(
+        this.add.text(x, y, '★', { fontFamily: 'monospace', fontSize: `${Math.round(r)}px`, color: '#1a1a22' })
+          .setOrigin(0.5).setDepth(313),
+      );
+    }
+    if (costLabel) {
+      this.modal.push(
+        this.add.text(x, y + r + 9, costLabel, { fontFamily: 'monospace', fontSize: '10px', color: '#ffd166' })
+          .setOrigin(0.5).setDepth(313),
+      );
+    }
+    if (action) {
+      const hs = Math.max(TOUCH_MIN, r * 2.6);
+      const hit = this.add.rectangle(x, y, hs, hs, 0xffffff, 0.001).setDepth(314).setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev?: Phaser.Types.Input.EventData) => {
+        ev?.stopPropagation();
+        action();
+      });
+      pressFeedback(hit, [shape]);
+      this.modal.push(hit);
+    }
+  }
+
+  private branchAxisShort(axis: string): string {
+    if (axis === 'damage') return 'damage';
+    if (axis === 'range') return 'range';
+    if (axis === 'attackSpeed') return 'fire rate';
+    return 'aura';
   }
 
   /** Persist + refresh the menu balances and re-open the modal. */
