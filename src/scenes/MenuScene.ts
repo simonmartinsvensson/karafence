@@ -83,7 +83,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Skill-tree branch panel';
+const LAST_PATCH = '2026-06-16 · Skill-tree research ladders';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -926,25 +926,61 @@ export class MenuScene extends Phaser.Scene {
   /** Research tree: Fame buys each tier; deep tiers need a one-time Star unlock. */
   private drawResearchRows(left: number, w: number, rowTop: number, rowH: number): void {
     const avail = starsAvailable(this.meta);
-    const fame = Math.floor(this.meta.fame);
+    const accent = 0xffd166; // uniform "research" gold
+    const nameX = left + 12;
+    const chainL = left + w * 0.46;
+    const chainR = left + w - 22;
     META_UPGRADES.forEach((def, i) => {
       const rowY = rowTop + i * rowH;
+      const cy = rowY + rowH / 2;
       const tier = researchTier(this.meta, def.key);
       const max = maxTier(def);
-      const pips = '●'.repeat(tier) + '○'.repeat(max - tier);
-      const subtitle = tier > 0 ? def.effectLabel(tier) : 'Not purchased';
-      if (tier >= max) {
-        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, subtitle, 'MAXED', false, () => undefined);
-      } else if (tier >= def.freeTiers && !isResearchDeepUnlocked(this.meta, def.key)) {
-        const ok = avail >= def.deepStars;
-        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, `Deep tier — unlock with stars`,
-          ok ? `Unlock ★${def.deepStars}` : `Need ★${def.deepStars}`, ok,
-          () => { if (unlockResearchDeep(this.meta, def.key)) this.commitMeta(); });
-      } else {
-        const cost = nextResearchFameCost(def, tier) ?? 0;
-        const ok = fame >= cost;
-        this.metaRow(left, w, rowY, rowH, `${def.name}  ${pips}`, subtitle,
-          `🎤 ${cost}`, ok, () => { if (buyResearchTier(this.meta, def.key)) this.commitMeta(); });
+      const deepUnlocked = isResearchDeepUnlocked(this.meta, def.key);
+      const maxed = tier >= max;
+
+      // Name + current effect on the left.
+      this.modalText(nameX, cy - 7, def.name, this.hex(accent), 11, 0);
+      this.modalText(nameX, cy + 7, tier > 0 ? def.effectLabel(tier) : 'Not purchased', '#9aa0b0', 9, 0);
+      if (maxed) this.modalText(chainR + 8, cy, 'MAX', '#69db7c', 10, 1);
+
+      // Horizontal node ladder on the right.
+      const gap = max > 1 ? Phaser.Math.Clamp((chainR - chainL) / (max - 1), 16, 40) : 0;
+      const r = Phaser.Math.Clamp(Math.floor(rowH * 0.2), 5, 9);
+      const links = this.add.graphics().setDepth(311);
+      this.modal.push(links);
+      for (let j = 1; j <= max; j++) {
+        const x = chainL + (j - 1) * gap;
+        if (j > 1) {
+          const on = j <= tier;
+          links.lineStyle(2, on ? accent : 0x33333f, on ? 0.9 : 0.7);
+          links.beginPath();
+          links.moveTo(x - gap + r, cy);
+          links.lineTo(x - r, cy);
+          links.strokePath();
+        }
+        let state: 'owned' | 'next' | 'gate' | 'locked' | 'future' = 'future';
+        let costLabel = '';
+        let action: (() => void) | null = null;
+        if (j <= tier) {
+          state = 'owned';
+        } else if (j === tier + 1 && !maxed) {
+          if (tier >= def.freeTiers && !deepUnlocked) {
+            costLabel = `★${def.deepStars}`;
+            if (avail >= def.deepStars) {
+              state = 'gate';
+              action = () => { if (unlockResearchDeep(this.meta, def.key)) this.commitMeta(); };
+            } else {
+              state = 'locked';
+            }
+          } else {
+            // Always the glowing "next" (buyResearchTier guards Fame, so a tap
+            // while short simply no-ops) — consistent with the branch tree.
+            costLabel = `🎤${nextResearchFameCost(def, tier) ?? 0}`;
+            state = 'next';
+            action = () => { if (buyResearchTier(this.meta, def.key)) this.commitMeta(); };
+          }
+        }
+        this.drawBranchNode(x, cy, r, { state, accent, capstone: false, costLabel, action });
       }
     });
   }
