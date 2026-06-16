@@ -96,7 +96,9 @@ The whole game is playable on Android Chrome in both orientations.
   that buffer with a pure ×dpr (`origin (0,0)`, `zoom = dpr`, `scroll = 0` — origin-0
   so `scrollFactor: 0` UI lands right too), with `displayScale = dpr` so input
   inverts straight back to CSS-world coords. No-op at dpr 1. Verified headless at
-  dpr 1/2/3 incl. exact tap→tile mapping.
+  dpr 1/2/3 incl. exact tap→tile mapping. An **adaptive watchdog** samples
+  `game.loop.actualFps` and, after sustained low FPS, steps the cap 3→2 (floored
+  at 2 — never to a blurry 1×, never back up) so a struggling GPU recovers headroom.
 - **Touch press feedback** (`src/systems/touch.ts`, `pressFeedback`): mobile has
   no hover, so interactive controls dip in scale (+ brighten their fill) on
   pointer-down and snap back on release — **event-driven, no tweens/timers**, so
@@ -204,8 +206,13 @@ with progress just sees everything unlocked; note a *mid-campaign* save may see 
 feature re-gate until it reaches the threshold). Tiers so far: **fame/research @1**
 (Fame meter + rank/stars header + Upgrades button + Research tab; offline-Fame &
 login-streak grants also gate on `fame`), **branches @3** (Upgrades → Towers tab),
-**endless @5** (Endless mode card), **records @6** (Records/Goals button). Prestige
-stays gated separately by `campaignComplete()`. New systems should be added to
+**endless @5** (Endless mode card), **records @6** (Records/Goals button),
+**dailies @8** (daily quests + login streak + Tonight's Setlist: `refreshDaily`,
+the quest/first-win payout in `bankRunFans`, the setlist run-modifier + its card
+line, and the Records daily section all gate on it), **synergies @12** (see "Tower
+synergies"). Prestige stays gated separately by `campaignComplete()` — and after
+completion the Story card's New-Game button is muted + relabelled "↺ Replay (no ✦)"
+so Go Platinum is the obvious next step. New systems should be added to
 `FEATURE_UNLOCK` at the phase that actually gates them (so the reveal toast never
 lies). Crossing a threshold queues a "🔓 New: …" line into the menu welcome toast
 (`MenuScene.checkUnlocks`, tracked via `storage.loadSeenChapters`/`saveSeenChapters`;
@@ -338,6 +345,13 @@ upgrade-modal tabs lay out dynamically from whatever is unlocked.
   attacking towers), **Hype Man** (wide range, `goldBoost` +50% gold and
   `comboBoost` faster combo for kills in range). Each has cost, range (tiles),
   damage, attack speed, and a default targeting strategy.
+- **Tower synergies (adjacency)**: a "backing band" bonus — each attacking tower
+  gains **+15% damage per orthogonally-adjacent attacking tower** (capped at 3
+  neighbours, +45%). Computed live each frame in `TowerManager.applySynergies`
+  (mirrors `applySupportBuffs`), applied via `Tower.setSynergyDamage` → folded
+  into `dealHit` (the single damage choke point). Gated behind the `synergies`
+  unlock (chapter 12, set on `TowerManager.synergiesEnabled` by GameScene) with a
+  one-time in-run explainer (`maybeShowSynergyHint`, `storage` seen-flag).
 - **Pure passive combat**: there are **no per-tower active abilities and no shop
   power-ups** — strategy is placement + upgrades + the support auras. `Tower`
   picks a target per its targeting strategy (`first` / `last` / `strongest`,

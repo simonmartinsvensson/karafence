@@ -48,6 +48,8 @@ import {
   loadEndlessBest,
   loadStoryProgress,
   saveStoryProgress,
+  loadSeenSynergyHint,
+  saveSeenSynergyHint,
 } from '../systems/storage';
 import { claimableCount } from '../data/achievements';
 import { isFeatureUnlocked } from '../data/progression';
@@ -324,7 +326,7 @@ export class GameScene extends Phaser.Scene {
     // Endless: apply today's "Tonight's Setlist" twist to the wave profile and
     // its fan reward multiplier (a fresh daily reason to replay the same map).
     let profile = this.map.waveProfile ?? ENDLESS_PROFILE;
-    if (this.mode === 'endless') {
+    if (this.mode === 'endless' && isFeatureUnlocked('dailies')) {
       const setlist = pickSetlist(dateKey(new Date()));
       profile = setlist.tweak(profile);
       this.runFanMult = setlist.fanMult;
@@ -359,6 +361,7 @@ export class GameScene extends Phaser.Scene {
         return { ...b, damageMult: b.damageMult * mods.allDamageMult };
       },
     );
+    this.towers.synergiesEnabled = isFeatureUnlocked('synergies');
     this.towers.onSelectionChange = (tower) => this.onTowerSelection(tower);
     this.buildPanel = new BuildPanel(this);
     this.upgradePanel = new UpgradePanel(this);
@@ -394,6 +397,7 @@ export class GameScene extends Phaser.Scene {
     this.refreshHud();
     this.ambientNotes();
     this.showVenueCard();
+    this.maybeShowSynergyHint();
     audio.playMusic('inWave');
   }
 
@@ -433,6 +437,30 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0);
     card.setShadow(0, 0, '#e84393', 16, true, true);
     this.tweens.add({ targets: card, alpha: 1, duration: 320, yoyo: true, hold: 1400, onComplete: () => card.destroy() });
+  }
+
+  /** One-time teach for the adjacency synergy, the first run after it unlocks. */
+  private maybeShowSynergyHint(): void {
+    if (!this.towers.synergiesEnabled || loadSeenSynergyHint()) return;
+    saveSeenSynergyHint(true);
+    const hint = this.add
+      .text(
+        this.sw / 2,
+        this.sh * 0.46,
+        '🎶 New: Band Synergy!\nLine performers up side-by-side for +damage',
+        {
+          fontFamily: 'monospace',
+          fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 32, 12, 17))}px`,
+          color: '#ffd166',
+          align: 'center',
+          backgroundColor: '#1b1320dd',
+          padding: { x: 12, y: 8 },
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(DEPTH_OVERLAY + 30)
+      .setAlpha(0);
+    this.tweens.add({ targets: hint, alpha: 1, duration: 320, yoyo: true, hold: 2600, onComplete: () => hint.destroy() });
   }
 
   // --- Board container + layers -------------------------------------------
@@ -2118,21 +2146,23 @@ export class GameScene extends Phaser.Scene {
     };
     let questFans = 0;
     const questNames: string[] = [];
-    for (const q of this.meta.daily?.quests ?? []) {
-      if (q.done) continue;
-      const def = questById(q.id);
-      if (def && def.satisfied(stats)) {
-        q.done = true;
-        questFans += def.reward;
-        questNames.push(def.label);
+    // Daily quests + the first-win bonus are their own unlock tier (chapter 8).
+    if (isFeatureUnlocked('dailies')) {
+      for (const q of this.meta.daily?.quests ?? []) {
+        if (q.done) continue;
+        const def = questById(q.id);
+        if (def && def.satisfied(stats)) {
+          q.done = true;
+          questFans += def.reward;
+          questNames.push(def.label);
+        }
       }
-    }
-
-    // First won run of the day pays a return-hook bonus (resets daily via rollDaily).
-    if (won && this.meta.daily && !this.meta.daily.firstWinClaimed) {
-      this.meta.daily.firstWinClaimed = true;
-      questFans += FIRST_WIN_FANS;
-      this.endFirstWin = true;
+      // First won run of the day pays a return-hook bonus (reset by rollDaily).
+      if (won && this.meta.daily && !this.meta.daily.firstWinClaimed) {
+        this.meta.daily.firstWinClaimed = true;
+        questFans += FIRST_WIN_FANS;
+        this.endFirstWin = true;
+      }
     }
 
     // Endless wave milestones: one-time fixed Fame for first reaching each wave.

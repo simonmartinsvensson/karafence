@@ -10,15 +10,16 @@ import { loadStoryProgress } from '../systems/storage';
  * `prestige` is intentionally NOT here — it stays gated by `campaignComplete()`
  * (all chapters) in MenuScene.
  */
-// NOTE: features are added here as each rollout phase actually gates them, so a
-// reveal toast never announces something that isn't really there yet. Planned
-// later tiers: dailies @8 (daily quests + Setlist), synergies @12.
+// Features are added here as each rollout phase actually gates them, so a reveal
+// toast never announces something that isn't really there yet.
 export type Feature =
   | 'fame' // Fame economy: the menu meter, rank/stars header, offline/streak
   | 'research' // the Upgrades button + Research tab
   | 'branches' // the Upgrades → Towers (per-tower branch) tab
   | 'endless' // the Endless mode card
-  | 'records'; // the Records / Goals button
+  | 'records' // the Records / Goals button
+  | 'dailies' // daily quests + Tonight's Setlist
+  | 'synergies'; // tower adjacency synergies
 
 /** Chapters cleared required to unlock each feature. */
 export const FEATURE_UNLOCK: Record<Feature, number> = {
@@ -27,6 +28,8 @@ export const FEATURE_UNLOCK: Record<Feature, number> = {
   branches: 3,
   endless: 5,
   records: 6,
+  dailies: 8,
+  synergies: 12,
 };
 
 /** Short label shown in the "🔓 New: …" reveal toast when a feature unlocks. */
@@ -36,6 +39,8 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   branches: 'Tower branch trees',
   endless: 'Endless Mode',
   records: 'Records & Goals',
+  dailies: 'Daily quests & Setlist',
+  synergies: 'Tower synergies',
 };
 
 export function chaptersCleared(): number {

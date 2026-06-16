@@ -88,6 +88,7 @@ export class Tower {
 
   /** Attack-speed multiplier from a Backup Singer aura (1 = none). */
   private supportSpeedBuff = 1;
+  private synergyDamageMult = 1; // adjacency synergy (set by TowerManager each frame)
 
   constructor(
     scene: Phaser.Scene,
@@ -220,6 +221,15 @@ export class Tower {
 
   setSupportBuff(value: number): void {
     this.supportSpeedBuff = value;
+  }
+
+  /** Adjacency-synergy damage multiplier (1 = none), refreshed each frame. */
+  setSynergyDamage(mult: number): void {
+    this.synergyDamageMult = mult;
+  }
+
+  get synergyMult(): number {
+    return this.synergyDamageMult;
   }
 
   // --- Upgrades / economy --------------------------------------------------
@@ -496,7 +506,7 @@ export class Tower {
 
   private dealHit(enemy: Enemy): void {
     audio.sfx('hit');
-    enemy.takeDamage(Math.round(this.stats.damage), this.id);
+    enemy.takeDamage(Math.round(this.stats.damage * this.synergyDamageMult), this.id);
     if (this.stats.slowOnHit) {
       enemy.applySlow(this.stats.slowFactor, this.stats.slowDuration);
     }

@@ -83,7 +83,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Endless milestone rewards (phase 2)';
+const LAST_PATCH = '2026-06-16 · Tower synergies + unlock phase 3';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -129,12 +129,10 @@ export class MenuScene extends Phaser.Scene {
     this.modal = [];
     this.welcomeLines = [];
     this.meta = loadMeta();
-    // Offline Fame + login streak are Fame-economy rewards — stay silent until
-    // that system has unlocked (first chapter cleared).
-    if (isFeatureUnlocked('fame')) {
-      this.grantOffline();
-      this.refreshDaily();
-    }
+    // Offline Fame waits for the Fame economy (chapter 1); the daily quests +
+    // login streak are their own later unlock (chapter 8).
+    if (isFeatureUnlocked('fame')) this.grantOffline();
+    if (isFeatureUnlocked('dailies')) this.refreshDaily();
     this.checkUnlocks();
     this.checkRankUp();
     this.meta.lastSeen = Date.now();
@@ -607,8 +605,10 @@ export class MenuScene extends Phaser.Scene {
       const flavor: { text: string; color: string }[] = [];
       const nextMs = ENDLESS_MILESTONES.find((ms) => !this.meta.endlessMilestones.includes(ms.wave));
       if (nextMs) flavor.push({ text: `🏅 Next: wave ${nextMs.wave} → +${nextMs.fame} Fame`, color: '#ffd166' });
-      const sl = pickSetlist(dateKey(new Date()));
-      if (sl.fanMult > 1) flavor.push({ text: `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, color: '#ff9ed8' });
+      if (isFeatureUnlocked('dailies')) {
+        const sl = pickSetlist(dateKey(new Date()));
+        if (sl.fanMult > 1) flavor.push({ text: `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, color: '#ff9ed8' });
+      }
       flavor.slice(0, 2).forEach((f, i) => this.text(cx, cardTop + 142 + i * 16, f.text, f.color, 10));
     } else {
       const progress = loadStoryProgress();
@@ -624,13 +624,17 @@ export class MenuScene extends Phaser.Scene {
     const btnW = cardW - 28;
     const resumeY = cardTop + cardH - 14 - TOUCH_MIN / 2;
     const playY = resumable ? resumeY - TOUCH_MIN - 8 : resumeY;
+    // Once the campaign is complete, the bright "Go Platinum" button up top is
+    // the intended next step — a fresh story run just replays (no reward) and
+    // wipes unlock progress. Relabel + mute it so it isn't the obvious tap.
+    const storyDone = mode.key === 'story' && this.campaignComplete();
     this.button({
       x: cx,
       y: playY,
       w: btnW,
       h: TOUCH_MIN,
-      label: resumable ? '▶ New Game' : '▶ Play',
-      color: 0x51cf66,
+      label: storyDone ? '↺ Replay (no ✦)' : resumable ? '▶ New Game' : '▶ Play',
+      color: storyDone ? 0x9aa0b0 : 0x51cf66,
       onClick: () => this.requestNewGame(mode.key),
     });
     if (resumable) {
@@ -1227,9 +1231,10 @@ export class MenuScene extends Phaser.Scene {
     const headH = 78; // title + tabs
     const closeArea = TOUCH_MIN + 14;
 
-    // Body height per tab (clamped to the viewport).
+    // Body height per tab (clamped to the viewport). The daily block only
+    // counts once dailies have unlocked (chapter 8).
     const quests = this.meta.daily?.quests ?? [];
-    const statsBodyH = 6 * 26 + (30 + quests.length * 24 + 8);
+    const statsBodyH = 6 * 26 + (isFeatureUnlocked('dailies') ? 30 + quests.length * 24 + 8 : 4);
     const maxBody = sh - 12 - headH - closeArea;
     // Let rows shrink to fit short (landscape) viewports — the old max(20) floor
     // overran the panel/footer with 12 goals on screens ≲380px tall.
@@ -1319,6 +1324,7 @@ export class MenuScene extends Phaser.Scene {
           .setOrigin(1, 0.5).setDepth(311),
       );
     });
+    if (!isFeatureUnlocked('dailies')) return; // daily quests unlock at chapter 8
     let dy = bodyTop + 8 + 6 * 26 + 4;
     const daily = this.meta.daily;
     const quests = daily?.quests ?? [];

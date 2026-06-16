@@ -26,6 +26,11 @@ export class TowerManager {
   private readonly towers = new Map<string, Tower>();
   private readonly projectiles: Projectile[] = [];
 
+  /** Adjacency-synergy bonus is gated behind a campaign unlock (set by GameScene). */
+  synergiesEnabled = false;
+  private static readonly SYNERGY_PER_NEIGHBOR = 0.15;
+  private static readonly SYNERGY_MAX_NEIGHBORS = 3;
+
   private selected: Tower | null = null;
   private overlay: Phaser.GameObjects.GameObject[] = [];
   private overlayTweens: Phaser.Tweens.Tween[] = [];
@@ -172,6 +177,29 @@ export class TowerManager {
   }
 
   /**
+   * "Backing band" adjacency synergy: each attacking tower gains +15% damage
+   * per orthogonally-adjacent attacking tower (capped at 3 neighbours, +45%),
+   * rewarding players who line their performers up into a band. No-op until the
+   * feature unlocks (see GameScene / data/progression.ts).
+   */
+  private applySynergies(): void {
+    for (const t of this.towers.values()) t.setSynergyDamage(1);
+    if (!this.synergiesEnabled) return;
+    for (const t of this.towers.values()) {
+      if (!t.attacks) continue;
+      let neighbors = 0;
+      for (const o of this.towers.values()) {
+        if (o === t || !o.attacks) continue;
+        if (Math.abs(o.col - t.col) + Math.abs(o.row - t.row) === 1) neighbors++;
+      }
+      if (neighbors > 0) {
+        const n = Math.min(TowerManager.SYNERGY_MAX_NEIGHBORS, neighbors);
+        t.setSynergyDamage(1 + n * TowerManager.SYNERGY_PER_NEIGHBOR);
+      }
+    }
+  }
+
+  /**
    * Hype Man aura at a world point: the gold multiplier (best of any covering
    * Hype Man) and whether a kill there should build the combo faster.
    */
@@ -264,6 +292,7 @@ export class TowerManager {
   /** @param dt seconds since last frame */
   update(dt: number): void {
     this.applySupportBuffs();
+    this.applySynergies();
     for (const tower of this.towers.values()) {
       const fired = tower.update(dt);
       for (const p of fired) this.projectiles.push(p);

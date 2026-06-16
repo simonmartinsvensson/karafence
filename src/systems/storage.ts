@@ -21,6 +21,7 @@ const AUDIO_KEY = 'karafence:audio:v1';
 const HAPTICS_KEY = 'karafence:haptics:v1';
 const SEEN_RANK_KEY = 'karafence:seenrank:v1';
 const SEEN_CHAPTERS_KEY = 'karafence:seenchapters:v1';
+const SEEN_SYNERGY_KEY = 'karafence:seensynergy:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const STORY_KEY = 'karafence:story:progress';
@@ -259,4 +260,13 @@ export function loadSeenChapters(): number {
 
 export function saveSeenChapters(n: number): void {
   write(SEEN_CHAPTERS_KEY, n);
+}
+
+/** Whether the one-time tower-synergy explainer has been shown. */
+export function loadSeenSynergyHint(): boolean {
+  return read<boolean>(SEEN_SYNERGY_KEY) === true;
+}
+
+export function saveSeenSynergyHint(seen: boolean): void {
+  write(SEEN_SYNERGY_KEY, seen);
 }

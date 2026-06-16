@@ -27,10 +27,20 @@ import Phaser from 'phaser';
  * whole thing is a no-op. WebGL + Canvas both work (Canvas just skips postFX).
  */
 const MAX_DPR = 3;
+// Adaptive floor: if a device sustains low FPS we step the cap 3→2 (never below
+// 2 — still crisp), and never back up, so a struggling GPU recovers headroom
+// without ever yanking the game to a blurry 1×.
+const MIN_ADAPTIVE_DPR = 2;
+const LOW_FPS = 40; // sustained below this → step the cap down
+const FPS_GRACE_FRAMES = 180; // ~3s warmup before sampling
+const FPS_WINDOW_FRAMES = 120; // sample cadence
+const LOW_WINDOWS_TO_STEP = 3; // consecutive low windows before stepping
+
+let dprCap = MAX_DPR;
 
 function deviceDpr(): number {
   const raw = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  return Math.max(1, Math.min(MAX_DPR, raw));
+  return Math.max(1, Math.min(dprCap, raw));
 }
 
 function fixCameras(game: Phaser.Game, dpr: number, pxW: number, pxH: number): void {
@@ -81,11 +91,25 @@ export function installHiDPI(game: Phaser.Game): void {
   };
 
   game.scale.on(Phaser.Scale.Events.RESIZE, apply);
-  // Scene starts mint fresh cameras (default CSS size); keep them fixed each frame.
+
+  // Scene starts mint fresh cameras (default CSS size); keep them fixed each
+  // frame. Also runs the adaptive-DPR FPS watchdog.
+  let frame = 0;
+  let lowWindows = 0;
   game.events.on(Phaser.Core.Events.PRE_RENDER, () => {
     const dpr = deviceDpr();
-    if (dpr === 1) return;
-    fixCameras(game, dpr, game.canvas.width, game.canvas.height);
+    if (dpr !== 1) fixCameras(game, dpr, game.canvas.width, game.canvas.height);
+
+    frame++;
+    if (dprCap > MIN_ADAPTIVE_DPR && frame > FPS_GRACE_FRAMES && frame % FPS_WINDOW_FRAMES === 0) {
+      const fps = game.loop.actualFps;
+      lowWindows = fps && fps < LOW_FPS ? lowWindows + 1 : 0;
+      if (lowWindows >= LOW_WINDOWS_TO_STEP) {
+        dprCap = Math.max(MIN_ADAPTIVE_DPR, dprCap - 1);
+        lowWindows = 0;
+        apply(); // re-render at the lower resolution
+      }
+    }
   });
 
   apply();
