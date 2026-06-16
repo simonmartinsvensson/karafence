@@ -20,6 +20,7 @@ const RUN_PREFIX = 'karafence:run:v1:';
 const AUDIO_KEY = 'karafence:audio:v1';
 const HAPTICS_KEY = 'karafence:haptics:v1';
 const SEEN_RANK_KEY = 'karafence:seenrank:v1';
+const SEEN_CHAPTERS_KEY = 'karafence:seenchapters:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const STORY_KEY = 'karafence:story:progress';
@@ -245,4 +246,16 @@ export function loadSeenRank(): string {
 
 export function saveSeenRank(rank: string): void {
   write(SEEN_RANK_KEY, rank);
+}
+
+// --- Progressive-disclosure: chapters seen (for unlock reveal toasts) ------
+
+/** Chapters-cleared count last reflected to the player (-1 = never). */
+export function loadSeenChapters(): number {
+  const n = read<number>(SEEN_CHAPTERS_KEY);
+  return typeof n === 'number' ? n : -1;
+}
+
+export function saveSeenChapters(n: number): void {
+  write(SEEN_CHAPTERS_KEY, n);
 }

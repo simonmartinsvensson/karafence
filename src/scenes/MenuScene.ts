@@ -3,6 +3,12 @@ import { TOUCH_MIN } from '../config';
 import type { LevelId } from '../data/levels';
 import { MODES, type GameMode, type ModeInfo } from '../data/modes';
 import { CHAPTER_ORDER } from '../data/story';
+import {
+  isFeatureUnlocked,
+  featuresUnlockedBetween,
+  FEATURE_LABEL,
+  chaptersCleared,
+} from '../data/progression';
 import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
 import {
   META_UPGRADES,
@@ -59,6 +65,8 @@ import {
   clearStoryProgress,
   loadSeenRank,
   saveSeenRank,
+  loadSeenChapters,
+  saveSeenChapters,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
@@ -74,7 +82,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Milestone juice + goal/buff readouts';
+const LAST_PATCH = '2026-06-16 · Progressive unlocks (phase 1)';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -120,8 +128,13 @@ export class MenuScene extends Phaser.Scene {
     this.modal = [];
     this.welcomeLines = [];
     this.meta = loadMeta();
-    this.grantOffline();
-    this.refreshDaily();
+    // Offline Fame + login streak are Fame-economy rewards — stay silent until
+    // that system has unlocked (first chapter cleared).
+    if (isFeatureUnlocked('fame')) {
+      this.grantOffline();
+      this.refreshDaily();
+    }
+    this.checkUnlocks();
     this.checkRankUp();
     this.meta.lastSeen = Date.now();
     saveMeta(this.meta);
@@ -164,6 +177,26 @@ export class MenuScene extends Phaser.Scene {
       addFame(this.meta, loginFans);
       this.welcomeLines.push(`🔥 Day ${state.streak} streak! +${loginFans} Fame`);
     }
+  }
+
+  /**
+   * Progressive disclosure: when the player has cleared new chapters since they
+   * last saw the menu, announce any features that just crossed their unlock
+   * threshold (queued into the welcome toast + a fanfare). First-ever visit just
+   * records the baseline silently so existing saves don't spam reveals.
+   */
+  private checkUnlocks(): void {
+    const now = chaptersCleared();
+    const seen = loadSeenChapters();
+    if (seen >= 0 && now > seen) {
+      const revealed = featuresUnlockedBetween(seen, now);
+      if (revealed.length > 0) {
+        for (const f of revealed) this.welcomeLines.push(`🔓 New: ${FEATURE_LABEL[f]}!`);
+        audio.sfx('fanfare');
+        haptics.play('win');
+      }
+    }
+    saveSeenChapters(now);
   }
 
   /**
@@ -219,27 +252,34 @@ export class MenuScene extends Phaser.Scene {
 
     const titleY = Math.max(34, sh * 0.09);
     this.drawNeonTitle(sw / 2, titleY);
-    const rank = performerRank(totalStarsEarned(this.meta)).rank;
-    const plat = this.meta.platinum ?? 0;
-    this.text(
-      sw / 2,
-      titleY + 30,
-      plat > 0 ? `🎙 ${rank.title}  ✦${plat}` : `🎙 ${rank.title}`,
-      plat > 0 ? '#e9d8ff' : '#f783ac',
-      Math.min(13, sw / 30),
-    );
-    this.text(
-      sw / 2,
-      titleY + 50,
-      `★ ${starsAvailable(this.meta)} stars available · ${totalStarsEarned(this.meta)} earned all-time`,
-      '#ffd43b',
-      12,
-    );
 
-    this.drawFanMeter(sw / 2, titleY + 76, Math.min(360, sw - 40));
+    // Progressive disclosure: the rank / stars / Fame header only appears once
+    // the Fame economy has unlocked (after the first chapter). A brand-new
+    // player just sees the title + the Story card — nothing to parse.
+    const fameUnlocked = isFeatureUnlocked('fame');
+    let cardsTop = titleY + 48;
+    if (fameUnlocked) {
+      const rank = performerRank(totalStarsEarned(this.meta)).rank;
+      const plat = this.meta.platinum ?? 0;
+      this.text(
+        sw / 2,
+        titleY + 30,
+        plat > 0 ? `🎙 ${rank.title}  ✦${plat}` : `🎙 ${rank.title}`,
+        plat > 0 ? '#e9d8ff' : '#f783ac',
+        Math.min(13, sw / 30),
+      );
+      this.text(
+        sw / 2,
+        titleY + 50,
+        `★ ${starsAvailable(this.meta)} stars available · ${totalStarsEarned(this.meta)} earned all-time`,
+        '#ffd43b',
+        12,
+      );
+      this.drawFanMeter(sw / 2, titleY + 76, Math.min(360, sw - 40));
+      cardsTop = titleY + 112;
+    }
 
     // "Go Platinum" appears once the campaign's final chapter is cleared.
-    let cardsTop = titleY + 112;
     if (this.campaignComplete()) {
       const py = titleY + 104;
       this.button({
@@ -251,36 +291,30 @@ export class MenuScene extends Phaser.Scene {
     }
     this.drawModeCards(portrait, cardsTop);
 
-    // Bottom action buttons (always >=44px tall, reachable at screen bottom).
+    // Bottom action buttons — only the unlocked ones show, laid out evenly so
+    // an early-game menu stays uncluttered (just Levels at the very start).
+    const actions: { label: string; color: number; onClick: () => void }[] = [];
+    if (fameUnlocked) {
+      actions.push({ label: '⭐ Upgrades', color: 0xffd166, onClick: () => this.openMetaPanel() });
+    }
+    actions.push({ label: '🗺 Levels', color: 0x69db7c, onClick: () => this.openLevelSelect() });
+    if (isFeatureUnlocked('records')) {
+      actions.push({
+        label: claimableCount(this.achieveCtx()) > 0 ? '🏆 Records ●' : '🏆 Records',
+        color: 0x74c0fc,
+        onClick: () => this.openRecordsPanel(),
+      });
+    }
     const by = sh - TOUCH_MIN / 2 - 14;
     const gap = 8;
-    const bw = Math.min(190, (sw - 24 - gap * 2) / 3);
-    this.button({
-      x: sw / 2 - bw - gap,
-      y: by,
-      w: bw,
-      h: TOUCH_MIN,
-      label: '⭐ Upgrades',
-      color: 0xffd166,
-      onClick: () => this.openMetaPanel(),
-    });
-    this.button({
-      x: sw / 2,
-      y: by,
-      w: bw,
-      h: TOUCH_MIN,
-      label: '🗺 Levels',
-      color: 0x69db7c,
-      onClick: () => this.openLevelSelect(),
-    });
-    this.button({
-      x: sw / 2 + bw + gap,
-      y: by,
-      w: bw,
-      h: TOUCH_MIN,
-      label: claimableCount(this.achieveCtx()) > 0 ? '🏆 Records ●' : '🏆 Records',
-      color: 0x74c0fc,
-      onClick: () => this.openRecordsPanel(),
+    const bw = Math.min(190, (sw - 24 - gap * (actions.length - 1)) / actions.length);
+    const rowW = bw * actions.length + gap * (actions.length - 1);
+    actions.forEach((a, i) => {
+      this.button({
+        x: sw / 2 - rowW / 2 + bw / 2 + i * (bw + gap),
+        y: by, w: bw, h: TOUCH_MIN,
+        label: a.label, color: a.color, onClick: a.onClick,
+      });
     });
 
     // Last-patch stamp, tucked low-key in the bottom-left corner.
@@ -506,15 +540,19 @@ export class MenuScene extends Phaser.Scene {
     const bottom = sh - TOUCH_MIN - 28;
     const areaH = bottom - top;
 
+    // Endless is hidden until unlocked, so a new player only sees Story.
+    const modes = MODES.filter((m) => m.key !== 'endless' || isFeatureUnlocked('endless'));
+    const n = modes.length;
+
     let cardW: number;
     let cardH: number;
     const centers: { x: number; y: number }[] = [];
-    if (portrait) {
+    if (portrait || n === 1) {
       cardW = Math.min(sw - 28, 460);
-      cardH = Math.min((areaH - 16) / MODES.length, 210);
-      const stackH = cardH * MODES.length + 16 * (MODES.length - 1);
+      cardH = Math.min((areaH - 16) / n, n === 1 ? 240 : 210);
+      const stackH = cardH * n + 16 * (n - 1);
       const stackTop = top + Math.max(0, (areaH - stackH) / 2);
-      MODES.forEach((_, i) => {
+      modes.forEach((_, i) => {
         centers.push({ x: sw / 2, y: stackTop + cardH / 2 + i * (cardH + 16) });
       });
     } else {
@@ -525,7 +563,7 @@ export class MenuScene extends Phaser.Scene {
       centers.push({ x: sw / 2 + cardW / 2 + 10, y: cy });
     }
 
-    MODES.forEach((mode, i) => {
+    modes.forEach((mode, i) => {
       this.drawModeCard(mode, centers[i].x, centers[i].y, cardW, cardH);
     });
   }
@@ -803,21 +841,31 @@ export class MenuScene extends Phaser.Scene {
       '#ffd43b', 12,
     );
 
-    // Tabs: Research (Fame) / Towers (Fame branches) / Unlocks (Stars).
-    const tabW = Math.min(120, (w - 40) / 3);
+    // Tabs: Research (Fame) / Towers (Fame branches, gated) / Unlocks (Stars).
+    // The branch tab only appears once branch trees have unlocked; tabs lay out
+    // evenly so the header stays balanced with two tabs or three.
+    const tabs: { label: string; key: 'research' | 'towers' | 'unlocks' }[] = [
+      { label: 'Research', key: 'research' },
+    ];
+    if (isFeatureUnlocked('branches')) tabs.push({ label: 'Towers', key: 'towers' });
+    tabs.push({ label: 'Unlocks', key: 'unlocks' });
+    if (this.metaTab === 'towers' && !isFeatureUnlocked('branches')) this.metaTab = 'research';
+
+    const tabW = Math.min(120, (w - 40) / tabs.length);
     const tabY = top + 60;
-    const tab = (label: string, key: 'research' | 'towers' | 'unlocks', x: number) =>
+    const tabGap = 8;
+    const tabsW = tabW * tabs.length + tabGap * (tabs.length - 1);
+    tabs.forEach((t, i) => {
       this.modal.push(
         ...this.button({
-          x, y: tabY, w: tabW, h: TOUCH_MIN - 6, label,
-          color: this.metaTab === key ? 0xffd166 : 0x555a66,
+          x: sw / 2 - tabsW / 2 + tabW / 2 + i * (tabW + tabGap),
+          y: tabY, w: tabW, h: TOUCH_MIN - 6, label: t.label,
+          color: this.metaTab === t.key ? 0xffd166 : 0x555a66,
           depth: 311,
-          onClick: () => { this.metaTab = key; this.branchTower = null; this.openMetaPanel(); },
+          onClick: () => { this.metaTab = t.key; this.branchTower = null; this.openMetaPanel(); },
         }),
       );
-    tab('Research', 'research', sw / 2 - tabW - 8);
-    tab('Towers', 'towers', sw / 2);
-    tab('Unlocks', 'unlocks', sw / 2 + tabW + 8);
+    });
 
     const rowTop = top + headH;
     if (this.metaTab === 'research') this.drawResearchRows(left, w, rowTop, rowH);

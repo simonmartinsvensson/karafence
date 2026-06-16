@@ -50,6 +50,7 @@ import {
   saveStoryProgress,
 } from '../systems/storage';
 import { claimableCount } from '../data/achievements';
+import { isFeatureUnlocked } from '../data/progression';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
 import { pressFeedback } from '../systems/touch';
@@ -2362,19 +2363,24 @@ export class GameScene extends Phaser.Scene {
   /** Short "what this run earned you" lines shared by every end screen. */
   private fanSummaryLines(): string[] {
     const out: string[] = [];
-    if (this.endFanGain > 0) {
-      out.push(`🎤 +${this.endFanGain} Fame`);
+    // Fame + its sub-rewards stay hidden until the Fame economy has unlocked, so
+    // the very first level's results screen reads cleanly (Fame is still banked
+    // silently and appears once it unlocks). See data/progression.ts.
+    if (isFeatureUnlocked('fame')) {
+      if (this.endFanGain > 0) out.push(`🎤 +${this.endFanGain} Fame`);
+      if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
+      for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
+      if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
     }
-    if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
-    for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
-    if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
-    // Nudge players toward claimable goals they'd otherwise only find in Records.
-    const ready = claimableCount({
-      meta: this.meta,
-      bestWave: loadEndlessBest(),
-      completedChapters: loadStoryProgress()?.completedChapters ?? [],
-    });
-    if (ready > 0) out.push(`🏆 ${ready} goal${ready > 1 ? 's' : ''} ready — claim in Records!`);
+    // Nudge toward claimable goals — only once Records itself is reachable.
+    if (isFeatureUnlocked('records')) {
+      const ready = claimableCount({
+        meta: this.meta,
+        bestWave: loadEndlessBest(),
+        completedChapters: loadStoryProgress()?.completedChapters ?? [],
+      });
+      if (ready > 0) out.push(`🏆 ${ready} goal${ready > 1 ? 's' : ''} ready — claim in Records!`);
+    }
     return out;
   }
 

@@ -194,6 +194,24 @@ size, then `fitBoard()` scales + centers that container into the board region
 (see "Responsive layout"). The singer is a placeholder rect + label in the stage
 zone, with a `damageSinger()` hook for when enemies reach the stage.
 
+## Progressive disclosure (feature unlocks)
+
+The game starts simple and reveals systems as you advance the **story campaign**
+(chapters cleared is the onboarding spine). `src/data/progression.ts` maps each
+`Feature` → a chapters-cleared threshold (`FEATURE_UNLOCK`) and **derives** unlock
+state via `isFeatureUnlocked` (no extra save data, monotonic — an existing save
+with progress just sees everything unlocked; note a *mid-campaign* save may see a
+feature re-gate until it reaches the threshold). Tiers so far: **fame/research @1**
+(Fame meter + rank/stars header + Upgrades button + Research tab; offline-Fame &
+login-streak grants also gate on `fame`), **branches @3** (Upgrades → Towers tab),
+**endless @5** (Endless mode card), **records @6** (Records/Goals button). Prestige
+stays gated separately by `campaignComplete()`. New systems should be added to
+`FEATURE_UNLOCK` at the phase that actually gates them (so the reveal toast never
+lies). Crossing a threshold queues a "🔓 New: …" line into the menu welcome toast
+(`MenuScene.checkUnlocks`, tracked via `storage.loadSeenChapters`/`saveSeenChapters`;
+first-ever visit records the baseline silently). Menu bottom-row buttons and the
+upgrade-modal tabs lay out dynamically from whatever is unlocked.
+
 ## Meta-progression / save-load
 
 **Two-currency Infinitode-style economy** (`src/data/meta.ts` + `towerMeta.ts`):
