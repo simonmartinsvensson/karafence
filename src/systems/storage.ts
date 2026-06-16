@@ -94,6 +94,7 @@ export function loadMeta(): MetaProgress {
     achievements: { ...saved.achievements },
     lastSeen: typeof saved.lastSeen === 'number' ? saved.lastSeen : 0,
     daily: saved.daily,
+    endlessMilestones: Array.isArray(saved.endlessMilestones) ? saved.endlessMilestones : [],
     lifetime: { ...base.lifetime, ...saved.lifetime },
   };
 

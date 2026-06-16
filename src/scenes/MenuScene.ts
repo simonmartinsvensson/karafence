@@ -52,6 +52,7 @@ import {
 } from '../data/achievements';
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
+import { ENDLESS_MILESTONES } from '../data/waves';
 import { ART_CREDITS } from '../systems/spriteOverrides';
 import {
   loadMeta,
@@ -82,7 +83,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Progressive unlocks (phase 1)';
+const LAST_PATCH = '2026-06-16 · Endless milestone rewards (phase 2)';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -601,10 +602,14 @@ export class MenuScene extends Phaser.Scene {
       const best = loadEndlessBest();
       detail = best > 0 ? `Best: wave ${best} — beat it!` : 'No record yet';
       resumable = hasRun('endless', 'endless');
+      // Up to two flavour lines: the next unclaimed milestone reward + today's
+      // Setlist. Stacked so neither overruns the card's Play button.
+      const flavor: { text: string; color: string }[] = [];
+      const nextMs = ENDLESS_MILESTONES.find((ms) => !this.meta.endlessMilestones.includes(ms.wave));
+      if (nextMs) flavor.push({ text: `🏅 Next: wave ${nextMs.wave} → +${nextMs.fame} Fame`, color: '#ffd166' });
       const sl = pickSetlist(dateKey(new Date()));
-      if (sl.fanMult > 1) {
-        this.text(cx, cardTop + 142, `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, '#ff9ed8', 10);
-      }
+      if (sl.fanMult > 1) flavor.push({ text: `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, color: '#ff9ed8' });
+      flavor.slice(0, 2).forEach((f, i) => this.text(cx, cardTop + 142 + i * 16, f.text, f.color, 10));
     } else {
       const progress = loadStoryProgress();
       const done = progress?.completedChapters.length ?? 0;

@@ -145,6 +145,8 @@ export interface MetaProgress {
   lastSeen: number;
   /** Daily-quest + login-streak state (rolled on menu entry). */
   daily?: DailyState;
+  /** Endless wave milestones already paid out (one-time Fame rewards). */
+  endlessMilestones: number[];
   lifetime: LifetimeStats;
 
   // --- Legacy fields, read only during save migration (see storage.ts). ---
@@ -182,6 +184,7 @@ export function defaultMeta(): MetaProgress {
     platinum: 0,
     achievements: {},
     lastSeen: 0,
+    endlessMilestones: [],
     lifetime: { kills: 0, waves: 0, highestCombo: 0 },
   };
 }

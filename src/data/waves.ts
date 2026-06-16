@@ -51,6 +51,19 @@ export const BOSS_ROTATION: BossKind[] = [
   'talentJudge',
 ];
 
+/**
+ * One-time Fame rewards for the *first* time the player reaches each Endless
+ * wave (a milestone ladder that gives the endless grind a sense of progress
+ * beyond the best-wave number). Paid once and remembered in
+ * `meta.endlessMilestones`. Ascending by wave.
+ */
+export const ENDLESS_MILESTONES: { wave: number; fame: number }[] = [
+  { wave: 20, fame: 150 },
+  { wave: 30, fame: 300 },
+  { wave: 40, fame: 600 },
+  { wave: 50, fame: 1200 },
+];
+
 /** Endless mode: never really ends; ramps forever on a standard map. */
 export const ENDLESS_PROFILE: WaveProfile = {
   waveCount: 999,

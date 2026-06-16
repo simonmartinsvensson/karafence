@@ -24,7 +24,7 @@ import {
   type UpgradePathKey,
 } from '../data/towers';
 import { BOSS_CONFIG, ENEMY_TYPES, type EnemyType } from '../data/enemies';
-import { ENDLESS_PROFILE } from '../data/waves';
+import { ENDLESS_PROFILE, ENDLESS_MILESTONES } from '../data/waves';
 import {
   metaModifiers,
   defaultMeta,
@@ -215,6 +215,7 @@ export class GameScene extends Phaser.Scene {
   private endFanGain = 0;
   private endQuestNames: string[] = [];
   private endFirstWin = false; // first won run of the day (bonus paid)
+  private endMilestoneLines: string[] = []; // endless wave milestones hit this run
   private endOverlay: Phaser.GameObjects.GameObject[] = [];
 
   private resizeHandler = () => this.relayout();
@@ -290,6 +291,7 @@ export class GameScene extends Phaser.Scene {
     this.endFanGain = 0;
     this.endQuestNames = [];
     this.endFirstWin = false;
+    this.endMilestoneLines = [];
     this.endOverlay = [];
   }
 
@@ -2133,10 +2135,25 @@ export class GameScene extends Phaser.Scene {
       this.endFirstWin = true;
     }
 
+    // Endless wave milestones: one-time fixed Fame for first reaching each wave.
+    let milestoneFans = 0;
+    if (this.mode === 'endless') {
+      const reached = this.waves.currentWaveNumber;
+      const claimed = this.meta.endlessMilestones;
+      for (const ms of ENDLESS_MILESTONES) {
+        if (reached >= ms.wave && !claimed.includes(ms.wave)) {
+          claimed.push(ms.wave);
+          milestoneFans += ms.fame;
+          this.endMilestoneLines.push(`🏅 Wave ${ms.wave} reached — +${ms.fame} Fame!`);
+        }
+      }
+      if (this.endMilestoneLines.length > 0) haptics.play('success');
+    }
+
     // Tonight's Setlist multiplies the in-run fans; the "Going Viral" research
-    // node multiplies the whole haul. Quest/first-win bonuses are fixed.
+    // node multiplies the whole haul. Quest/first-win/milestone bonuses are fixed.
     const earned = Math.round(this.runFans * this.runFanMult) + questFans;
-    const total = Math.round(earned * this.runMods.fameGainMult);
+    const total = Math.round(earned * this.runMods.fameGainMult) + milestoneFans;
     this.endFanGain = total;
     addFame(this.meta, total);
     this.endQuestNames = questNames;
@@ -2368,6 +2385,7 @@ export class GameScene extends Phaser.Scene {
     // silently and appears once it unlocks). See data/progression.ts.
     if (isFeatureUnlocked('fame')) {
       if (this.endFanGain > 0) out.push(`🎤 +${this.endFanGain} Fame`);
+      for (const s of this.endMilestoneLines) out.push(s);
       if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
       for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
       if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
