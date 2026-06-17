@@ -85,7 +85,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-17 · Prestige fix + QoL pass';
+const LAST_PATCH = '2026-06-17 · Menu settings + next-wave preview';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -319,6 +319,22 @@ export class MenuScene extends Phaser.Scene {
       });
     });
 
+    // Settings (sound / volume / haptics) — a gear in the top-right corner.
+    const gear = this.add
+      .text(sw - 10, 10, '⚙', { fontFamily: 'monospace', fontSize: '22px', color: '#ffd166' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    gear.on('pointerdown', (
+      _p: Phaser.Input.Pointer,
+      _x: number,
+      _y: number,
+      ev?: Phaser.Types.Input.EventData,
+    ) => {
+      ev?.stopPropagation();
+      this.openSettingsPanel();
+    });
+    this.root.add(gear);
+
     // Last-patch stamp, tucked low-key in the bottom-left corner.
     this.root.add(
       this.add
@@ -343,6 +359,63 @@ export class MenuScene extends Phaser.Scene {
       credit.on('pointerdown', () => this.openCreditsPanel());
       this.root.add(credit);
     }
+  }
+
+  /** Sound / volume / haptics — the same controls as the in-run pause menu,
+   *  reachable from the main menu via the ⚙ button so you can set them up front. */
+  private openSettingsPanel(): void {
+    this.closeModal();
+    const { sw, sh } = this;
+    const w = Math.min(sw - 16, 320);
+    const showBuzz = haptics.supported;
+    const h = showBuzz ? 300 : 234;
+    this.pushBackdrop();
+    this.modal.push(
+      this.add.rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0xffd166, 0.9).setDepth(310).setInteractive().on('pointerdown', STOP),
+    );
+    const top = sh / 2 - h / 2;
+    const bw = Math.min(240, w - 40);
+    this.modalText(sw / 2, top + 22, '⚙ SETTINGS', '#ffd166', 15);
+
+    // Explicit row centres (each ≥TOUCH_MIN tall control needs clear spacing).
+    this.modal.push(...this.button({
+      x: sw / 2, y: top + 58, w: bw, h: TOUCH_MIN,
+      label: audio.muted ? '🔇 Sound: OFF' : '🔊 Sound: ON',
+      color: audio.muted ? 0xff6b6b : 0x51cf66, depth: 311,
+      onClick: () => { audio.toggleMuted(); this.openSettingsPanel(); },
+    }));
+
+    this.modalText(sw / 2, top + 102, `Volume  ${Math.round(audio.volume * 100)}%`, '#cfd3dc', 12);
+    const volY = top + 128;
+    const stepW = TOUCH_MIN;
+    const barW = bw - stepW * 2 - 16;
+    this.modal.push(...this.button({
+      x: sw / 2 - barW / 2 - stepW / 2 - 4, y: volY, w: stepW, h: TOUCH_MIN, label: '−', color: 0xffd166, depth: 311,
+      onClick: () => { audio.setVolume(audio.volume - 0.1); this.openSettingsPanel(); },
+    }));
+    this.modal.push(...this.button({
+      x: sw / 2 + barW / 2 + stepW / 2 + 4, y: volY, w: stepW, h: TOUCH_MIN, label: '+', color: 0xffd166, depth: 311,
+      onClick: () => { audio.setVolume(audio.volume + 0.1); this.openSettingsPanel(); },
+    }));
+    this.modal.push(
+      this.add.rectangle(sw / 2, volY, barW, 10, 0x232336).setStrokeStyle(1, 0x555566, 0.9).setDepth(311),
+      this.add.rectangle(sw / 2 - barW / 2, volY, barW * audio.volume, 10, 0xffd166).setOrigin(0, 0.5).setDepth(312),
+    );
+
+    if (showBuzz) {
+      this.modal.push(...this.button({
+        x: sw / 2, y: top + 192, w: bw, h: TOUCH_MIN,
+        label: haptics.isEnabled() ? '📳 Buzz: ON' : '📴 Buzz: OFF',
+        color: haptics.isEnabled() ? 0x51cf66 : 0xff6b6b, depth: 311,
+        onClick: () => { haptics.toggle(); haptics.play('tap'); this.openSettingsPanel(); },
+      }));
+    }
+
+    this.modal.push(...this.button({
+      x: sw / 2, y: top + h - 14 - TOUCH_MIN / 2, w: Math.min(140, w - 40), h: TOUCH_MIN,
+      label: 'Close', color: 0xff6b6b, depth: 311, onClick: () => this.closeModal(),
+    }));
   }
 
   /** Lists the art attributions (CC BY etc.) from ART_CREDITS. */

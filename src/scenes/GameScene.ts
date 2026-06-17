@@ -24,7 +24,7 @@ import {
   type UpgradePathKey,
 } from '../data/towers';
 import { BOSS_CONFIG, ENEMY_TYPES, type EnemyType } from '../data/enemies';
-import { ENDLESS_PROFILE, ENDLESS_MILESTONES } from '../data/waves';
+import { ENDLESS_PROFILE, ENDLESS_MILESTONES, buildWaveDef, type WaveProfile } from '../data/waves';
 import {
   metaModifiers,
   defaultMeta,
@@ -169,6 +169,7 @@ export class GameScene extends Phaser.Scene {
   private intermissionActive = false;
   private intermissionRemaining = 0;
   private intermissionUi?: Phaser.GameObjects.Container;
+  private waveProfile!: WaveProfile; // active profile (for the next-wave preview)
 
   // Pre-wave planning prompt (manual "Start Wave 1" on a fresh run).
   private startPrompt?: Phaser.GameObjects.Container;
@@ -334,6 +335,7 @@ export class GameScene extends Phaser.Scene {
       this.runFanMult = setlist.fanMult;
       this.setlistName = setlist.fanMult > 1 ? setlist.name : '';
     }
+    this.waveProfile = profile; // kept for the next-wave intermission preview
 
     this.waves = new WaveManager(
       this,
@@ -2218,6 +2220,12 @@ export class GameScene extends Phaser.Scene {
     const label = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#ffffff' })
       .setOrigin(0.5, 1);
+    // A heads-up of what the next wave brings (+ a boss warning) so the player
+    // can spend the intermission building for it rather than blind.
+    const previewStr = this.nextWavePreview();
+    const preview = this.add
+      .text(0, 0, previewStr, { fontFamily: 'monospace', color: previewStr.startsWith('⚠') ? '#ff8787' : '#9aa0b0' })
+      .setOrigin(0.5, 1);
     const ffBtn = this.add
       .rectangle(0, 0, TOUCH_MIN, TOUCH_MIN, 0x233323, 0.98)
       .setStrokeStyle(2, 0x51cf66, 0.95)
@@ -2238,8 +2246,9 @@ export class GameScene extends Phaser.Scene {
       },
     );
 
-    this.intermissionUi = this.add.container(0, 0, [label, ffBtn, ffText]).setDepth(DEPTH_BAR + 5);
+    this.intermissionUi = this.add.container(0, 0, [label, preview, ffBtn, ffText]).setDepth(DEPTH_BAR + 5);
     this.intermissionUi.setData('label', label);
+    this.intermissionUi.setData('preview', preview);
     this.intermissionUi.setData('ffBtn', ffBtn);
     this.intermissionUi.setData('ffText', ffText);
     this.positionIntermission();
@@ -2252,6 +2261,7 @@ export class GameScene extends Phaser.Scene {
     if (!ui) return;
     const { vw, vh, barH } = this.screen;
     const label = ui.getData('label') as Phaser.GameObjects.Text;
+    const preview = ui.getData('preview') as Phaser.GameObjects.Text;
     const ffBtn = ui.getData('ffBtn') as Phaser.GameObjects.Rectangle;
     const ffText = ui.getData('ffText') as Phaser.GameObjects.Text;
     const cx = vw / 2;
@@ -2262,6 +2272,23 @@ export class GameScene extends Phaser.Scene {
     ffBtn.setSize(btnW, btnH).setPosition(cx, btnCy);
     ffText.setFontSize(font).setPosition(cx, btnCy);
     label.setFontSize(font).setPosition(cx, btnCy - btnH / 2 - 6);
+    preview.setFontSize(Math.max(10, font - 3)).setPosition(cx, label.y - font - 4);
+  }
+
+  /** A one-line heads-up of the next wave's contents (+ boss warning). */
+  private nextWavePreview(): string {
+    const def = buildWaveDef(this.waves.currentWaveIndex + 1, this.waveProfile);
+    const types: string[] = [];
+    let boss: string | null = null;
+    for (const g of def.groups) {
+      const et = ENEMY_TYPES[g.type];
+      if (!et) continue;
+      if (et.boss) boss = et.name;
+      else if (!types.includes(et.name)) types.push(et.name);
+    }
+    if (boss) return `⚠ BOSS NEXT: ${boss}`;
+    const list = types.slice(0, 3).join(', ');
+    return list ? `Coming up: ${list}` : '';
   }
 
   private tickIntermission(dt: number): void {
