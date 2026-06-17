@@ -122,7 +122,7 @@ export class BuildPanel {
       );
       parts.push(
         this.scene.add
-          .text(cx, cellTop + cellH * 0.72, tower.blurb, {
+          .text(cx, cellTop + cellH * 0.7, tower.blurb, {
             fontFamily: 'monospace',
             fontSize: '8px',
             color: affordable ? '#9aa0b0' : '#6b6b75',
@@ -131,9 +131,21 @@ export class BuildPanel {
           })
           .setOrigin(0.5),
       );
+      // At-a-glance stats so towers are comparable before buying. dps is base
+      // (meta upgrades raise it further); 0-dps towers (support / bass) show range.
+      const dps = Math.round(tower.damage * tower.attackSpeed);
       parts.push(
         this.scene.add
-          .text(cx, cellTop + cellH * 0.92, `${cost}g`, {
+          .text(cx, cellTop + cellH * 0.85, dps > 0 ? `◎${tower.range}  ${dps} dps` : `◎${tower.range} range`, {
+            fontFamily: 'monospace',
+            fontSize: '8px',
+            color: affordable ? '#74c0fc' : '#6b6b75',
+          })
+          .setOrigin(0.5),
+      );
+      parts.push(
+        this.scene.add
+          .text(cx, cellTop + cellH * 0.95, `${cost}g`, {
             fontFamily: 'monospace',
             fontSize: '12px',
             color: affordable ? '#ffd166' : '#888888',

@@ -672,6 +672,7 @@ export class MenuScene extends Phaser.Scene {
     // Per-mode flavour line + resume detection.
     let detail: string;
     let resumable: boolean;
+    let firstStory = false;
     if (mode.key === 'endless') {
       const best = loadEndlessBest();
       detail = best > 0 ? `Best: wave ${best} — beat it!` : 'No record yet';
@@ -694,6 +695,7 @@ export class MenuScene extends Phaser.Scene {
           ? 'Campaign complete!'
           : `Level ${Math.min(done + 1, CHAPTER_ORDER.length)} of ${CHAPTER_ORDER.length}`;
       resumable = progress !== null && hasRun('story', progress.levelId);
+      firstStory = done === 0 && !resumable; // brand-new player
     }
     this.text(cx, cardTop + 124, detail, '#ffd43b', 12);
 
@@ -713,6 +715,11 @@ export class MenuScene extends Phaser.Scene {
       color: storyDone ? 0x9aa0b0 : 0x51cf66,
       onClick: () => this.requestNewGame(mode.key),
     });
+    // First-timer nudge: a gentle pulsing pointer to the Story Play button.
+    if (firstStory) {
+      const hint = this.text(cx, playY - TOUCH_MIN / 2 - 12, '👇 New here? Tap to start', '#69db7c', 11);
+      this.tweens.add({ targets: hint, alpha: { from: 1, to: 0.4 }, duration: 700, yoyo: true, repeat: -1 });
+    }
     if (resumable) {
       this.button({
         x: cx,
@@ -1583,12 +1590,12 @@ export class MenuScene extends Phaser.Scene {
   }
 
   /** Menu text (added to the rebuildable root). */
-  private text(x: number, y: number, str: string, color: string, size: number): void {
-    this.root.add(
-      this.add
-        .text(x, y, str, { fontFamily: 'monospace', fontSize: `${size}px`, color })
-        .setOrigin(0.5),
-    );
+  private text(x: number, y: number, str: string, color: string, size: number): Phaser.GameObjects.Text {
+    const t = this.add
+      .text(x, y, str, { fontFamily: 'monospace', fontSize: `${size}px`, color })
+      .setOrigin(0.5);
+    this.root.add(t);
+    return t;
   }
 
   /** Card background (added to the rebuildable root). */
