@@ -1,4 +1,4 @@
-import { loadStoryProgress } from '../systems/storage';
+import { loadStoryProgress, loadUnlockHighWater } from '../systems/storage';
 
 /**
  * Progressive disclosure: the game starts simple and reveals systems as the
@@ -44,7 +44,10 @@ export const FEATURE_LABEL: Record<Feature, string> = {
 };
 
 export function chaptersCleared(): number {
-  return loadStoryProgress()?.completedChapters.length ?? 0;
+  // Monotonic: max of the live count and the all-time high-water mark, so
+  // unlocks never regress when prestige resets campaign progress to 0.
+  const live = loadStoryProgress()?.completedChapters.length ?? 0;
+  return Math.max(live, loadUnlockHighWater());
 }
 
 export function isFeatureUnlocked(feature: Feature, cleared: number = chaptersCleared()): boolean {

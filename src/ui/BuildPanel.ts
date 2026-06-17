@@ -3,6 +3,7 @@ import { TOUCH_MIN } from '../config';
 import { TOWER_LIST, type TowerTypeKey } from '../data/towers';
 import { towerTextureKey } from '../systems/textures';
 import { pressFeedback } from '../systems/touch';
+import { haptics } from '../systems/haptics';
 
 /** Per-tower accent border color, so each card reads at a glance. */
 const ACCENT: Record<TowerTypeKey, number> = {
@@ -152,6 +153,20 @@ export class BuildPanel {
           onSelect(tower.key);
         });
         pressFeedback(cell, [cell], { rect: cell, base: 0x232336, active: 0x33334d, fillAlpha: 1 });
+      } else {
+        // Unaffordable: tapping now gives feedback (a shake + error buzz) instead
+        // of doing nothing silently.
+        cell.setInteractive();
+        cell.on('pointerdown', (
+          _p: Phaser.Input.Pointer,
+          _x: number,
+          _y: number,
+          ev?: Phaser.Types.Input.EventData,
+        ) => {
+          ev?.stopPropagation();
+          haptics.play('error');
+          this.scene.tweens.add({ targets: cell, scaleX: 0.93, scaleY: 0.93, yoyo: true, duration: 80 });
+        });
       }
     });
 

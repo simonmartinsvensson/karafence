@@ -22,6 +22,7 @@ const HAPTICS_KEY = 'karafence:haptics:v1';
 const SEEN_RANK_KEY = 'karafence:seenrank:v1';
 const SEEN_CHAPTERS_KEY = 'karafence:seenchapters:v1';
 const SEEN_SYNERGY_KEY = 'karafence:seensynergy:v1';
+const UNLOCK_HIGH_WATER_KEY = 'karafence:maxchapters:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const STORY_KEY = 'karafence:story:progress';
@@ -260,6 +261,20 @@ export function loadSeenChapters(): number {
 
 export function saveSeenChapters(n: number): void {
   write(SEEN_CHAPTERS_KEY, n);
+}
+
+/**
+ * High-water mark of chapters ever cleared — feature unlocks are derived from
+ * this (never the live count) so prestige, which resets campaign progress to 0,
+ * can't re-lock systems the player already earned. Monotonic; never decreases.
+ */
+export function loadUnlockHighWater(): number {
+  const n = read<number>(UNLOCK_HIGH_WATER_KEY);
+  return typeof n === 'number' ? n : 0;
+}
+
+export function saveUnlockHighWater(n: number): void {
+  write(UNLOCK_HIGH_WATER_KEY, Math.max(n, loadUnlockHighWater()));
 }
 
 /** Whether the one-time tower-synergy explainer has been shown. */

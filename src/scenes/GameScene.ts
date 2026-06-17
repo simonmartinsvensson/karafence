@@ -215,6 +215,7 @@ export class GameScene extends Phaser.Scene {
   private nextChapterId: LevelId | null = null; // story: chapter to advance to
   // Fame payout for the just-ended run (shown on the end screen).
   private endFanGain = 0;
+  private banked = false; // run rewards banked this run (idempotency guard)
   private endQuestNames: string[] = [];
   private endFirstWin = false; // first won run of the day (bonus paid)
   private endMilestoneLines: string[] = []; // endless wave milestones hit this run
@@ -291,6 +292,7 @@ export class GameScene extends Phaser.Scene {
     this.endNewRecord = false;
     this.nextChapterId = null;
     this.endFanGain = 0;
+    this.banked = false;
     this.endQuestNames = [];
     this.endFirstWin = false;
     this.endMilestoneLines = [];
@@ -1280,7 +1282,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(DEPTH_HUD + 1);
     this.hpBarFill = this.add.image(0, 0, TX.hpFill).setOrigin(0, 0.5).setDepth(DEPTH_HUD + 2);
     this.hpText = this.add
-      .text(0, 0, `${this.singerHp}`, {
+      .text(0, 0, `${this.singerHp}/${SINGER_MAX_HP}`, {
         fontFamily: 'monospace',
         color: '#ffffff',
         fontStyle: 'bold',
@@ -1366,7 +1368,7 @@ export class GameScene extends Phaser.Scene {
       this.waveText.x - this.waveText.width / 2 - this.waveIcon.displayWidth / 2 - 4,
       this.waveText.y,
     );
-    this.hpText.setText(`${this.singerHp}`);
+    this.hpText.setText(`${this.singerHp}/${SINGER_MAX_HP}`);
     const ratio = Math.max(0, this.singerHp / SINGER_MAX_HP);
     this.hpBarFill.displayWidth = Math.max(0, this.hpBarW - 2) * ratio;
   }
@@ -2132,7 +2134,8 @@ export class GameScene extends Phaser.Scene {
    * run (guarded by endFanGain so a re-render never double-banks).
    */
   private bankRunFans(won: boolean): void {
-    if (this.endFanGain > 0) return; // already banked this run
+    if (this.banked) return; // already banked this run
+    this.banked = true;
 
     this.runFans += Math.floor(this.highestCombo * 1.5); // combo flourish
 
@@ -2507,7 +2510,7 @@ export class GameScene extends Phaser.Scene {
   damageSinger(amount: number): void {
     if (this.gameOver) return;
     this.singerHp = Math.max(0, this.singerHp - amount);
-    this.hpText.setText(`${this.singerHp}`); // match refreshHud's format (no flicker)
+    this.hpText.setText(`${this.singerHp}/${SINGER_MAX_HP}`); // match refreshHud's format (no flicker)
     // Flash the singer red to signal the hit.
     if (this.singerFigure) {
       this.singerFigure.setTint(0xff4444);

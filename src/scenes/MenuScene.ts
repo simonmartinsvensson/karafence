@@ -69,6 +69,7 @@ import {
   saveSeenRank,
   loadSeenChapters,
   saveSeenChapters,
+  saveUnlockHighWater,
 } from '../systems/storage';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
@@ -84,7 +85,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-16 · Skill-tree upgrades everywhere';
+const LAST_PATCH = '2026-06-17 · Prestige fix + QoL pass';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -187,6 +188,7 @@ export class MenuScene extends Phaser.Scene {
    */
   private checkUnlocks(): void {
     const now = chaptersCleared();
+    saveUnlockHighWater(now); // lock in progress so prestige never re-gates features
     const seen = loadSeenChapters();
     if (seen >= 0 && now > seen) {
       const revealed = featuresUnlockedBetween(seen, now);
@@ -801,6 +803,9 @@ export class MenuScene extends Phaser.Scene {
     haptics.play('win');
     audio.sfx('fanfare');
     this.cameras.main.flash(420, 255, 215, 120); // warm platinum wash
+    // Prestige wipes campaign progress; lock in the all-cleared high-water mark
+    // first so every unlocked feature stays available afterwards.
+    saveUnlockHighWater(CHAPTER_ORDER.length);
     this.meta.platinum = (this.meta.platinum ?? 0) + 1;
     // Reset campaign unlock progress (replay all levels); keep all meta.
     clearStoryProgress();
@@ -1058,8 +1063,15 @@ export class MenuScene extends Phaser.Scene {
     const rootY = treeTop + 14;
     const labelY = rootY + 30; // branch name + axis
     const firstY = labelY + 30; // first node of each branch
-    const gap = Phaser.Math.Clamp((treeBottom - firstY) / Math.max(1, maxLevels - 1), 30, 46);
-    const r = Math.min(13, Math.floor(gap * 0.32));
+    // Reserve room for the capstone caption, and let the gap (and node radius)
+    // shrink to fit short / landscape viewports rather than overrun the footer.
+    const capReserve = branches.some((b) => b.capstone) ? 18 : 4;
+    const gap = Phaser.Math.Clamp(
+      (treeBottom - firstY - capReserve) / Math.max(1, maxLevels - 1),
+      20,
+      46,
+    );
+    const r = Phaser.Math.Clamp(Math.floor(gap * 0.32), 5, 13);
 
     // Connector lines live under the nodes in a single Graphics.
     const links = this.add.graphics().setDepth(311);
@@ -1145,7 +1157,7 @@ export class MenuScene extends Phaser.Scene {
 
       // Capstone effect caption under the column (so the payoff is legible).
       if (b.capstone) {
-        this.modalText(x, firstY + (b.maxLevel - 1) * gap + r + 22, b.capstone.label, '#c9b6ff', 8);
+        this.modalText(x, firstY + (b.maxLevel - 1) * gap + r + 11, b.capstone.label, '#c9b6ff', 8);
       }
     });
 

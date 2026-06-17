@@ -4,12 +4,20 @@ import { computeScreenLayout } from '../systems/grid';
 import { MAX_TIER, describeTier, type UpgradePathKey } from '../data/towers';
 import type { Tower } from '../systems/Tower';
 import { makeTreeNode, type TreeNodeState } from './treeNode';
+import { haptics } from '../systems/haptics';
 
 export interface UpgradePanelCallbacks {
   onUpgrade: (path: UpgradePathKey) => void;
   onSell: () => void;
   onCycleTarget: () => void;
 }
+
+/** Human-readable targeting labels (clearer than first/last/strongest). */
+const TARGET_LABEL: Record<string, string> = {
+  first: 'Lead foe',
+  last: 'Rear foe',
+  strongest: 'Toughest',
+};
 
 const ABSORB = (
   _p: Phaser.Input.Pointer,
@@ -27,6 +35,9 @@ const ABSORB = (
  */
 export class UpgradePanel {
   private container?: Phaser.GameObjects.Container;
+  /** Sell confirm state — armed by a first tap, reset when the tower changes. */
+  private sellArmed = false;
+  private armedFor?: Tower;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -99,7 +110,7 @@ export class UpgradePanel {
       parts.push(targBtn);
       parts.push(
         this.scene.add
-          .text(tx, headerCy, `🎯 ${tower.targeting}`, {
+          .text(tx, headerCy, `🎯 ${TARGET_LABEL[tower.targeting] ?? tower.targeting}`, {
             fontFamily: 'monospace',
             fontSize: '11px',
             color: '#ffd166',
@@ -116,10 +127,22 @@ export class UpgradePanel {
     }
 
     // Sell button.
+    // Selling an *invested* tower needs a confirm tap — a mistap here dumps a
+    // maxed tower for a partial refund with no undo. Fresh towers sell instantly.
+    const invested = tower.tiers.A > 0 || tower.tiers.B > 0;
+    if (this.armedFor !== tower) this.sellArmed = false;
+    const armed = invested && this.sellArmed && this.armedFor === tower;
     const sell = this.scene.add
-      .rectangle(0, y, w - 20, rowH, 0x3a1a1a)
-      .setStrokeStyle(1, 0xff6b6b, 0.9)
+      .rectangle(0, y, w - 20, rowH, armed ? 0x5a1a1a : 0x3a1a1a)
+      .setStrokeStyle(armed ? 2 : 1, armed ? 0xffd43b : 0xff6b6b, 0.95)
       .setInteractive({ useHandCursor: true });
+    const sellText = this.scene.add
+      .text(0, y, armed ? 'TAP AGAIN TO SELL' : `SELL  +${tower.sellValue}g`, {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: armed ? '#ffd43b' : '#ff8787',
+      })
+      .setOrigin(0.5);
     sell.on('pointerdown', (
       _p: Phaser.Input.Pointer,
       _x: number,
@@ -127,18 +150,19 @@ export class UpgradePanel {
       ev?: Phaser.Types.Input.EventData,
     ) => {
       ev?.stopPropagation();
+      if (invested && !(this.sellArmed && this.armedFor === tower)) {
+        // First tap: arm + give immediate feedback (no re-render needed).
+        this.sellArmed = true;
+        this.armedFor = tower;
+        sell.setFillStyle(0x5a1a1a).setStrokeStyle(2, 0xffd43b, 0.95);
+        sellText.setText('TAP AGAIN TO SELL').setColor('#ffd43b');
+        haptics.play('error');
+        return;
+      }
+      this.sellArmed = false;
       cb.onSell();
     });
-    parts.push(sell);
-    parts.push(
-      this.scene.add
-        .text(0, y, `SELL  +${tower.sellValue}g`, {
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          color: '#ff8787',
-        })
-        .setOrigin(0.5),
-    );
+    parts.push(sell, sellText);
 
     // Anchor the panel just above the bottom control bar (one-thumb reach).
     const cy = vh - screen.barH - 8 - h / 2;
