@@ -86,7 +86,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-17 · Prestige perks + QoL';
+const LAST_PATCH = '2026-06-17 · Perks shown in Records';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -1479,7 +1479,8 @@ export class MenuScene extends Phaser.Scene {
     // Body height per tab (clamped to the viewport). The daily block only
     // counts once dailies have unlocked (chapter 8).
     const quests = this.meta.daily?.quests ?? [];
-    const statsBodyH = 6 * 26 + (isFeatureUnlocked('dailies') ? 30 + quests.length * 24 + 8 : 4);
+    const perksH = (this.meta.platinum ?? 0) > 0 ? 24 : 0;
+    const statsBodyH = 6 * 26 + perksH + (isFeatureUnlocked('dailies') ? 30 + quests.length * 24 + 8 : 4);
     const maxBody = sh - 12 - headH - closeArea;
     // Let rows shrink to fit short (landscape) viewports — the old max(20) floor
     // overran the panel/footer with 12 goals on screens ≲380px tall.
@@ -1569,8 +1570,17 @@ export class MenuScene extends Phaser.Scene {
           .setOrigin(1, 0.5).setDepth(311),
       );
     });
-    if (!isFeatureUnlocked('dailies')) return; // daily quests unlock at chapter 8
     let dy = bodyTop + 8 + 6 * 26 + 4;
+    // Owned prestige perks (full-width line so the breakdown isn't cramped).
+    if ((this.meta.platinum ?? 0) > 0) {
+      const abbr: Record<string, string> = { startGold: 'gold', damage: 'dmg', combo: 'combo', cheaper: 'cost' };
+      const bits = PLATINUM_PERKS
+        .filter((p) => (this.meta.platinumPerks?.[p.key] ?? 0) > 0)
+        .map((p) => `${abbr[p.key]}×${this.meta.platinumPerks![p.key]}`);
+      this.modalText(lx, dy, `✦ Perks: ${bits.length ? bits.join(' · ') : '—'}`, '#c9b6ff', 11, 0);
+      dy += 24;
+    }
+    if (!isFeatureUnlocked('dailies')) return; // daily quests unlock at chapter 8
     const daily = this.meta.daily;
     const quests = daily?.quests ?? [];
     this.modalText(lx, dy, `📅 DAILY  ·  🔥 Day ${daily?.streak ?? 1} streak`, '#ffd166', 12, 0);
