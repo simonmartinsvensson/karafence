@@ -32,6 +32,7 @@ import {
   isUnlocked,
   UNLOCK_COST,
   UNLOCK_NAME,
+  PLATINUM_PERKS,
   type MetaProgress,
 } from '../data/meta';
 import {
@@ -85,7 +86,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-17 · Menu settings + next-wave preview';
+const LAST_PATCH = '2026-06-17 · Prestige perks + QoL';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -871,12 +872,47 @@ export class MenuScene extends Phaser.Scene {
       'Go Platinum?',
       [
         `Reset campaign progress and replay all ${CHAPTER_ORDER.length} levels.`,
-        `Permanent reward: +15% Fame & gold per ✦ (you'll be ✦${next}).`,
+        `Permanent: +15% Fame & gold per ✦ (you'll be ✦${next}) + pick a perk.`,
         'Your Fame, upgrades, stars & unlocks are all kept.',
       ],
       '✦ Go Platinum',
-      () => this.doPrestige(),
+      () => this.openPrestigePerkPanel(),
     );
+  }
+
+  /** Pick one permanent perk, then commit the prestige. Perks stack across ✦. */
+  private openPrestigePerkPanel(): void {
+    this.closeModal();
+    const { sw, sh } = this;
+    const w = Math.min(sw - 16, 340);
+    const h = 84 + PLATINUM_PERKS.length * (TOUCH_MIN + 8) + TOUCH_MIN + 20;
+    this.pushBackdrop();
+    this.modal.push(
+      this.add.rectangle(sw / 2, sh / 2, w, h, 0x14141c, 0.99)
+        .setStrokeStyle(2, 0xc9b6ff, 0.9).setDepth(310).setInteractive().on('pointerdown', STOP),
+    );
+    const top = sh / 2 - h / 2;
+    this.modalText(sw / 2, top + 22, '✦ GO PLATINUM — pick a perk', '#e9d8ff', 14);
+    this.modalText(sw / 2, top + 42, 'permanent · stacks each prestige', '#9aa0b0', 10);
+
+    PLATINUM_PERKS.forEach((p, i) => {
+      const have = this.meta.platinumPerks?.[p.key] ?? 0;
+      this.modal.push(...this.button({
+        x: sw / 2, y: top + 70 + TOUCH_MIN / 2 + i * (TOUCH_MIN + 8),
+        w: Math.min(280, w - 40), h: TOUCH_MIN,
+        label: have > 0 ? `${p.label}   (×${have})` : p.label,
+        color: 0xc9b6ff, depth: 311,
+        onClick: () => {
+          this.meta.platinumPerks = this.meta.platinumPerks ?? {};
+          this.meta.platinumPerks[p.key] = (this.meta.platinumPerks[p.key] ?? 0) + 1;
+          this.doPrestige();
+        },
+      }));
+    });
+    this.modal.push(...this.button({
+      x: sw / 2, y: top + h - 14 - TOUCH_MIN / 2, w: Math.min(140, w - 40), h: TOUCH_MIN,
+      label: 'Cancel', color: 0x9aa0b0, depth: 311, onClick: () => this.closeModal(),
+    }));
   }
 
   private doPrestige(): void {

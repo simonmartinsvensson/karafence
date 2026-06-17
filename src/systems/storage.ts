@@ -93,6 +93,7 @@ export function loadMeta(): MetaProgress {
     researchUnlocks: { ...saved.researchUnlocks },
     starGrant: typeof saved.starGrant === 'number' ? saved.starGrant : 0,
     platinum: typeof saved.platinum === 'number' ? saved.platinum : 0,
+    platinumPerks: { ...saved.platinumPerks },
     achievements: { ...saved.achievements },
     lastSeen: typeof saved.lastSeen === 'number' ? saved.lastSeen : 0,
     daily: saved.daily,

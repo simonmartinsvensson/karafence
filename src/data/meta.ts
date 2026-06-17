@@ -139,6 +139,8 @@ export interface MetaProgress {
   starGrant: number;
   /** Number of times the campaign has been prestiged ("Go Platinum"). */
   platinum: number;
+  /** Prestige perks chosen, by key → times picked (stacks across prestiges). */
+  platinumPerks: Partial<Record<PlatinumPerkKey, number>>;
   /** Claimed achievement ids. */
   achievements: Partial<Record<string, boolean>>;
   /** Epoch ms of the last menu visit (for offline-Fame on return). */
@@ -182,6 +184,7 @@ export function defaultMeta(): MetaProgress {
     researchUnlocks: {},
     starGrant: 0,
     platinum: 0,
+    platinumPerks: {},
     achievements: {},
     lastSeen: 0,
     endlessMilestones: [],
@@ -200,6 +203,19 @@ export function defaultMeta(): MetaProgress {
 export function platinumMult(meta: MetaProgress): number {
   return 1 + 0.15 * (meta.platinum ?? 0);
 }
+
+/**
+ * Prestige perks — each Go Platinum lets the player pick one permanent perk;
+ * picks stack across prestiges (`meta.platinumPerks[key]` = times chosen). The
+ * effects fold into `metaModifiers`, giving prestige something to keep buying.
+ */
+export type PlatinumPerkKey = 'startGold' | 'damage' | 'combo' | 'cheaper';
+export const PLATINUM_PERKS: { key: PlatinumPerkKey; label: string }[] = [
+  { key: 'startGold', label: '+20% starting gold' },
+  { key: 'damage', label: '+8% all tower damage' },
+  { key: 'combo', label: 'Combo window +0.5s' },
+  { key: 'cheaper', label: 'Towers 5% cheaper' },
+];
 
 /** Add Fame (the grind currency). Earned every run, win or loss. */
 export function addFame(meta: MetaProgress, amount: number): void {
@@ -382,12 +398,13 @@ export function metaModifiers(meta: MetaProgress): {
   enemyHpMult: number;
 } {
   const t = (k: MetaUpgradeKey) => meta.upgrades?.[k] ?? 0;
+  const perk = (k: PlatinumPerkKey) => meta.platinumPerks?.[k] ?? 0;
   const plat = platinumMult(meta); // prestige boosts Fame + gold
   return {
-    startingGoldMult: 1 + 0.06 * t('startingGold'),
-    towerCostMult: 1 - 0.03 * t('cheaperTowers'),
-    comboWindowBonus: 0.3 * t('longerCombo'),
-    allDamageMult: 1 + 0.04 * t('allDamage'),
+    startingGoldMult: 1 + 0.06 * t('startingGold') + 0.2 * perk('startGold'),
+    towerCostMult: Math.max(0.4, 1 - 0.03 * t('cheaperTowers') - 0.05 * perk('cheaper')),
+    comboWindowBonus: 0.3 * t('longerCombo') + 0.5 * perk('combo'),
+    allDamageMult: 1 + 0.04 * t('allDamage') + 0.08 * perk('damage'),
     goldMult: (1 + 0.05 * t('goldIncome')) * plat,
     interestRate: 0.1 + 0.02 * t('interest'),
     fameGainMult: (1 + 0.05 * t('fameGain')) * plat,
