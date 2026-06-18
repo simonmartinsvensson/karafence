@@ -54,6 +54,7 @@ import {
 } from '../systems/storage';
 import { claimableCount } from '../data/achievements';
 import { isFeatureUnlocked } from '../data/progression';
+import { rollBoons, type Boon, type BoonCtx } from '../data/boons';
 import { perf } from '../systems/perf';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
@@ -221,6 +222,8 @@ export class GameScene extends Phaser.Scene {
   // Fame payout for the just-ended run (shown on the end screen).
   private endFanGain = 0;
   private banked = false; // run rewards banked this run (idempotency guard)
+  private boonGoldMult = 1; // "Merch Rush" boon — extra kill gold for one wave
+  private boonUi: Phaser.GameObjects.GameObject[] = []; // between-wave boon choices
   private endQuestNames: string[] = [];
   private endFirstWin = false; // first won run of the day (bonus paid)
   private endMilestoneLines: string[] = []; // endless wave milestones hit this run
@@ -284,6 +287,8 @@ export class GameScene extends Phaser.Scene {
     this.startPrompt = undefined;
     this.gameSpeed = 1;
     perf.lowFx = false;
+    this.boonGoldMult = 1;
+    this.boonUi = [];
 
     this.activeBoss = null;
     this.bossAbilityTimer = 0;
@@ -1623,6 +1628,7 @@ export class GameScene extends Phaser.Scene {
     let gain = reward + bonus;
     if (hype.goldMult > 1) gain = Math.round(gain * hype.goldMult);
     if (this.runMods.goldMult > 1) gain = Math.round(gain * this.runMods.goldMult); // Merch Table
+    if (this.boonGoldMult > 1) gain = Math.round(gain * this.boonGoldMult); // Merch Rush boon
 
     this.gold += gain;
     this.goldEarned += gain;
@@ -2011,6 +2017,9 @@ export class GameScene extends Phaser.Scene {
 
   private onWaveCleared(): void {
     const clearedWave = this.waves.currentWaveNumber;
+    // Next-wave boons expire when the wave they powered ends.
+    this.boonGoldMult = 1;
+    this.towers.damageBoost = 1;
     // Lifetime: count the wave just survived and persist progression.
     this.meta.lifetime.waves += 1;
     saveMeta(this.meta);
@@ -2270,6 +2279,66 @@ export class GameScene extends Phaser.Scene {
     this.intermissionUi.setData('ffText', ffText);
     this.positionIntermission();
     this.updateIntermissionUi();
+    if (isFeatureUnlocked('boons')) this.showBoons();
+  }
+
+  /** Between-wave "encore boon": pick 1 of 3 one-shot perks (centre of screen). */
+  private showBoons(): void {
+    const boons = rollBoons(3);
+    const cx = this.sw / 2;
+    const cy = this.sh * 0.4;
+    const cardW = Math.min(150, (this.sw - 36) / 3 - 8);
+    const cardH = Math.min(92, cardW * 0.66);
+    const gap = 10;
+    const rowW = cardW * 3 + gap * 2;
+    const track = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      this.boonUi.push(o);
+      return o;
+    };
+    track(
+      this.add.text(cx, cy - cardH / 2 - 16, '✨ Encore boon — pick one', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#e9d8ff',
+      }).setOrigin(0.5).setDepth(DEPTH_OVERLAY),
+    );
+    const ctx = this.boonCtx();
+    boons.forEach((boon, i) => {
+      const x = cx - rowW / 2 + cardW / 2 + i * (cardW + gap);
+      const card = track(
+        this.add.rectangle(x, cy, cardW, cardH, 0x1b1726, 0.98)
+          .setStrokeStyle(2, 0xc9b6ff, 0.9).setDepth(DEPTH_OVERLAY).setInteractive({ useHandCursor: true }),
+      );
+      const icon = track(this.add.text(x, cy - cardH * 0.26, boon.icon, { fontSize: '22px' }).setOrigin(0.5).setDepth(DEPTH_OVERLAY + 1));
+      const name = track(this.add.text(x, cy + cardH * 0.04, boon.name, { fontFamily: 'monospace', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5).setDepth(DEPTH_OVERLAY + 1));
+      const desc = track(this.add.text(x, cy + cardH * 0.3, boon.desc(ctx), { fontFamily: 'monospace', fontSize: '9px', color: '#ffd166', align: 'center', wordWrap: { width: cardW - 8 } }).setOrigin(0.5).setDepth(DEPTH_OVERLAY + 1));
+      card.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev?: Phaser.Types.Input.EventData) => {
+        ev?.stopPropagation();
+        this.pickBoon(boon);
+      });
+      pressFeedback(card, [card, icon, name, desc]);
+    });
+  }
+
+  private boonCtx(): BoonCtx {
+    return {
+      wave: this.waves.currentWaveNumber,
+      gold: this.gold,
+      addGold: (n) => { this.gold += n; this.goldEarned += n; this.refreshHud(); this.screenFloat(`+${n}g 💰`, '#ffd166'); audio.sfx('gold'); },
+      heal: (n) => { this.singerHp = Math.min(SINGER_MAX_HP, this.singerHp + n); this.refreshHud(); this.screenFloat(`+${n} HP ❤️`, '#69db7c'); },
+      addFame: (n) => { this.runFans += n; this.screenFloat(`+${n} Fame 🎤`, '#ff9ed8'); },
+      boostDamage: (m) => { this.towers.damageBoost = m; this.screenFloat('💥 Amped up!', '#ff9ed8'); },
+      boostKillGold: (m) => { this.boonGoldMult = m; this.screenFloat('🤑 Merch rush!', '#ffd166'); },
+    };
+  }
+
+  private pickBoon(boon: Boon): void {
+    boon.apply(this.boonCtx());
+    haptics.play('success');
+    this.clearBoons();
+  }
+
+  private clearBoons(): void {
+    this.boonUi.forEach((o) => o.destroy());
+    this.boonUi = [];
   }
 
   /** The Fast Forward control sits just above the bottom bar — one-thumb reach. */
@@ -2334,6 +2403,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionActive = false;
     this.intermissionUi?.destroy(true);
     this.intermissionUi = undefined;
+    this.clearBoons();
     audio.playMusic('inWave');
     this.waves.startNextWave();
     this.maybeSpawnScout();

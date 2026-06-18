@@ -19,7 +19,8 @@ export type Feature =
   | 'endless' // the Endless mode card
   | 'records' // the Records / Goals button
   | 'dailies' // daily quests + Tonight's Setlist
-  | 'synergies'; // tower adjacency synergies
+  | 'synergies' // tower adjacency synergies
+  | 'boons'; // between-wave "encore boon" choices
 
 /** Chapters cleared required to unlock each feature. */
 export const FEATURE_UNLOCK: Record<Feature, number> = {
@@ -30,6 +31,7 @@ export const FEATURE_UNLOCK: Record<Feature, number> = {
   records: 6,
   dailies: 8,
   synergies: 12,
+  boons: 15,
 };
 
 /** Short label shown in the "🔓 New: …" reveal toast when a feature unlocks. */
@@ -41,6 +43,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   records: 'Records & Goals',
   dailies: 'Daily quests & Setlist',
   synergies: 'Tower synergies',
+  boons: 'Encore boons (between waves)',
 };
 
 export function chaptersCleared(): number {

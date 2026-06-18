@@ -28,6 +28,8 @@ export class TowerManager {
 
   /** Adjacency-synergy bonus is gated behind a campaign unlock (set by GameScene). */
   synergiesEnabled = false;
+  /** Temporary all-tower damage multiplier (an "Amp Up" wave boon); 1 = none. */
+  damageBoost = 1;
   private static readonly SYNERGY_PER_NEIGHBOR = 0.15;
   private static readonly SYNERGY_MAX_NEIGHBORS = 3;
 
@@ -183,7 +185,11 @@ export class TowerManager {
    * feature unlocks (see GameScene / data/progression.ts).
    */
   private applySynergies(): void {
-    for (const t of this.towers.values()) t.setSynergyDamage(1);
+    // Base = the temporary "Amp Up" boon multiplier (1 = none); adjacency stacks
+    // on top of it. Folding the boost in here means it rides the same per-frame
+    // multiplier the dealHit damage path already reads (Tower.synergyMult).
+    const boost = this.damageBoost;
+    for (const t of this.towers.values()) t.setSynergyDamage(boost);
     if (!this.synergiesEnabled) return;
     for (const t of this.towers.values()) {
       if (!t.attacks) continue;
@@ -194,7 +200,7 @@ export class TowerManager {
       }
       if (neighbors > 0) {
         const n = Math.min(TowerManager.SYNERGY_MAX_NEIGHBORS, neighbors);
-        t.setSynergyDamage(1 + n * TowerManager.SYNERGY_PER_NEIGHBOR);
+        t.setSynergyDamage((1 + n * TowerManager.SYNERGY_PER_NEIGHBOR) * boost);
       }
     }
   }
