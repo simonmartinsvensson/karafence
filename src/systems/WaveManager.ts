@@ -3,6 +3,7 @@ import type { MapDefinition } from '../types/map';
 import type { GridLayout } from './grid';
 import { Enemy } from './Enemy';
 import { ENEMY_TYPES, type EnemyTypeKey } from '../data/enemies';
+import { rollAffix } from '../data/affixes';
 import {
   buildWaveDef,
   waveScaling,
@@ -173,6 +174,8 @@ export class WaveManager {
     // per-wave difficulty scaling only applies to non-boss enemies.
     const speedScale =
       (isBoss ? 1 : this.speedScale) * this.map.enemySpeedMultiplier;
+    // Deep endless: non-boss enemies may spawn "elite" with a buffing affix.
+    const affix = !isBoss && this.endless ? rollAffix(this.currentWaveNumber) : null;
     const enemy = new Enemy(
       this.scene,
       this.map,
@@ -183,6 +186,7 @@ export class WaveManager {
       speedScale,
       startCol ?? this.map.spawnCol,
       this.enemyLayer,
+      affix ?? undefined,
     );
     this.enemies.add(enemy);
     if (isBoss) this.callbacks.onBossSpawn?.(enemy);

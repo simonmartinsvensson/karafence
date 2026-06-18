@@ -86,7 +86,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-18 · Encore boons (between waves)';
+const LAST_PATCH = '2026-06-18 · Elite enemies in deep endless';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume

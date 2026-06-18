@@ -4,6 +4,7 @@ import type { BossKind, EnemyType } from '../data/enemies';
 import { type GridLayout, tileToWorld } from './grid';
 import { enemyTextureKey } from './textures';
 import { perf } from './perf';
+import { AFFIX_REWARD_MULT, type Affix } from '../data/affixes';
 
 /** Per-boss aura glow color (independent of the tinted body silhouette). */
 const BOSS_AURA: Record<BossKind, number> = {
@@ -76,18 +77,19 @@ export class Enemy {
     speedScale = 1,
     startCol = map.spawnCol,
     parent?: Phaser.GameObjects.Container,
+    affix?: Affix,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.type = type;
-    this.hp = Math.round(type.hp * hpScale);
+    this.hp = Math.round(type.hp * hpScale * (affix?.hpMult ?? 1));
     this.maxHp = this.hp;
     this.damage = type.damage;
-    this.reward = type.reward;
+    this.reward = Math.round(type.reward * (affix ? AFFIX_REWARD_MULT : 1));
     this.armor = type.armor;
-    this.speedScale = speedScale;
-    this.shield = type.shield ?? 0;
+    this.speedScale = speedScale * (affix?.speedMult ?? 1);
+    this.shield = (type.shield ?? 0) + (affix ? Math.round(this.hp * affix.shieldFrac) : 0);
     this.maxShield = this.shield;
 
     this.laneIndex = laneIndex;
@@ -133,6 +135,13 @@ export class Enemy {
         repeat: -1,
         ease: 'Sine.easeInOut',
       });
+    }
+
+    // Elite affix marker: a coloured ring around the silhouette.
+    if (affix) {
+      children.push(
+        scene.add.circle(0, 0, bodySize * 0.6).setStrokeStyle(2, affix.color, 0.95),
+      );
     }
 
     const barWidth = Math.floor(ts * 0.7);

@@ -55,6 +55,7 @@ import {
 import { claimableCount } from '../data/achievements';
 import { isFeatureUnlocked } from '../data/progression';
 import { rollBoons, type Boon, type BoonCtx } from '../data/boons';
+import { AFFIX_MIN_WAVE } from '../data/affixes';
 import { perf } from '../systems/perf';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
@@ -2372,9 +2373,10 @@ export class GameScene extends Phaser.Scene {
       if (et.boss) boss = et.name;
       else if (!types.includes(et.name)) types.push(et.name);
     }
-    if (boss) return `⚠ BOSS NEXT: ${boss}`;
+    const elite = this.mode === 'endless' && this.waves.currentWaveIndex + 2 >= AFFIX_MIN_WAVE ? '⚡ ' : '';
+    if (boss) return `${elite}⚠ BOSS NEXT: ${boss}`;
     const list = types.slice(0, 3).join(', ');
-    return list ? `Coming up: ${list}` : '';
+    return list ? `${elite}Coming up: ${list}` : '';
   }
 
   private tickIntermission(dt: number): void {
