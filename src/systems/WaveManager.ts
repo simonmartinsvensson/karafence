@@ -7,6 +7,8 @@ import { rollAffix } from '../data/affixes';
 import {
   buildWaveDef,
   waveScaling,
+  MEGA_BOSS_EVERY,
+  MEGA_BOSS_HP_MULT,
   type WaveProfile,
 } from '../data/waves';
 
@@ -174,19 +176,24 @@ export class WaveManager {
     // per-wave difficulty scaling only applies to non-boss enemies.
     const speedScale =
       (isBoss ? 1 : this.speedScale) * this.map.enemySpeedMultiplier;
-    // Deep endless: non-boss enemies may spawn "elite" with a buffing affix.
+    // Deep endless: non-boss enemies may spawn "elite" with a buffing affix;
+    // the boss arrives as a "mega" checkpoint every MEGA_BOSS_EVERY waves.
     const affix = !isBoss && this.endless ? rollAffix(this.currentWaveNumber) : null;
+    const mega = isBoss && this.endless && this.currentWaveNumber % MEGA_BOSS_EVERY === 0;
+    const hpScale =
+      (isBoss ? this.bossHpScale : this.hpScale) * this.enemyHpMult * (mega ? MEGA_BOSS_HP_MULT : 1);
     const enemy = new Enemy(
       this.scene,
       this.map,
       this.layout,
       type,
       laneIndex,
-      (isBoss ? this.bossHpScale : this.hpScale) * this.enemyHpMult,
+      hpScale,
       speedScale,
       startCol ?? this.map.spawnCol,
       this.enemyLayer,
       affix ?? undefined,
+      mega,
     );
     this.enemies.add(enemy);
     if (isBoss) this.callbacks.onBossSpawn?.(enemy);

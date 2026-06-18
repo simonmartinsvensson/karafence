@@ -75,6 +75,11 @@ export function nextEndlessMilestone(claimed: number[]): { wave: number; fame: n
   return { wave: w, fame: endlessMilestoneFame(w) };
 }
 
+/** Deep-endless "mega boss": every 25th wave the rotating boss arrives as a
+ *  much tankier checkpoint version (×HP, bigger, gold aura, 2× reward). */
+export const MEGA_BOSS_EVERY = 25;
+export const MEGA_BOSS_HP_MULT = 3;
+
 /** Endless mode: never really ends; ramps forever on a standard map. */
 export const ENDLESS_PROFILE: WaveProfile = {
   waveCount: 999,

@@ -22,6 +22,8 @@ const BOSS_AURA: Record<BossKind, number> = {
  */
 export class Enemy {
   readonly type: EnemyType;
+  /** Deep-endless mega-boss variant (bigger, tankier, gold aura). */
+  mega = false;
   hp: number;
   readonly maxHp: number;
   readonly damage: number;
@@ -78,15 +80,17 @@ export class Enemy {
     startCol = map.spawnCol,
     parent?: Phaser.GameObjects.Container,
     affix?: Affix,
+    mega = false,
   ) {
     this.scene = scene;
     this.map = map;
     this.layout = layout;
     this.type = type;
+    this.mega = mega;
     this.hp = Math.round(type.hp * hpScale * (affix?.hpMult ?? 1));
     this.maxHp = this.hp;
     this.damage = type.damage;
-    this.reward = Math.round(type.reward * (affix ? AFFIX_REWARD_MULT : 1));
+    this.reward = Math.round(type.reward * (affix ? AFFIX_REWARD_MULT : 1) * (mega ? 2 : 1));
     this.armor = type.armor;
     this.speedScale = speedScale * (affix?.speedMult ?? 1);
     this.shield = (type.shield ?? 0) + (affix ? Math.round(this.hp * affix.shieldFrac) : 0);
@@ -100,7 +104,7 @@ export class Enemy {
     const ts = layout.tileSize;
     const start = tileToWorld(layout, this.col, map.laneRows[laneIndex]);
 
-    const bodySize = Math.max(6, Math.floor(ts * type.size));
+    const bodySize = Math.max(6, Math.floor(ts * type.size * (mega ? 1.5 : 1)));
     this.bobAmp = bodySize * 0.12;
     this.baseColor = type.color;
     // Drawn character silhouette, tinted to the enemy's color.
@@ -123,7 +127,7 @@ export class Enemy {
     // Bosses get a soft pulsing aura behind the silhouette in their own color.
     if (type.boss) {
       const aura = scene.add
-        .circle(0, 0, bodySize * 0.78, BOSS_AURA[type.boss], 0.45)
+        .circle(0, 0, bodySize * (mega ? 0.95 : 0.78), mega ? 0xffd700 : BOSS_AURA[type.boss], mega ? 0.55 : 0.45)
         .setBlendMode(Phaser.BlendModes.ADD);
       children.push(aura);
       this.auraTween = scene.tweens.add({

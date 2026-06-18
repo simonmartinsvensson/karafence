@@ -1700,10 +1700,10 @@ export class GameScene extends Phaser.Scene {
     const bg = this.add.rectangle(0, 0, 10, 9, 0x140509, 0.97).setStrokeStyle(2, 0xff3355, 0.95);
     this.bossBarFill = this.add.rectangle(0, 0, 10, 9, 0xff2d55).setOrigin(0, 0.5);
     this.bossBarLabel = this.add
-      .text(0, 0, boss.type.name, {
+      .text(0, 0, boss.mega ? `★ MEGA ${boss.type.name}` : boss.type.name, {
         fontFamily: 'monospace',
         fontSize: '10px',
-        color: '#ffffff',
+        color: boss.mega ? '#ffd700' : '#ffffff',
         fontStyle: 'bold',
       })
       .setOrigin(0.5)
@@ -1734,7 +1734,7 @@ export class GameScene extends Phaser.Scene {
     const shielded = boss.shieldRatio > 0;
     this.bossBarFill.scaleX = shielded ? boss.shieldRatio : boss.hpRatio;
     this.bossBarFill.fillColor = shielded ? 0x74c0fc : 0xff2d55;
-    this.bossBarLabel.setText(boss.type.name + (shielded ? '  [SHIELD]' : ''));
+    this.bossBarLabel.setText((boss.mega ? '★ MEGA ' : '') + boss.type.name + (shielded ? '  [SHIELD]' : ''));
   }
 
   private clearBoss(): void {
