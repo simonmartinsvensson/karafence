@@ -91,6 +91,7 @@ export function loadMeta(): MetaProgress {
     fame: typeof saved.fame === 'number' ? saved.fame : 0,
     towerBranches: mergeBranches(base.towerBranches, saved.towerBranches),
     branchUnlocks: { ...saved.branchUnlocks },
+    branchEncore: { ...saved.branchEncore },
     researchUnlocks: { ...saved.researchUnlocks },
     starGrant: typeof saved.starGrant === 'number' ? saved.starGrant : 0,
     platinum: typeof saved.platinum === 'number' ? saved.platinum : 0,

@@ -151,6 +151,37 @@ export function branchBuyBlock(
   return null;
 }
 
+// --- Encore: a platinum-gated boost beyond a maxed branch (doubles its effect) ---
+
+export function isBranchEncore(meta: MetaProgress, tower: TowerTypeKey, branch: TowerBranchKey): boolean {
+  return meta.branchEncore?.[`${tower}:${branch}`] === true;
+}
+
+/** Fame cost of a branch's encore (continues the level curve, ~2.5× the last). */
+export function branchEncoreCost(b: TowerBranch): number {
+  return branchFameCost(b, b.maxLevel + 2);
+}
+
+/** Whether the encore can be bought now (maxed + prestiged + not yet owned). */
+export function canBuyEncore(meta: MetaProgress, tower: TowerTypeKey, b: TowerBranch): boolean {
+  return (
+    branchLevel(meta, tower, b.key) >= b.maxLevel &&
+    (meta.platinum ?? 0) > 0 &&
+    !isBranchEncore(meta, tower, b.key)
+  );
+}
+
+/** Spend Fame to buy a branch's encore. Returns true on success. */
+export function buyBranchEncore(meta: MetaProgress, tower: TowerTypeKey, branch: TowerBranchKey): boolean {
+  const b = branchOf(tower, branch);
+  if (!b || !canBuyEncore(meta, tower, b)) return false;
+  const cost = branchEncoreCost(b);
+  if (meta.fame < cost) return false;
+  meta.fame -= cost;
+  (meta.branchEncore ??= {})[`${tower}:${branch}`] = true;
+  return true;
+}
+
 /** Spend Fame to raise a branch one level. Returns true on success. */
 export function buyBranchLevel(meta: MetaProgress, tower: TowerTypeKey, branch: TowerBranchKey): boolean {
   const b = branchOf(tower, branch);
@@ -168,6 +199,7 @@ export function towerFameInvested(meta: MetaProgress, tower: TowerTypeKey): numb
   for (const b of TOWER_META_TREE[tower].branches) {
     const lvl = branchLevel(meta, tower, b.key);
     for (let l = 1; l <= lvl; l++) sum += branchFameCost(b, l);
+    if (isBranchEncore(meta, tower, b.key)) sum += branchEncoreCost(b);
   }
   return sum;
 }
@@ -177,6 +209,7 @@ export function respecTower(meta: MetaProgress, tower: TowerTypeKey): number {
   const refund = Math.round(towerFameInvested(meta, tower) * RESPEC_REFUND);
   meta.fame += refund;
   meta.towerBranches[tower] = { A: 0, B: 0, C: 0 };
+  for (const b of TOWER_META_TREE[tower].branches) delete meta.branchEncore?.[`${tower}:${b.key}`];
   return refund;
 }
 
@@ -204,10 +237,12 @@ export function towerBonusFor(meta: MetaProgress, key: TowerTypeKey): TowerBonus
     for (const b of def.branches) {
       const lvl = branchLevel(meta, key, b.key);
       if (lvl <= 0) continue;
-      if (b.axis === 'damage') damageMult *= 1 + b.perLevel * lvl;
-      else if (b.axis === 'range') rangeAdd += b.perLevel * lvl;
-      else if (b.axis === 'attackSpeed') attackSpeedMult *= 1 + b.perLevel * lvl;
-      else if (b.axis === 'aura') auraMult *= 1 + b.perLevel * lvl;
+      // Encore (platinum-gated, branch maxed) doubles this branch's contribution.
+      const f = lvl >= b.maxLevel && isBranchEncore(meta, key, b.key) ? 2 : 1;
+      if (b.axis === 'damage') damageMult *= 1 + b.perLevel * lvl * f;
+      else if (b.axis === 'range') rangeAdd += b.perLevel * lvl * f;
+      else if (b.axis === 'attackSpeed') attackSpeedMult *= 1 + b.perLevel * lvl * f;
+      else if (b.axis === 'aura') auraMult *= 1 + b.perLevel * lvl * f;
       if (b.capstone && lvl >= b.maxLevel) capstones.push(b.capstone.flag);
     }
   }

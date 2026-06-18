@@ -42,6 +42,10 @@ import {
   branchBuyBlock,
   buyBranchLevel,
   respecTower,
+  canBuyEncore,
+  buyBranchEncore,
+  branchEncoreCost,
+  isBranchEncore,
 } from '../data/towerMeta';
 import {
   ACHIEVEMENTS,
@@ -86,7 +90,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-18 · Prestige New Game+ skip';
+const LAST_PATCH = '2026-06-18 · Encore branch upgrades (✦)';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -1262,6 +1266,12 @@ export class MenuScene extends Phaser.Scene {
           }
         } else if (j <= lvl) {
           state = 'owned';
+          // The top node of a maxed branch doubles as its platinum-gated "encore".
+          if (j === b.maxLevel && canBuyEncore(this.meta, tower, b)) {
+            state = 'next';
+            costLabel = `✦🎤${branchEncoreCost(b)}`;
+            action = () => { if (buyBranchEncore(this.meta, tower, b.key)) this.commitMeta('levelUp'); };
+          }
         } else if (j === lvl + 1) {
           if (block === 'needsDeepStar') {
             const can = avail >= b.deepStars;
@@ -1286,9 +1296,13 @@ export class MenuScene extends Phaser.Scene {
         this.drawBranchNode(x, y, r, { state, accent, capstone: isCap, costLabel, action });
       }
 
-      // Capstone effect caption under the column (so the payoff is legible).
+      // Caption under the column: capstone effect (if any) + encore marker.
+      const enc = isBranchEncore(this.meta, tower, b.key);
+      const capY = firstY + (b.maxLevel - 1) * gap + r + 11;
       if (b.capstone) {
-        this.modalText(x, firstY + (b.maxLevel - 1) * gap + r + 11, b.capstone.label, '#c9b6ff', 8);
+        this.modalText(x, capY, enc ? `${b.capstone.label} · ✦×2` : b.capstone.label, enc ? '#ffd700' : '#c9b6ff', 8);
+      } else if (enc) {
+        this.modalText(x, capY, `✦×2 ${this.branchAxisShort(b.axis)}`, '#ffd700', 8);
       }
     });
 

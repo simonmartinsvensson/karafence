@@ -133,6 +133,8 @@ export interface MetaProgress {
   towerBranches: Record<TowerTypeKey, Record<TowerBranchKey, number>>;
   /** Star-gated unlocks: `${tower}:${branch}` and `${tower}:${branch}:deep`. */
   branchUnlocks: Partial<Record<string, boolean>>;
+  /** Per-branch "encore" upgrades (platinum-gated, doubles the branch effect). */
+  branchEncore: Partial<Record<string, boolean>>;
   /** Star-gated deep-tier unlocks per research node. */
   researchUnlocks: Partial<Record<MetaUpgradeKey, boolean>>;
   /** Stars granted by migration (legacy fan-stars), counted as earned. */
@@ -181,6 +183,7 @@ export function defaultMeta(): MetaProgress {
     fame: 0,
     towerBranches: emptyBranches(),
     branchUnlocks: {},
+    branchEncore: {},
     researchUnlocks: {},
     starGrant: 0,
     platinum: 0,
