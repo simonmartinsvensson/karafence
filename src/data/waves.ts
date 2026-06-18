@@ -53,16 +53,27 @@ export const BOSS_ROTATION: BossKind[] = [
 
 /**
  * One-time Fame rewards for the *first* time the player reaches each Endless
- * wave (a milestone ladder that gives the endless grind a sense of progress
- * beyond the best-wave number). Paid once and remembered in
- * `meta.endlessMilestones`. Ascending by wave.
+ * wave — a milestone every 10 waves from 20, **forever** (so deep runs keep
+ * paying out, not just up to wave 50). Each is paid once, remembered in
+ * `meta.endlessMilestones`. Fame scales with the wave (linear, no runaway).
  */
-export const ENDLESS_MILESTONES: { wave: number; fame: number }[] = [
-  { wave: 20, fame: 150 },
-  { wave: 30, fame: 300 },
-  { wave: 40, fame: 600 },
-  { wave: 50, fame: 1200 },
-];
+export function endlessMilestoneFame(wave: number): number {
+  return Math.round(wave * 18); // 20→360, 50→900, 100→1800, 150→2700
+}
+
+/** Every milestone at or below `wave` (ascending). */
+export function endlessMilestonesUpTo(wave: number): { wave: number; fame: number }[] {
+  const out: { wave: number; fame: number }[] = [];
+  for (let w = 20; w <= wave; w += 10) out.push({ wave: w, fame: endlessMilestoneFame(w) });
+  return out;
+}
+
+/** The next milestone the player hasn't claimed yet (for the menu tease). */
+export function nextEndlessMilestone(claimed: number[]): { wave: number; fame: number } {
+  let w = 20;
+  while (claimed.includes(w)) w += 10;
+  return { wave: w, fame: endlessMilestoneFame(w) };
+}
 
 /** Endless mode: never really ends; ramps forever on a standard map. */
 export const ENDLESS_PROFILE: WaveProfile = {

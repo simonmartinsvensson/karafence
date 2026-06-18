@@ -24,7 +24,7 @@ import {
   type UpgradePathKey,
 } from '../data/towers';
 import { BOSS_CONFIG, ENEMY_TYPES, type EnemyType } from '../data/enemies';
-import { ENDLESS_PROFILE, ENDLESS_MILESTONES, buildWaveDef, type WaveProfile } from '../data/waves';
+import { ENDLESS_PROFILE, endlessMilestonesUpTo, buildWaveDef, type WaveProfile } from '../data/waves';
 import {
   metaModifiers,
   defaultMeta,
@@ -45,6 +45,7 @@ import {
   saveRun,
   clearRun,
   saveEndlessBest,
+  saveEndlessBestScore,
   loadEndlessBest,
   loadStoryProgress,
   saveStoryProgress,
@@ -214,6 +215,8 @@ export class GameScene extends Phaser.Scene {
   private endGained = 0;
   private endBestWave = 0; // endless: best wave after this run
   private endNewRecord = false; // endless: did this run set a new best?
+  private endScore = 0; // endless: this run's score
+  private endBestScore = 0; // endless: best score after this run
   private nextChapterId: LevelId | null = null; // story: chapter to advance to
   // Fame payout for the just-ended run (shown on the end screen).
   private endFanGain = 0;
@@ -293,6 +296,8 @@ export class GameScene extends Phaser.Scene {
     this.endState = 'none';
     this.endBestWave = 0;
     this.endNewRecord = false;
+    this.endScore = 0;
+    this.endBestScore = 0;
     this.nextChapterId = null;
     this.endFanGain = 0;
     this.banked = false;
@@ -2187,8 +2192,8 @@ export class GameScene extends Phaser.Scene {
     if (this.mode === 'endless') {
       const reached = this.waves.currentWaveNumber;
       const claimed = this.meta.endlessMilestones;
-      for (const ms of ENDLESS_MILESTONES) {
-        if (reached >= ms.wave && !claimed.includes(ms.wave)) {
+      for (const ms of endlessMilestonesUpTo(reached)) {
+        if (!claimed.includes(ms.wave)) {
           claimed.push(ms.wave);
           milestoneFans += ms.fame;
           this.endMilestoneLines.push(`🏅 Wave ${ms.wave} reached — +${ms.fame} Fame!`);
@@ -2363,6 +2368,9 @@ export class GameScene extends Phaser.Scene {
       const reached = this.waves.currentWaveNumber;
       this.endNewRecord = reached > loadEndlessBest();
       this.endBestWave = saveEndlessBest(reached);
+      // A single score rewards going deep AND playing well (kills + combo).
+      this.endScore = reached * 1000 + this.runKills * 5 + this.highestCombo * 25;
+      this.endBestScore = saveEndlessBestScore(this.endScore);
     }
 
     this.endState = 'gameover';
@@ -2478,18 +2486,19 @@ export class GameScene extends Phaser.Scene {
   private renderEndlessSurvived(line: (dy: number, s: string, sz: number, c: string) => void): void {
     const cx = this.sw / 2;
     const reached = this.waves.currentWaveNumber;
-    line(-104, 'YOU REACHED', 22, '#4dd2ff');
-    line(-70, `WAVE ${reached}`, 34, '#ffd43b');
-    line(-26, `Enemies silenced: ${this.runKills}`, 13, '#cdeac0');
-    line(-6, `Gold earned: ${this.goldEarned}g`, 13, '#ffd166');
-    line(14, `Highest combo: x${this.highestCombo}`, 13, '#ff9ed8');
+    const newScore = this.endScore >= this.endBestScore;
+    line(-110, 'YOU REACHED', 20, '#4dd2ff');
+    line(-78, `WAVE ${reached}`, 32, '#ffd43b');
+    line(-48, `${newScore ? '⭐ ' : ''}Score ${this.endScore.toLocaleString()}`, 15, newScore ? '#ffd43b' : '#cdeac0');
+    line(-22, `Enemies silenced: ${this.runKills}`, 12, '#cdeac0');
+    line(-4, `Highest combo: x${this.highestCombo}`, 12, '#ff9ed8');
     line(
-      44,
-      this.endNewRecord ? `🏆 New best — wave ${this.endBestWave}!` : `Best: wave ${this.endBestWave}`,
-      13,
+      18,
+      this.endNewRecord ? `🏆 New best — wave ${this.endBestWave}!` : `Best: wave ${this.endBestWave} · score ${this.endBestScore.toLocaleString()}`,
+      12,
       this.endNewRecord ? '#ffd43b' : '#777f8f',
     );
-    this.fanSummaryLines().forEach((s, i) => line(66 + i * 18, s, 12, '#ff9ed8'));
+    this.fanSummaryLines().forEach((s, i) => line(40 + i * 18, s, 12, '#ff9ed8'));
     const y = this.endButtonY();
     const gap = 12;
     const bw = Math.min(170, (this.sw - 24 - gap) / 2);

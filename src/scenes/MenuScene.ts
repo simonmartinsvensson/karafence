@@ -53,7 +53,7 @@ import {
 } from '../data/achievements';
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
-import { ENDLESS_MILESTONES } from '../data/waves';
+import { nextEndlessMilestone } from '../data/waves';
 import { makeTreeNode } from '../ui/treeNode';
 import { ART_CREDITS } from '../systems/spriteOverrides';
 import {
@@ -86,7 +86,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-18 · Deep-endless perf + 3×/4× speed';
+const LAST_PATCH = '2026-06-18 · Endless milestones∞ + score';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -681,8 +681,8 @@ export class MenuScene extends Phaser.Scene {
       // Up to two flavour lines: the next unclaimed milestone reward + today's
       // Setlist. Stacked so neither overruns the card's Play button.
       const flavor: { text: string; color: string }[] = [];
-      const nextMs = ENDLESS_MILESTONES.find((ms) => !this.meta.endlessMilestones.includes(ms.wave));
-      if (nextMs) flavor.push({ text: `🏅 Next: wave ${nextMs.wave} → +${nextMs.fame} Fame`, color: '#ffd166' });
+      const nextMs = nextEndlessMilestone(this.meta.endlessMilestones);
+      flavor.push({ text: `🏅 Next: wave ${nextMs.wave} → +${nextMs.fame} Fame`, color: '#ffd166' });
       if (isFeatureUnlocked('dailies')) {
         const sl = pickSetlist(dateKey(new Date()));
         if (sl.fanMult > 1) flavor.push({ text: `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, color: '#ff9ed8' });

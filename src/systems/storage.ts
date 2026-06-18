@@ -25,6 +25,7 @@ const SEEN_SYNERGY_KEY = 'karafence:seensynergy:v1';
 const UNLOCK_HIGH_WATER_KEY = 'karafence:maxchapters:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
+const ENDLESS_SCORE_KEY = 'karafence:endless:bestscore';
 const STORY_KEY = 'karafence:story:progress';
 
 /** One placed tower, captured for resume. */
@@ -180,6 +181,18 @@ export function loadEndlessBest(): number {
 export function saveEndlessBest(wave: number): number {
   const best = Math.max(loadEndlessBest(), Math.floor(wave));
   write(ENDLESS_BEST_KEY, best);
+  return best;
+}
+
+export function loadEndlessBestScore(): number {
+  const n = read<number>(ENDLESS_SCORE_KEY);
+  return typeof n === 'number' && n > 0 ? n : 0;
+}
+
+/** Persist a new endless best score only if it beats the stored one. */
+export function saveEndlessBestScore(score: number): number {
+  const best = Math.max(loadEndlessBestScore(), Math.floor(score));
+  write(ENDLESS_SCORE_KEY, best);
   return best;
 }
 
