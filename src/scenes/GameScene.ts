@@ -57,6 +57,8 @@ import { isFeatureUnlocked } from '../data/progression';
 import { rollBoons, type Boon, type BoonCtx } from '../data/boons';
 import { AFFIX_MIN_WAVE } from '../data/affixes';
 import { perf } from '../systems/perf';
+import { skin } from '../systems/skin';
+import { SKIN_BY_KEY } from '../data/skins';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
 import { pressFeedback } from '../systems/touch';
@@ -324,6 +326,7 @@ export class GameScene extends Phaser.Scene {
 
     // Load meta-progression and apply its permanent modifiers to this run.
     this.meta = loadMeta();
+    skin.tint = SKIN_BY_KEY[this.meta.activeSkin]?.tint ?? 0xffffff; // active cosmetic skin
     this.endlessBestAtStart = this.mode === 'endless' ? loadEndlessBest() : 0;
     const mods = metaModifiers(this.meta);
     this.runMods = mods;

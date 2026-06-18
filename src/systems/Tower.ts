@@ -4,6 +4,7 @@ import type { Enemy } from './Enemy';
 import { Projectile } from './Projectile';
 import { audio } from './audio';
 import { TX, towerTextureKey } from './textures';
+import { skin } from './skin';
 import type { TowerSave } from './storage';
 import {
   type TowerType,
@@ -141,7 +142,8 @@ export class Tower {
       .setBlendMode(Phaser.BlendModes.ADD);
     this.body = scene.add
       .sprite(0, 0, towerTextureKey(type.key))
-      .setDisplaySize(size, size);
+      .setDisplaySize(size, size)
+      .setTint(skin.tint); // cosmetic skin recolour (0xffffff = none)
     this.bodyScale = this.body.scaleX;
     this.container = scene.add.container(this.worldX, this.worldY, [shadow, this.glow, this.body]);
     this.layers.towers.add(this.container);

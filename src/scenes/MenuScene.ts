@@ -58,6 +58,7 @@ import {
 import { rollDaily, dateKey, yesterdayKey, questById } from '../data/quests';
 import { pickSetlist } from '../data/setlist';
 import { nextEndlessMilestone } from '../data/waves';
+import { SKINS } from '../data/skins';
 import { makeTreeNode } from '../ui/treeNode';
 import { ART_CREDITS } from '../systems/spriteOverrides';
 import {
@@ -90,7 +91,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-18 · Encore branch upgrades (✦)';
+const LAST_PATCH = '2026-06-18 · Cosmetic tower skins';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -107,7 +108,7 @@ export class MenuScene extends Phaser.Scene {
   private meta!: MetaProgress;
   private root!: Phaser.GameObjects.Container;
   /** Active tab in the Upgrades modal. */
-  private metaTab: 'research' | 'towers' | 'unlocks' = 'research';
+  private metaTab: 'research' | 'towers' | 'unlocks' | 'skins' = 'research';
   /** When set, the Towers tab shows this tower's branch sub-panel. */
   private branchTower: TowerTypeKey | null = null;
   /** Active tab in the Records modal. */
@@ -966,6 +967,7 @@ export class MenuScene extends Phaser.Scene {
     const rowCount =
       this.metaTab === 'research' ? META_UPGRADES.length :
       this.metaTab === 'towers' ? TOWER_LIST.length :
+      this.metaTab === 'skins' ? SKINS.length :
       TOWER_LIST.length + 1; // unlocks: towers + 2× speed
     const headH = 96;
     const closeArea = TOUCH_MIN + 14;
@@ -994,11 +996,12 @@ export class MenuScene extends Phaser.Scene {
     // Tabs: Research (Fame) / Towers (Fame branches, gated) / Unlocks (Stars).
     // The branch tab only appears once branch trees have unlocked; tabs lay out
     // evenly so the header stays balanced with two tabs or three.
-    const tabs: { label: string; key: 'research' | 'towers' | 'unlocks' }[] = [
+    const tabs: { label: string; key: 'research' | 'towers' | 'unlocks' | 'skins' }[] = [
       { label: 'Research', key: 'research' },
     ];
     if (isFeatureUnlocked('branches')) tabs.push({ label: 'Towers', key: 'towers' });
     tabs.push({ label: 'Unlocks', key: 'unlocks' });
+    tabs.push({ label: 'Skins', key: 'skins' });
     if (this.metaTab === 'towers' && !isFeatureUnlocked('branches')) this.metaTab = 'research';
 
     const tabW = Math.min(120, (w - 40) / tabs.length);
@@ -1020,6 +1023,7 @@ export class MenuScene extends Phaser.Scene {
     const rowTop = top + headH;
     if (this.metaTab === 'research') this.drawResearchRows(left, w, rowTop, rowH);
     else if (this.metaTab === 'towers') this.drawTowerRows(left, w, rowTop, rowH);
+    else if (this.metaTab === 'skins') this.drawSkinRows(left, w, rowTop, rowH);
     else this.drawUnlockRows(left, w, rowTop, rowH);
 
     this.modal.push(
@@ -1137,6 +1141,33 @@ export class MenuScene extends Phaser.Scene {
       this.metaRow(left, w, rowY, rowH, `${tower.icon} ${tower.name}`, summary, 'View ▸', true, () => {
         this.branchTower = tower.key;
         this.openMetaPanel();
+      });
+    });
+  }
+
+  /** Skins tab: cosmetic tower recolours bought with Fame (power-neutral). */
+  private drawSkinRows(left: number, w: number, rowTop: number, rowH: number): void {
+    const fame = Math.floor(this.meta.fame);
+    SKINS.forEach((s, i) => {
+      const rowY = rowTop + i * rowH;
+      const owned = this.meta.skinsOwned.includes(s.key);
+      const active = this.meta.activeSkin === s.key;
+      // Colour swatch so the recolour is previewable.
+      this.modal.push(
+        this.add.rectangle(left + 24, rowY, 16, 16, s.tint).setStrokeStyle(1, 0xffffff, 0.5).setDepth(311),
+      );
+      const subtitle = active ? '✓ Active' : owned ? 'Owned' : `🎤 ${s.cost}`;
+      const label = active ? 'Active' : owned ? 'Select' : 'Buy';
+      const enabled = !active && (owned || fame >= s.cost);
+      this.metaRow(left + 28, w - 28, rowY, rowH, s.name, subtitle, label, enabled, () => {
+        if (active) return;
+        if (!owned) {
+          if (fame < s.cost) return;
+          this.meta.fame -= s.cost;
+          this.meta.skinsOwned.push(s.key);
+        }
+        this.meta.activeSkin = s.key;
+        this.commitMeta('gold');
       });
     });
   }

@@ -100,6 +100,8 @@ export function loadMeta(): MetaProgress {
     lastSeen: typeof saved.lastSeen === 'number' ? saved.lastSeen : 0,
     daily: saved.daily,
     endlessMilestones: Array.isArray(saved.endlessMilestones) ? saved.endlessMilestones : [],
+    skinsOwned: Array.isArray(saved.skinsOwned) ? saved.skinsOwned : ['default'],
+    activeSkin: typeof saved.activeSkin === 'string' ? saved.activeSkin : 'default',
     lifetime: { ...base.lifetime, ...saved.lifetime },
   };
 

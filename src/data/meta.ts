@@ -151,6 +151,9 @@ export interface MetaProgress {
   daily?: DailyState;
   /** Endless wave milestones already paid out (one-time Fame rewards). */
   endlessMilestones: number[];
+  /** Cosmetic tower-skin keys owned, and the active one. */
+  skinsOwned: string[];
+  activeSkin: string;
   lifetime: LifetimeStats;
 
   // --- Legacy fields, read only during save migration (see storage.ts). ---
@@ -191,6 +194,8 @@ export function defaultMeta(): MetaProgress {
     achievements: {},
     lastSeen: 0,
     endlessMilestones: [],
+    skinsOwned: ['default'],
+    activeSkin: 'default',
     lifetime: { kills: 0, waves: 0, highestCombo: 0 },
   };
 }
