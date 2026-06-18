@@ -86,7 +86,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-18 · Mega-boss every 25 waves';
+const LAST_PATCH = '2026-06-18 · Prestige New Game+ skip';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -866,12 +866,19 @@ export class MenuScene extends Phaser.Scene {
     return (loadStoryProgress()?.completedChapters ?? []).includes(last);
   }
 
+  /** New Game+ skip: each prestige starts the campaign further in (5 chapters
+   *  per ✦), so repeat runs aren't a full 60-level slog. Always leaves ≥10 to play. */
+  private prestigeSkip(platinum: number): number {
+    return Math.min(platinum * 5, CHAPTER_ORDER.length - 10);
+  }
+
   private requestPrestige(): void {
     const next = (this.meta.platinum ?? 0) + 1;
+    const skip = this.prestigeSkip(next);
     this.confirmModal(
       'Go Platinum?',
       [
-        `Reset campaign progress and replay all ${CHAPTER_ORDER.length} levels.`,
+        `New Game+: replay from chapter ${skip + 1} (earlier chapters skipped).`,
         `Permanent: +15% Fame & gold per ✦ (you'll be ✦${next}) + pick a perk.`,
         'Your Fame, upgrades, stars & unlocks are all kept.',
       ],
@@ -922,11 +929,19 @@ export class MenuScene extends Phaser.Scene {
     // Prestige wipes campaign progress; lock in the all-cleared high-water mark
     // first so every unlocked feature stays available afterwards.
     saveUnlockHighWater(CHAPTER_ORDER.length);
-    this.meta.platinum = (this.meta.platinum ?? 0) + 1;
-    // Reset campaign unlock progress (replay all levels); keep all meta.
+    const newPlat = (this.meta.platinum ?? 0) + 1;
+    this.meta.platinum = newPlat;
+    // New Game+: auto-complete the early chapters and resume deeper, so prestige
+    // isn't a full replay. Stars already earned are kept; skipped chapters stay
+    // replayable from the Levels grid.
+    const skip = this.prestigeSkip(newPlat);
     clearStoryProgress();
     CHAPTER_ORDER.forEach((id) => clearRun('story', id));
-    saveStoryProgress({ levelId: CHAPTER_ORDER[0], completedChapters: [], wavesCleared: 0 });
+    saveStoryProgress({
+      levelId: CHAPTER_ORDER[skip],
+      completedChapters: CHAPTER_ORDER.slice(0, skip),
+      wavesCleared: 0,
+    });
     saveMeta(this.meta);
     this.rebuild();
   }
