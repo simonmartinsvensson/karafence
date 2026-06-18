@@ -3,6 +3,7 @@ import type { MapDefinition } from '../types/map';
 import type { BossKind, EnemyType } from '../data/enemies';
 import { type GridLayout, tileToWorld } from './grid';
 import { enemyTextureKey } from './textures';
+import { perf } from './perf';
 
 /** Per-boss aura glow color (independent of the tinted body silhouette). */
 const BOSS_AURA: Record<BossKind, number> = {
@@ -109,9 +110,13 @@ export class Enemy {
     const children: Phaser.GameObjects.GameObject[] = [];
 
     // A soft ground shadow grounds the silhouette (drawn behind everything).
-    children.push(
-      scene.add.ellipse(0, bodySize * 0.42, bodySize * 0.62, bodySize * 0.22, 0x000000, 0.32),
-    );
+    // Skipped under heavy load — semi-transparent overdraw × hundreds of enemies
+    // is a big fill-rate cost at deep endless waves.
+    if (!perf.lowFx) {
+      children.push(
+        scene.add.ellipse(0, bodySize * 0.42, bodySize * 0.62, bodySize * 0.22, 0x000000, 0.32),
+      );
+    }
 
     // Bosses get a soft pulsing aura behind the silhouette in their own color.
     if (type.boss) {

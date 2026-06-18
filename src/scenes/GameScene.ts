@@ -53,6 +53,7 @@ import {
 } from '../systems/storage';
 import { claimableCount } from '../data/achievements';
 import { isFeatureUnlocked } from '../data/progression';
+import { perf } from '../systems/perf';
 import { audio } from '../systems/audio';
 import { haptics } from '../systems/haptics';
 import { pressFeedback } from '../systems/touch';
@@ -279,6 +280,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionUi = undefined;
     this.startPrompt = undefined;
     this.gameSpeed = 1;
+    perf.lowFx = false;
 
     this.activeBoss = null;
     this.bossAbilityTimer = 0;
@@ -546,6 +548,11 @@ export class GameScene extends Phaser.Scene {
     // Movement + tick functions scale by gameSpeed; the spawn/freeze clock and
     // tweens are scaled separately via time/tweens.timeScale in cycleSpeed().
     const dt = (delta / 1000) * this.gameSpeed;
+    // Adaptive FX: drop cosmetic overdraw once the board gets crowded (deep
+    // endless), with hysteresis so it doesn't flicker on/off each frame.
+    const alive = this.waves.enemies.size;
+    if (!perf.lowFx && alive > 55) perf.lowFx = true;
+    else if (perf.lowFx && alive < 35) perf.lowFx = false;
     this.waves.update(dt);
     this.towers.update(dt);
     this.tickCombo(dt);
@@ -1219,6 +1226,9 @@ export class GameScene extends Phaser.Scene {
 
   /** A short particle burst tinted to the enemy's color, on its death. */
   private deathBurst(x: number, y: number, color: number): void {
+    // Under heavy load, skip the burst entirely — at deep endless waves dozens
+    // of these per second are the worst fill-rate offender.
+    if (perf.lowFx) return;
     const emitter = this.add.particles(x, y, 'spark', {
       lifespan: 480,
       speed: { min: 30, max: 130 },
@@ -1420,10 +1430,12 @@ export class GameScene extends Phaser.Scene {
 
   /** Toggle 1×/2× game speed — scales movement, the spawn clock and tweens. */
   private cycleSpeed(): void {
-    this.gameSpeed = this.gameSpeed === 1 ? 2 : 1;
+    // 1× → 2× → 3× → 4× → 1×. Higher tiers make grinding deep endless bearable.
+    const tiers = [1, 2, 3, 4];
+    this.gameSpeed = tiers[(tiers.indexOf(this.gameSpeed) + 1) % tiers.length];
     this.time.timeScale = this.gameSpeed;
     this.tweens.timeScale = this.gameSpeed;
-    this.speedBtn?.text.setText(this.gameSpeed === 2 ? '▶▶ 2×' : '▶ 1×');
+    this.speedBtn?.text.setText(this.gameSpeed === 1 ? '▶ 1×' : `▶▶ ${this.gameSpeed}×`);
   }
 
   /** A venue-signage bar button (neon glow + framed rect + label). */

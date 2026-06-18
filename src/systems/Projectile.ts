@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Enemy } from './Enemy';
 import { TX } from './textures';
+import { perf } from './perf';
 
 /**
  * A homing visual projectile fired by a single-target tower. It tracks its
@@ -75,6 +76,7 @@ export class Projectile {
   /** Periodically stamp a fading glow ghost so the shot leaves a neon trail. */
   private trailAccum = 0;
   private dropTrail(dt: number): void {
+    if (perf.lowFx) return; // skip neon trails under heavy load
     this.trailAccum += dt;
     if (this.trailAccum < 0.028) return;
     this.trailAccum = 0;
