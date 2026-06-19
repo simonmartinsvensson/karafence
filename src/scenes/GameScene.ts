@@ -53,7 +53,7 @@ import {
   saveSeenSynergyHint,
 } from '../systems/storage';
 import { claimableCount } from '../data/achievements';
-import { isFeatureUnlocked } from '../data/progression';
+import { isFeatureUnlocked, chaptersCleared } from '../data/progression';
 import { rollBoons, type Boon, type BoonCtx } from '../data/boons';
 import { AFFIX_MIN_WAVE } from '../data/affixes';
 import { perf } from '../systems/perf';
@@ -86,6 +86,11 @@ const COMBO_WINDOW = 2.5; // seconds between kills to keep the combo alive
 const COMBO_BONUS = 0.15; // gold bonus per combo step
 const OVERDRIVE_SECONDS = 4; // duration of the x2-fans Encore overdrive window
 const INTERMISSION_SECONDS = 12;
+// Endless never ends, so its grindy per-run Fame is capped to stop a single
+// long run from leapfrogging the campaign's pacing. The cap scales with campaign
+// progress (clear chapters to raise it); one-time milestones/quests pay on top.
+const ENDLESS_FAME_BASE_CAP = 200;
+const ENDLESS_FAME_CAP_PER_CHAPTER = 40;
 
 // Screen-furniture depths (scene root). The board container sits below these.
 const DEPTH_BOARD = 1;
@@ -225,6 +230,7 @@ export class GameScene extends Phaser.Scene {
   // Fame payout for the just-ended run (shown on the end screen).
   private endFanGain = 0;
   private banked = false; // run rewards banked this run (idempotency guard)
+  private endFameCapped = false; // endless run hit the per-run Fame cap
   private boonGoldMult = 1; // "Merch Rush" boon — extra kill gold for one wave
   private boonUi: Phaser.GameObjects.GameObject[] = []; // between-wave boon choices
   private endQuestNames: string[] = [];
@@ -309,6 +315,7 @@ export class GameScene extends Phaser.Scene {
     this.nextChapterId = null;
     this.endFanGain = 0;
     this.banked = false;
+    this.endFameCapped = false;
     this.endQuestNames = [];
     this.endFirstWin = false;
     this.endMilestoneLines = [];
@@ -2217,7 +2224,16 @@ export class GameScene extends Phaser.Scene {
 
     // Tonight's Setlist multiplies the in-run fans; the "Going Viral" research
     // node multiplies the whole haul. Quest/first-win/milestone bonuses are fixed.
-    const earned = Math.round(this.runFans * this.runFanMult) + questFans;
+    let runHaul = Math.round(this.runFans * this.runFanMult);
+    if (this.mode === 'endless') {
+      // Cap the grindy per-run haul so a marathon run can't farm unbounded Fame.
+      const cap = ENDLESS_FAME_BASE_CAP + chaptersCleared() * ENDLESS_FAME_CAP_PER_CHAPTER;
+      if (runHaul > cap) {
+        runHaul = cap;
+        this.endFameCapped = true;
+      }
+    }
+    const earned = runHaul + questFans;
     const total = Math.round(earned * this.runMods.fameGainMult) + milestoneFans;
     this.endFanGain = total;
     addFame(this.meta, total);
@@ -2544,6 +2560,7 @@ export class GameScene extends Phaser.Scene {
       if (this.setlistName) out.push(`🎵 Setlist: ${this.setlistName} (${this.runFanMult}× fans)`);
       for (const q of this.endQuestNames) out.push(`✓ Daily done: ${q}`);
       if (this.endFirstWin) out.push(`🎤 First win today — +${FIRST_WIN_FANS} fans!`);
+      if (this.endFameCapped) out.push('🎤 Endless Fame capped — clear story chapters to raise it');
     }
     // Nudge toward claimable goals — only once Records itself is reachable.
     if (isFeatureUnlocked('records')) {
