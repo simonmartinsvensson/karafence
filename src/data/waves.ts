@@ -30,6 +30,15 @@ export interface WaveProfile {
   countPerWave: number;
   /** Enemy hp scale slope: hp ×(1 + index·hpPerWave). */
   hpPerWave: number;
+  /**
+   * Deep-wave **compounding** hp growth (optional, endless only). Past wave
+   * `hpCompoundFrom`, hp is additionally multiplied by `(1 + hpCompoundPerWave)`
+   * **per wave** — so the curve bends from linear into exponential and a long
+   * run hits a real wall instead of an infinite stay-awake grind. Applied to
+   * both standard enemies and bosses. Omit (or 0) for a purely linear curve.
+   */
+  hpCompoundPerWave?: number;
+  hpCompoundFrom?: number;
   /** Enemy speed scale slope, capped at `speedCap`. */
   speedPerWave: number;
   speedCap: number;
@@ -86,8 +95,12 @@ export const ENDLESS_PROFILE: WaveProfile = {
   baseCount: 6,
   countPerWave: 1.4,
   hpPerWave: 0.12,
+  // Past wave 40 hp compounds ~2%/wave: ~linear to 50, then bends hard —
+  // ~4× harder at wave 100 than the old linear curve, a steep wall beyond.
+  hpCompoundPerWave: 0.02,
+  hpCompoundFrom: 40,
   speedPerWave: 0.04,
-  speedCap: 2.5,
+  speedCap: 2.8,
   bossEvery: 5,
   bossHpPerCycle: 0.15,
   enemyPool: [
@@ -108,10 +121,13 @@ export function waveScaling(
   profile: WaveProfile,
 ): { hpScale: number; speedScale: number; bossHpScale: number } {
   const bossNumber = profile.bossEvery > 0 ? Math.floor((index + 1) / profile.bossEvery) : 0;
+  const compoundRate = profile.hpCompoundPerWave ?? 0;
+  const deep = Math.max(0, index - (profile.hpCompoundFrom ?? 0));
+  const compound = compoundRate > 0 ? Math.pow(1 + compoundRate, deep) : 1;
   return {
-    hpScale: 1 + profile.hpPerWave * index,
+    hpScale: (1 + profile.hpPerWave * index) * compound,
     speedScale: Math.min(profile.speedCap, 1 + profile.speedPerWave * index),
-    bossHpScale: 1 + profile.bossHpPerCycle * Math.max(0, bossNumber - 1),
+    bossHpScale: (1 + profile.bossHpPerCycle * Math.max(0, bossNumber - 1)) * compound,
   };
 }
 
