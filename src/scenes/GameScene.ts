@@ -271,6 +271,7 @@ export class GameScene extends Phaser.Scene {
     this.runFans = 0;
     this.endlessFanMilestone = 0;
     this.overdriveTimer = 0;
+    this.panelGold = -1; // force a panel resync on the first frame of the new run
     this.runFanMult = 1;
     this.setlistName = '';
     this.buildTarget = null;

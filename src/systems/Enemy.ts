@@ -317,7 +317,10 @@ export class Enemy {
   private flash(color: number): void {
     this.body.setTint(color);
     this.scene.time.delayedCall(80, () => {
-      if (this.slowRemaining <= 0) this.body.setTint(this.baseColor);
+      if (this.dead) return;
+      // Restore to the slow-blue if still slowed, otherwise the base color —
+      // a flash landing mid-slow must not strand the enemy on the flash tint.
+      this.body.setTint(this.slowRemaining > 0 ? 0x74c0fc : this.baseColor);
     });
   }
 
