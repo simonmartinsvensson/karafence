@@ -15,6 +15,12 @@ export enum TileType {
   Aisle = 'aisle',
   /** Buildable seats / floor off the path where towers can be placed. */
   Build = 'build',
+  /**
+   * A venue prop (speaker stack / pillar) occupying a seat: NOT buildable and
+   * NOT walkable. Used to vary the back-half board footprint so each venue
+   * forces different tower placement instead of being the same open rectangle.
+   */
+  Obstacle = 'obstacle',
 }
 
 /** Per-level thresholds for the 0-3 star rating (one star per goal met). */

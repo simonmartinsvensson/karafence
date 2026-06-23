@@ -13,6 +13,7 @@ const LEGEND: Record<string, TileType> = {
   S: TileType.Stage,
   '#': TileType.Aisle,
   '.': TileType.Build,
+  X: TileType.Obstacle, // a speaker stack / pillar: blocks building, not on the path
 };
 
 /** Default tile palette (Level 1 look); maps can override per tile. */
@@ -23,6 +24,8 @@ export const DEFAULT_COLORS: Record<TileType, number> = {
   // buildable seating reads as a distinct, cooler surface.
   [TileType.Aisle]: 0x8f3a26,
   [TileType.Build]: 0x33403a,
+  // Obstacle: a dark, cool slate that reads as a solid prop, clearly not a seat.
+  [TileType.Obstacle]: 0x1d2230,
 };
 
 export interface MapOptions {

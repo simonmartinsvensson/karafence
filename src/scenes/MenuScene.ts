@@ -91,7 +91,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-22 · Bug fixes (enemy tint, run reset)';
+const LAST_PATCH = '2026-06-23 · Venue obstacles vary the back-half board';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume

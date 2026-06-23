@@ -79,6 +79,9 @@ const TILE_TEXTURE: Record<TileType, string> = {
   [TileType.Stage]: TX.tileStage,
   [TileType.Aisle]: TX.tileAisle,
   [TileType.Build]: TX.tileBuild,
+  // Obstacle reuses the seat base (tinted dark via the palette) + an amp accent
+  // drawn on top in drawMap, so no new texture is needed.
+  [TileType.Obstacle]: TX.tileBuild,
 };
 
 const SINGER_MAX_HP = 30;
@@ -1108,6 +1111,8 @@ export class GameScene extends Phaser.Scene {
             .image(x, y, accentKey)
             .setDisplaySize(tileSize, tileSize);
           this.layers.tiles.add(accent);
+        } else if (type === TileType.Obstacle) {
+          this.drawObstacleProp(x, y, tileSize);
         }
       }
     }
@@ -1120,6 +1125,31 @@ export class GameScene extends Phaser.Scene {
     this.drawBoardVignette(layout);
     this.drawLaneMarkers(layout);
     this.drawSinger(layout);
+  }
+
+  /** A speaker-stack prop drawn on an obstacle tile (centered at x,y). */
+  private drawObstacleProp(x: number, y: number, tileSize: number): void {
+    const g = this.add.graphics();
+    const w = tileSize * 0.62;
+    const h = tileSize * 0.74;
+    const left = x - w / 2;
+    const top = y - h / 2;
+    // Cabinet.
+    g.fillStyle(0x0c0e16, 1).fillRoundedRect(left, top, w, h, 3);
+    g.lineStyle(1.5, 0x4a5570, 0.9).strokeRoundedRect(left, top, w, h, 3);
+    // Two speaker cones.
+    const cx = x;
+    const r1 = w * 0.26;
+    const r2 = w * 0.16;
+    g.fillStyle(0x2a3142, 1).fillCircle(cx, top + h * 0.34, r1);
+    g.fillStyle(0x2a3142, 1).fillCircle(cx, top + h * 0.72, r2);
+    g.lineStyle(1, 0x5b6680, 0.8);
+    g.strokeCircle(cx, top + h * 0.34, r1);
+    g.strokeCircle(cx, top + h * 0.72, r2);
+    // Cone center dots.
+    g.fillStyle(0x70809a, 1).fillCircle(cx, top + h * 0.34, r1 * 0.32);
+    g.fillCircle(cx, top + h * 0.72, r2 * 0.32);
+    this.layers.tiles.add(g);
   }
 
   /** Neon-noir mood: darken the board edges so the lit lanes pop in the middle. */

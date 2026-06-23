@@ -24,6 +24,8 @@ export interface CampaignLevel {
   starGoals: StarGoals;
   colors?: Record<TileType, number>;
   tutorial?: boolean;
+  /** Pre-rendered ASCII layout (back-half venues stamp in obstacle props). */
+  layoutRows: string[];
 }
 
 const COLS = 16;
@@ -39,11 +41,55 @@ function makeAscii(lanes: number): string[] {
   return rows;
 }
 
+/**
+ * Layout for campaign level `i`. The first third is the open rectangle above;
+ * from level 21 (i>=20) each venue stamps in **obstacle props** (speaker stacks
+ * / pillars) on buildable seats so the board footprint actually changes — the
+ * same open grid was the main reason the back half felt repetitive. Obstacles
+ * only sit on seating (never the path, so enemy routes are unchanged) and the
+ * board edges stay clear so every lane is still coverable. Four patterns cycle
+ * so consecutive venues look distinct.
+ */
+function makeLayout(i: number, lanes: number, tutorial: boolean): string[] {
+  const stage = 'S'.repeat(STAGE_W);
+  const aisle = stage + '#'.repeat(COLS - STAGE_W);
+  const buildRow = (): string[] => (stage + '.'.repeat(COLS - STAGE_W)).split('');
+  const rows: string[][] = [buildRow()];
+  for (let l = 0; l < lanes; l++) rows.push(aisle.split(''), buildRow());
+
+  if (tutorial || i < 20) return rows.map((cells) => cells.join(''));
+
+  const pattern = (i - 20) % 4;
+  // `j` = build-row ordinal (0..lanes), `c` = column. Keep c at the stage edge
+  // (2) and the far edge (15) clear so a lane can never be walled off.
+  const isProp = (j: number, c: number): boolean => {
+    if (c < STAGE_W + 1 || c > COLS - 2) return false;
+    switch (pattern) {
+      case 0:
+        return (c + j * 2) % 5 === 2; // scattered pillars
+      case 1:
+        return c === 6 || c === 11; // twin chokepoint columns
+      case 2:
+        return c >= 5 && c <= 12 && (c + j) % 2 === 0; // central checker
+      default:
+        return c >= 7 && c <= 10 && j > 0 && j < lanes; // center stack
+    }
+  };
+  let j = 0;
+  for (let r = 0; r < rows.length; r += 2, j++) {
+    for (let c = STAGE_W; c < COLS; c++) {
+      if (rows[r][c] === '.' && isProp(j, c)) rows[r][c] = 'X';
+    }
+  }
+  return rows.map((cells) => cells.join(''));
+}
+
 /** A cooler palette for the back half of the campaign (bigger, fancier venues). */
 const COOL_PALETTE: Record<TileType, number> = {
   [TileType.Stage]: 0x24243a,
   [TileType.Aisle]: 0x394a63,
   [TileType.Build]: 0x33405a,
+  [TileType.Obstacle]: 0x161a2a,
 };
 
 /** Enemy types unlocked by level index (variety grows as you progress). */
@@ -166,6 +212,7 @@ function makeLevel(i: number): CampaignLevel {
     },
     colors: i >= 20 ? COOL_PALETTE : undefined,
     tutorial,
+    layoutRows: makeLayout(i, lanes, tutorial),
   };
 }
 
@@ -180,6 +227,7 @@ export const ENDLESS_LEVEL: CampaignLevel = {
   startingGold: 240,
   waveProfile: ENDLESS_PROFILE,
   starGoals: { maxLivesLost: 99, maxGoldSpent: 99999, minCombo: 0 },
+  layoutRows: makeAscii(5),
 };
 
 /** Turn a campaign entry into a playable MapDefinition. */
@@ -187,7 +235,7 @@ export function buildMap(entry: CampaignLevel): MapDefinition {
   return parseMap({
     id: entry.id,
     name: entry.name,
-    ascii: makeAscii(entry.lanes),
+    ascii: entry.layoutRows,
     enemySpeedMultiplier: entry.enemySpeedMultiplier,
     starGoals: entry.starGoals,
     colors: entry.colors,
