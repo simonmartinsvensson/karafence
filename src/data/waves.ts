@@ -50,6 +50,8 @@ export interface WaveProfile {
   enemyPool: EnemyTypeKey[];
   /** Milliseconds between spawns within a wave. */
   spawnDelay: number;
+  /** If set, the final wave is a solo showdown with this boss (campaign finale). */
+  finalBoss?: BossKind;
 }
 
 /** Boss personas cycled through on each boss wave. */
@@ -141,6 +143,10 @@ export function waveScaling(
  */
 export function buildWaveDef(index: number, profile: WaveProfile): WaveDef {
   const waveNumber = index + 1;
+  // Campaign finale: the very last wave is a solo showdown with the finale boss.
+  if (profile.finalBoss && waveNumber === profile.waveCount) {
+    return { groups: [{ type: profile.finalBoss, count: 1, delay: 0, noScale: true }] };
+  }
   const total = Math.max(1, profile.baseCount + Math.floor(index * profile.countPerWave));
   const pool = profile.enemyPool.length > 0 ? profile.enemyPool : (['heckler'] as EnemyTypeKey[]);
 

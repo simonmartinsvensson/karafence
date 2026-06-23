@@ -816,6 +816,30 @@ function generateEnemyTextures(scene: Phaser.Scene): void {
   g.fillRect(36, 74, 28, 14); // podium
   g.generateTexture(enemyTextureKey('talentJudge'), B, B);
 
+  // Encore Phantom (finale): caped, masked figure clutching a mic, flowing robe.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillTriangle(50, 20, 22, 88, 78, 88); // flowing cape/robe
+  g.fillRoundedRect(38, 30, 24, 30, 8); // torso
+  g.fillCircle(50, 22, 13); // head
+  g.fillStyle(E_DARK, 1);
+  g.fillRect(40, 18, 20, 5); // mask band across the eyes
+  g.lineStyle(6, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(60, 40);
+  g.lineTo(72, 24); // arm raised to the mic
+  g.strokePath();
+  g.fillStyle(E_EDGE, 1);
+  g.fillCircle(73, 21, 6); // mic head
+  g.fillRect(71, 21, 4, 10); // mic handle
+  g.fillStyle(E_LIT, 0.85);
+  g.fillTriangle(50, 24, 44, 34, 56, 34); // glowing collar
+  g.lineStyle(2, E_LIT, 0.5);
+  g.beginPath();
+  g.arc(50, 22, 18, Math.PI * 1.15, Math.PI * 1.85, false); // halo arc
+  g.strokePath();
+  g.generateTexture(enemyTextureKey('encorePhantom'), B, B);
+
   g.destroy();
 }
 

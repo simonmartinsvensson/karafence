@@ -18,9 +18,15 @@ export type EnemyTypeKey =
   | 'hecklerKing'
   | 'micGrabber'
   | 'djWontStop'
-  | 'talentJudge';
+  | 'talentJudge'
+  | 'encorePhantom';
 
-export type BossKind = 'hecklerKing' | 'micGrabber' | 'djWontStop' | 'talentJudge';
+export type BossKind =
+  | 'hecklerKing'
+  | 'micGrabber'
+  | 'djWontStop'
+  | 'talentJudge'
+  | 'encorePhantom';
 
 export interface EnemyType {
   key: EnemyTypeKey;
@@ -277,6 +283,24 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
     erratic: false,
     boss: 'talentJudge',
   },
+  // Campaign finale (Level 60): a shielded headliner that alternates a wide
+  // tower-silencing "feedback screech" with crowd-surfer summons, and enrages
+  // (faster cadence) below 40% HP.
+  encorePhantom: {
+    key: 'encorePhantom',
+    name: 'The Encore Phantom',
+    blurb: "Final boss: shielded, screeches towers silent and summons backup.",
+    hp: 1500,
+    speed: 1.1,
+    armor: 3,
+    reward: 600,
+    damage: 6,
+    color: 0xcc5de8,
+    size: 1.7,
+    erratic: false,
+    shield: 400,
+    boss: 'encorePhantom',
+  },
 };
 
 /**
@@ -294,5 +318,14 @@ export const BOSS_CONFIG = {
     rusherType: 'stageRusher' as EnemyTypeKey,
     rusherCount: 6,
     attackSpeedFactor: 0.8,
+  },
+  encorePhantom: {
+    screechRadiusTiles: 2.5,
+    screechDuration: 1.0,
+    abilityInterval: 4,
+    summonType: 'crowdSurfer' as EnemyTypeKey,
+    summonCount: 2,
+    enrageHp: 0.4,
+    enrageCadence: 0.6, // ability interval multiplier once enraged
   },
 };

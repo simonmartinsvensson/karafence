@@ -200,6 +200,8 @@ export class GameScene extends Phaser.Scene {
   private bossAbilityTimer = 0;
   private bossPhase2 = false;
   private bossPhase3 = false;
+  /** Encore Phantom: alternates screech / summon each ability tick. */
+  private phantomToggle = false;
   private bossBar?: Phaser.GameObjects.Container;
   private bossBarFill?: Phaser.GameObjects.Rectangle;
   private bossBarLabel?: Phaser.GameObjects.Text;
@@ -315,6 +317,7 @@ export class GameScene extends Phaser.Scene {
     this.bossAbilityTimer = 0;
     this.bossPhase2 = false;
     this.bossPhase3 = false;
+    this.phantomToggle = false;
     this.bossBar = undefined;
     this.bossBarFill = undefined;
     this.bossBarLabel = undefined;
@@ -943,7 +946,7 @@ export class GameScene extends Phaser.Scene {
     const footerH = TOUCH_MIN + 16;
     // Fit all rows between header + footer, clamped to a comfortable range.
     const avail = this.sh - top - headerH - footerH;
-    const rowH = Phaser.Math.Clamp(Math.floor(avail / list.length), 26, 46);
+    const rowH = Phaser.Math.Clamp(Math.floor(avail / list.length), 22, 46);
 
     track(
       this.add
@@ -1782,9 +1785,12 @@ export class GameScene extends Phaser.Scene {
         ? BOSS_CONFIG.hecklerKing.tauntInterval
         : boss.type.boss === 'djWontStop'
           ? BOSS_CONFIG.djWontStop.spawnInterval
-          : 0;
+          : boss.type.boss === 'encorePhantom'
+            ? BOSS_CONFIG.encorePhantom.abilityInterval
+            : 0;
     this.bossPhase2 = false;
     this.bossPhase3 = false;
+    this.phantomToggle = false;
     this.bossPrevHp = boss.hpRatio;
     this.showBossBar(boss);
     audio.playMusic('boss');
@@ -1914,6 +1920,36 @@ export class GameScene extends Phaser.Scene {
           this.bossPhase3 = true;
           this.towers.attackSpeedMultiplier = cfg.attackSpeedFactor;
           this.floatText(boss.x, boss.y, 'PHASE 3: TOWERS SLOWED!', '#ff6b6b');
+        }
+        break;
+      }
+      case 'encorePhantom': {
+        const cfg = BOSS_CONFIG.encorePhantom;
+        if (!this.bossPhase2 && boss.hpRatio <= cfg.enrageHp) {
+          this.bossPhase2 = true; // enrage: tighten the ability cadence
+          this.bossAbilityTimer = Math.min(this.bossAbilityTimer, 1);
+          this.floatText(boss.x, boss.y, '🎤 ENCORE! THE PHANTOM RAGES!', '#ff8787');
+        }
+        this.bossAbilityTimer -= dt;
+        if (this.bossAbilityTimer <= 0) {
+          this.bossAbilityTimer =
+            cfg.abilityInterval * (this.bossPhase2 ? cfg.enrageCadence : 1);
+          this.phantomToggle = !this.phantomToggle;
+          if (this.phantomToggle) {
+            this.towers.freezeTowersInRadius(
+              boss.x,
+              boss.y,
+              cfg.screechRadiusTiles * ts,
+              cfg.screechDuration,
+            );
+            this.bossShout(boss, cfg.screechRadiusTiles * ts, '🎤 FEEDBACK SCREECH!');
+          } else {
+            const lanes = this.map.laneRows.length;
+            for (let i = 0; i < cfg.summonCount; i++) {
+              this.waves.spawnAt(cfg.summonType, Math.floor(Math.random() * lanes));
+            }
+            this.floatText(boss.x, boss.y, '👻 ENCORE BACKUP!', '#e599f7');
+          }
         }
         break;
       }

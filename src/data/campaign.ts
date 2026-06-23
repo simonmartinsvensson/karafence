@@ -225,6 +225,8 @@ function makeLevel(i: number): CampaignLevel {
     profile.baseCount = 3;
     profile.countPerWave = 0.3;
   }
+  // Grand Finale: the last wave is a solo showdown with the Encore Phantom.
+  if (special === 'finale') profile.finalBoss = 'encorePhantom';
   return {
     id: `level${i + 1}`,
     name: nameFor(i),

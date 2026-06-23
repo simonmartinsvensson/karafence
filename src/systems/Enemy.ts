@@ -12,6 +12,7 @@ const BOSS_AURA: Record<BossKind, number> = {
   micGrabber: 0x37b24d, // green
   djWontStop: 0x22b8cf, // blue/cyan
   talentJudge: 0xffd43b, // gold
+  encorePhantom: 0xcc5de8, // violet
 };
 
 /**
