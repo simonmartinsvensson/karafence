@@ -12,6 +12,9 @@ export type EnemyTypeKey =
   | 'critic'
   | 'superfan'
   | 'vip'
+  | 'crowdSurfer'
+  | 'roadie'
+  | 'pyro'
   | 'hecklerKing'
   | 'micGrabber'
   | 'djWontStop'
@@ -44,6 +47,12 @@ export interface EnemyType {
   // --- Special behaviors -------------------------------------------------
   /** Stage Rusher: immune to the first tower that damages it. */
   bypassFirstTower?: boolean;
+  /** Crowd Surfer: immune to the first N towers that damage it (generalises bypassFirstTower). */
+  bypassCount?: number;
+  /** Roadie: periodically grants a shield to nearby un-shielded allies. */
+  healAura?: { radiusTiles: number; shield: number; interval: number; max: number };
+  /** Pyro: periodically disables (freezes) towers it passes near. */
+  disablesTowers?: { radiusTiles: number; duration: number; interval: number };
   /** Critic: radius (tiles) of the "bad review" aura that cuts nearby rewards. */
   criticAura?: number;
   /** Critic: reward multiplier applied to enemies that die inside the aura. */
@@ -158,6 +167,56 @@ export const ENEMY_TYPES: Record<EnemyTypeKey, EnemyType> = {
     size: 0.7,
     erratic: false,
     deflectChance: 0.4,
+  },
+
+  // --- Back-half archetypes (introduced past level 15) ------------------
+  // Rides over the crowd: ignores the first TWO towers that hit it, so a single
+  // chokepoint can't stop it — you need layered coverage or splash.
+  crowdSurfer: {
+    key: 'crowdSurfer',
+    name: 'Crowd Surfer',
+    blurb: "Rides the crowd over the first two towers that hit it.",
+    hp: 42,
+    speed: 2.2,
+    armor: 0,
+    reward: 8,
+    damage: 2,
+    color: 0x9775fa,
+    size: 0.62,
+    erratic: false,
+    bypassCount: 2,
+  },
+  // Support unit: every few seconds it shields nearby un-shielded allies, so
+  // killing the Roadie first stops it from turning a wave into a tank squad.
+  roadie: {
+    key: 'roadie',
+    name: 'Roadie',
+    blurb: "Shields nearby foes every few seconds — take it out first.",
+    hp: 110,
+    speed: 1.0,
+    armor: 1,
+    reward: 14,
+    damage: 1,
+    color: 0x66a80f,
+    size: 0.74,
+    erratic: false,
+    healAura: { radiusTiles: 2.2, shield: 40, interval: 4, max: 3 },
+  },
+  // Briefly knocks out towers it walks past (pyrotechnics misfire), pressuring
+  // your defensive line's uptime rather than tanking damage.
+  pyro: {
+    key: 'pyro',
+    name: 'Pyro',
+    blurb: "Sets off sparks that briefly knock out nearby towers.",
+    hp: 70,
+    speed: 1.4,
+    armor: 0,
+    reward: 13,
+    damage: 2,
+    color: 0xe8590c,
+    size: 0.66,
+    erratic: false,
+    disablesTowers: { radiusTiles: 1.6, duration: 1.0, interval: 3.5 },
   },
 
   // --- Bosses (one per 5 waves) -----------------------------------------

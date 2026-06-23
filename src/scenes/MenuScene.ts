@@ -91,7 +91,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-23 · Venue obstacles vary the back-half board';
+const LAST_PATCH = '2026-06-23 · New back-half foes: Surfer/Roadie/Pyro';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume

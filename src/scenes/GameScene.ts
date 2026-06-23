@@ -584,6 +584,7 @@ export class GameScene extends Phaser.Scene {
     if (this.overdriveTimer > 0) this.overdriveTimer = Math.max(0, this.overdriveTimer - dt);
     this.tickIntermission(dt);
     this.driveBoss(dt);
+    this.driveEnemyAbilities(dt);
     this.refreshHud();
     this.syncOpenPanel();
   }
@@ -928,7 +929,7 @@ export class GameScene extends Phaser.Scene {
     const footerH = TOUCH_MIN + 16;
     // Fit all rows between header + footer, clamped to a comfortable range.
     const avail = this.sh - top - headerH - footerH;
-    const rowH = Phaser.Math.Clamp(Math.floor(avail / list.length), 30, 46);
+    const rowH = Phaser.Math.Clamp(Math.floor(avail / list.length), 26, 46);
 
     track(
       this.add
@@ -1861,6 +1862,59 @@ export class GameScene extends Phaser.Scene {
       default:
         break;
     }
+  }
+
+  /**
+   * Per-frame special abilities for non-boss back-half enemies: the Roadie's
+   * shield aura and the Pyro's tower-disable, each on its own cadence timer.
+   */
+  private driveEnemyAbilities(dt: number): void {
+    const ts = this.layout.tileSize;
+    for (const e of this.waves.enemies) {
+      const heal = e.type.healAura;
+      const dis = e.type.disablesTowers;
+      if ((!heal && !dis) || e.dead || e.arrivedAtStage) continue;
+      e.abilityTimer -= dt;
+      if (e.abilityTimer > 0) continue;
+
+      if (heal) {
+        e.abilityTimer = heal.interval;
+        const rPx = heal.radiusTiles * ts;
+        let granted = 0;
+        for (const o of this.waves.enemies) {
+          if (granted >= heal.max) break;
+          if (o === e || o.dead || o.arrivedAtStage || o.isBoss || o.shield > 0) continue;
+          if (Math.hypot(o.x - e.x, o.y - e.y) <= rPx) {
+            o.grantShield(heal.shield);
+            this.shieldPop(o.x, o.y);
+            granted++;
+          }
+        }
+        if (granted > 0) this.floatText(e.x, e.y - 12, '🛡 ROADIE!', '#a9e34b');
+      } else if (dis) {
+        e.abilityTimer = dis.interval;
+        this.towers.freezeTowersInRadius(e.x, e.y, dis.radiusTiles * ts, dis.duration);
+        this.shieldPop(e.x, e.y, 0xffa94d);
+        this.floatText(e.x, e.y - 12, '🔥 SPARKS!', '#ffa94d');
+      }
+    }
+  }
+
+  /** A quick expanding ring (shield grant / spark) at a board point. */
+  private shieldPop(x: number, y: number, color = 0x66d9e8): void {
+    if (perf.lowFx) return;
+    const ring = this.add
+      .circle(x, y, this.layout.tileSize * 0.5, color, 0.12)
+      .setStrokeStyle(2, color, 0.85)
+      .setScale(0.3);
+    this.layers.fx.add(ring);
+    this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0,
+      duration: 360,
+      onComplete: () => ring.destroy(),
+    });
   }
 
   /** Boss taunt visual: an expanding ring + a callout. */

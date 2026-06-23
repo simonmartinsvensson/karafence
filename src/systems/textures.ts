@@ -662,6 +662,65 @@ function generateEnemyTextures(scene: Phaser.Scene): void {
   g.fillRect(19, 10, 11, 3); // sunglasses
   g.generateTexture(enemyTextureKey('vip'), N, N);
 
+  // Crowd Surfer: figure lying back, arms up, carried over the crowd.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRoundedRect(13, 22, 24, 9, 4); // horizontal torso
+  g.fillCircle(35, 20, 6); // head (right, leading)
+  g.lineStyle(4, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(30, 24);
+  g.lineTo(33, 13); // raised arm
+  g.moveTo(18, 26);
+  g.lineTo(13, 16); // raised arm
+  g.moveTo(15, 29);
+  g.lineTo(9, 36); // trailing legs
+  g.strokePath();
+  g.lineStyle(2, E_EDGE, 0.8); // crowd hands beneath
+  g.beginPath();
+  for (let hx = 12; hx <= 36; hx += 6) {
+    g.moveTo(hx, 40);
+    g.lineTo(hx, 33);
+  }
+  g.strokePath();
+  g.generateTexture(enemyTextureKey('crowdSurfer'), N, N);
+
+  // Roadie: burly figure in a cap hauling a flight case.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(14, 35, 7, 12);
+  g.fillRect(23, 35, 7, 12); // sturdy legs
+  g.fillRoundedRect(11, 14, 22, 22, 4); // broad torso
+  g.fillCircle(22, 10, 7); // head
+  g.fillStyle(E_DARK, 1);
+  g.fillRoundedRect(14, 4, 16, 4, 2); // cap brim
+  g.fillRect(16, 1, 12, 4); // cap crown
+  g.fillStyle(E_EDGE, 1);
+  g.fillRoundedRect(33, 22, 11, 16, 2); // flight case
+  g.fillStyle(E_LIT, 0.8);
+  g.fillRect(33, 29, 11, 2); // case latch line
+  g.generateTexture(enemyTextureKey('roadie'), N, N);
+
+  // Pyro: figure brandishing a torch with a flame above.
+  g.clear();
+  g.fillStyle(E_BODY, 1);
+  g.fillRect(17, 34, 6, 13);
+  g.fillRect(25, 34, 6, 13);
+  g.fillRoundedRect(15, 17, 18, 19, 4);
+  g.fillCircle(23, 12, 7);
+  g.lineStyle(4, E_BODY, 1);
+  g.beginPath();
+  g.moveTo(31, 22);
+  g.lineTo(38, 14); // arm to torch
+  g.strokePath();
+  g.fillStyle(E_EDGE, 1);
+  g.fillRect(37, 12, 3, 8); // torch handle
+  g.fillStyle(E_LIT, 1);
+  g.fillTriangle(38, 12, 34, 4, 42, 4); // flame
+  g.fillStyle(E_DARK, 0.7);
+  g.fillTriangle(38, 10, 36, 5, 40, 5); // flame core
+  g.generateTexture(enemyTextureKey('pyro'), N, N);
+
   // --- Bosses (96px, larger + more detailed silhouettes) ---
   const B = 96;
 

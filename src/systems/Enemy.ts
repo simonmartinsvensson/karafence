@@ -50,8 +50,12 @@ export class Enemy {
   /** Shield that must be depleted before hp takes damage. */
   shield: number;
   private readonly maxShield: number;
-  /** Stage Rusher: id of the tower it is immune to (the first to hit it). */
-  private bypassedTowerId: string | null = null;
+  /** Towers this enemy is permanently immune to (the first N to hit it). */
+  private readonly bypassedTowerIds = new Set<string>();
+  /** How many towers this enemy ignores (Stage Rusher = 1, Crowd Surfer = 2). */
+  private readonly bypassLimit: number;
+  /** Countdown (s) for periodic special abilities (Roadie shield / Pyro disable). */
+  abilityTimer = 0;
 
   /** Movement speed multiplier (1 = normal). Driven by slow debuffs. */
   private slowFactor = 1;
@@ -95,6 +99,7 @@ export class Enemy {
     this.speedScale = speedScale * (affix?.speedMult ?? 1);
     this.shield = (type.shield ?? 0) + (affix ? Math.round(this.hp * affix.shieldFrac) : 0);
     this.maxShield = this.shield;
+    this.bypassLimit = type.bypassCount ?? (type.bypassFirstTower ? 1 : 0);
 
     this.laneIndex = laneIndex;
     this.targetLane = laneIndex;
@@ -281,10 +286,16 @@ export class Enemy {
    * @param towerId identity of the firing tower ("col,row").
    */
   takeDamage(amount: number, towerId?: string): void {
-    // Stage Rusher: ignore the first tower to hit it (and that tower forever).
-    if (this.type.bypassFirstTower && towerId) {
-      if (this.bypassedTowerId === null) this.bypassedTowerId = towerId;
-      if (this.bypassedTowerId === towerId) {
+    // Stage Rusher / Crowd Surfer: ignore the first N towers to hit it (and
+    // those towers forever). Any tower already in the bypass set stays bypassed;
+    // new towers join the set until the limit, then damage lands normally.
+    if (this.bypassLimit > 0 && towerId) {
+      if (this.bypassedTowerIds.has(towerId)) {
+        this.flash(0xffffff);
+        return;
+      }
+      if (this.bypassedTowerIds.size < this.bypassLimit) {
+        this.bypassedTowerIds.add(towerId);
         this.flash(0xffffff);
         return;
       }
@@ -332,6 +343,12 @@ export class Enemy {
     this.slowFactor = Math.min(this.slowFactor, factor);
     this.slowRemaining = Math.max(this.slowRemaining, durationSec);
     this.body.setTint(0x74c0fc);
+  }
+
+  /** Roadie support: top this enemy's shield up to `amount` (never stacks past it). */
+  grantShield(amount: number): void {
+    if (this.dead || this.arrivedAtStage) return;
+    this.shield = Math.max(this.shield, amount);
   }
 
   /**

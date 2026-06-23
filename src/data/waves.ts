@@ -111,6 +111,9 @@ export const ENDLESS_PROFILE: WaveProfile = {
     'critic',
     'superfan',
     'vip',
+    'crowdSurfer',
+    'roadie',
+    'pyro',
   ],
   spawnDelay: 420,
 };

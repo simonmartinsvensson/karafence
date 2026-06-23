@@ -110,7 +110,13 @@ function poolForLevel(i: number): EnemyTypeKey[] {
   if (i >= 5) n = 5;
   if (i >= 8) n = 6;
   if (i >= 11) n = 7;
-  return order.slice(0, n);
+  const pool = order.slice(0, n);
+  // Back-half archetypes drip in past level 15 so something genuinely new keeps
+  // appearing instead of just bigger numbers (see "back-half variety" overhaul).
+  if (i >= 14) pool.push('crowdSurfer');
+  if (i >= 22) pool.push('roadie');
+  if (i >= 30) pool.push('pyro');
+  return pool;
 }
 
 const NAMES = [
