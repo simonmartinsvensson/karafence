@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
 import { LEVEL_BY_ID, type LevelId } from '../data/levels';
-import { type MapDefinition } from '../types/map';
+import { SPECIAL_INFO } from '../data/campaign';
+import { type MapDefinition, type SpecialKind } from '../types/map';
 import {
   computeGridLayout,
   computeScreenLayout,
@@ -139,6 +140,10 @@ export class GameScene extends Phaser.Scene {
   private comboWindow = COMBO_WINDOW; // extended by Crowd Memory meta-upgrade
 
   private singerHp = SINGER_MAX_HP;
+  /** Run's singer max HP (lowered on Sudden Death set-pieces). */
+  private singerMaxHp = SINGER_MAX_HP;
+  /** True while a wave is in progress (drives the Survival build-lock). */
+  private waveActive = false;
   private gold = STARTING_GOLD;
   private buildTarget: { col: number; row: number } | null = null;
   private gameOver = false;
@@ -267,7 +272,10 @@ export class GameScene extends Phaser.Scene {
     this.resume = data.resume ?? false;
     this.map = LEVEL_BY_ID[this.levelId];
 
-    this.singerHp = SINGER_MAX_HP;
+    // Sudden Death set-pieces start the singer on a sliver of HP.
+    this.singerMaxHp = this.map.special === 'suddenDeath' ? 3 : SINGER_MAX_HP;
+    this.waveActive = false;
+    this.singerHp = this.singerMaxHp;
     this.gold = STARTING_GOLD;
     this.runKills = 0;
     this.goldEarned = 0;
@@ -621,6 +629,12 @@ export class GameScene extends Phaser.Scene {
     // tower picker for that tile. (Clicks on a tower are handled by the tower.)
     this.towers.deselect();
     if (this.towers.canPlace(col, row)) {
+      // Survival set-piece: no new placement while a wave is live.
+      if (this.map.special === 'survival' && this.waveActive) {
+        this.flashInvalidTile(col, row);
+        this.screenFloat('🔒 No building during the show!', '#ff8787');
+        return;
+      }
       this.buildTarget = { col, row };
       this.towers.showBuildOverlay(col, row);
       this.openBuildPanel();
@@ -1347,7 +1361,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(DEPTH_HUD + 1);
     this.hpBarFill = this.add.image(0, 0, TX.hpFill).setOrigin(0, 0.5).setDepth(DEPTH_HUD + 2);
     this.hpText = this.add
-      .text(0, 0, `${this.singerHp}/${SINGER_MAX_HP}`, {
+      .text(0, 0, `${this.singerHp}/${this.singerMaxHp}`, {
         fontFamily: 'monospace',
         color: '#ffffff',
         fontStyle: 'bold',
@@ -1433,8 +1447,8 @@ export class GameScene extends Phaser.Scene {
       this.waveText.x - this.waveText.width / 2 - this.waveIcon.displayWidth / 2 - 4,
       this.waveText.y,
     );
-    this.hpText.setText(`${this.singerHp}/${SINGER_MAX_HP}`);
-    const ratio = Math.max(0, this.singerHp / SINGER_MAX_HP);
+    this.hpText.setText(`${this.singerHp}/${this.singerMaxHp}`);
+    const ratio = Math.max(0, this.singerHp / this.singerMaxHp);
     this.hpBarFill.displayWidth = Math.max(0, this.hpBarW - 2) * ratio;
   }
 
@@ -1552,6 +1566,7 @@ export class GameScene extends Phaser.Scene {
    * above the bottom bar, one-thumb reach).
    */
   private showStartPrompt(): void {
+    if (this.map.special) this.showSpecialBanner(this.map.special);
     this.startPrompt?.destroy(true);
     const label = this.add
       .text(0, 0, '', { fontFamily: 'monospace', color: '#ffffff' })
@@ -1596,16 +1611,59 @@ export class GameScene extends Phaser.Scene {
     const font = Math.round(Phaser.Math.Clamp(btnH * 0.3, 13, 17));
     btn.setSize(btnW, btnH).setPosition(cx, btnCy);
     text.setFontSize(font).setPosition(cx, btnCy);
+    const info = this.map.special ? SPECIAL_INFO[this.map.special] : null;
     label
       .setFontSize(font)
-      .setText('Tune up your band — then kick off the first set')
+      .setText(info ? `⚠ ${info.name} — ${info.blurb}` : 'Tune up your band — then kick off the first set')
+      .setColor(info ? '#ffd43b' : '#ffffff')
       .setPosition(cx, btnCy - btnH / 2 - 6);
+  }
+
+  /** A brief, bold centred announcement of a set-piece level's twist. */
+  private showSpecialBanner(special: SpecialKind): void {
+    const info = SPECIAL_INFO[special];
+    const cx = this.sw / 2;
+    const title = this.add
+      .text(cx, this.sh * 0.32, `⚠ ${info.name}`, {
+        fontFamily: 'monospace',
+        fontSize: '30px',
+        color: '#ffd43b',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH_OVERLAY + 50)
+      .setScale(0.6);
+    const sub = this.add
+      .text(cx, this.sh * 0.32 + 30, info.blurb, {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#ffe8a3',
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH_OVERLAY + 50);
+    this.tweens.add({ targets: title, scale: 1, duration: 320, ease: 'Back.out' });
+    this.tweens.add({
+      targets: [title, sub],
+      alpha: 0,
+      delay: 2200,
+      duration: 600,
+      onComplete: () => {
+        title.destroy();
+        sub.destroy();
+      },
+    });
+    haptics.play('heavy');
   }
 
   private beginFirstWave(): void {
     this.startPrompt?.destroy(true);
     this.startPrompt = undefined;
     this.waves.start();
+    this.waveActive = true;
     this.maybeSpawnScout();
     this.saveRunState();
   }
@@ -2112,6 +2170,7 @@ export class GameScene extends Phaser.Scene {
   // --- Intermission + interest ---------------------------------------------
 
   private onWaveCleared(): void {
+    this.waveActive = false;
     const clearedWave = this.waves.currentWaveNumber;
     // Next-wave boons expire when the wave they powered ends.
     this.boonGoldMult = 1;
@@ -2136,7 +2195,7 @@ export class GameScene extends Phaser.Scene {
     // surprise crate (variable reward) to keep "one more wave" pulling.
     this.runFans += 5;
     // Comeback: held the stage by a thread → turn the near-loss into a highlight.
-    if (this.singerHp > 0 && this.singerHp <= 2) {
+    if (this.singerHp > 0 && this.singerHp <= 2 && this.singerMaxHp > 5) {
       this.runFans += 25;
       this.screenFloat('😅 Saved the show! +25 fans', '#69db7c');
     }
@@ -2267,7 +2326,7 @@ export class GameScene extends Phaser.Scene {
       mode: this.mode,
       won,
       wavesReached: this.waves.currentWaveNumber,
-      livesLost: SINGER_MAX_HP - this.singerHp,
+      livesLost: this.singerMaxHp - this.singerHp,
       bestCombo: this.highestCombo,
       kills: this.runKills,
     };
@@ -2328,7 +2387,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Score the run: one star per goal met; bank the best per level. */
   private scoreStars(): { stars: number; gained: number } {
-    const livesLost = SINGER_MAX_HP - this.singerHp;
+    const livesLost = this.singerMaxHp - this.singerHp;
     const goals = this.map.starGoals;
     const stars = [
       livesLost <= goals.maxLivesLost,
@@ -2428,7 +2487,7 @@ export class GameScene extends Phaser.Scene {
       wave: this.waves.currentWaveNumber,
       gold: this.gold,
       addGold: (n) => { this.gold += n; this.goldEarned += n; this.refreshHud(); this.screenFloat(`+${n}g 💰`, '#ffd166'); audio.sfx('gold'); },
-      heal: (n) => { this.singerHp = Math.min(SINGER_MAX_HP, this.singerHp + n); this.refreshHud(); this.screenFloat(`+${n} HP ❤️`, '#69db7c'); },
+      heal: (n) => { this.singerHp = Math.min(this.singerMaxHp, this.singerHp + n); this.refreshHud(); this.screenFloat(`+${n} HP ❤️`, '#69db7c'); },
       addFame: (n) => { this.runFans += n; this.screenFloat(`+${n} Fame 🎤`, '#ff9ed8'); },
       boostDamage: (m) => { this.towers.damageBoost = m; this.screenFloat('💥 Amped up!', '#ff9ed8'); },
       boostKillGold: (m) => { this.boonGoldMult = m; this.screenFloat('🤑 Merch rush!', '#ffd166'); },
@@ -2511,6 +2570,7 @@ export class GameScene extends Phaser.Scene {
     this.intermissionUi = undefined;
     this.clearBoons();
     audio.playMusic('inWave');
+    this.waveActive = true;
     this.waves.startNextWave();
     this.maybeSpawnScout();
     this.resumeWaveIndex = this.waves.currentWaveIndex;
@@ -2595,7 +2655,7 @@ export class GameScene extends Phaser.Scene {
       line(-64, this.map.name, 12, '#9aa0b0');
       line(-30, '★'.repeat(this.endStars) + '☆'.repeat(3 - this.endStars), 34, '#ffd43b');
 
-      const livesLost = SINGER_MAX_HP - this.singerHp;
+      const livesLost = this.singerMaxHp - this.singerHp;
       const goals = this.map.starGoals;
       const conds = [
         { ok: livesLost <= goals.maxLivesLost, label: `Lose ≤${goals.maxLivesLost} lives (lost ${livesLost})` },
@@ -2735,7 +2795,7 @@ export class GameScene extends Phaser.Scene {
   damageSinger(amount: number): void {
     if (this.gameOver) return;
     this.singerHp = Math.max(0, this.singerHp - amount);
-    this.hpText.setText(`${this.singerHp}/${SINGER_MAX_HP}`); // match refreshHud's format (no flicker)
+    this.hpText.setText(`${this.singerHp}/${this.singerMaxHp}`); // match refreshHud's format (no flicker)
     // Flash the singer red to signal the hit.
     if (this.singerFigure) {
       this.singerFigure.setTint(0xff4444);

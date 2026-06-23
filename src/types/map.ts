@@ -23,6 +23,16 @@ export enum TileType {
   Obstacle = 'obstacle',
 }
 
+/**
+ * Set-piece "special" rule for milestone levels (30/40/50/60), so they play
+ * differently instead of being one more number-inflated normal level.
+ *  - bossRush: a boss every wave.
+ *  - survival: no new tower placement while a wave is in progress.
+ *  - suddenDeath: the singer has very few hit points.
+ *  - finale: the campaign's final showdown (a unique boss).
+ */
+export type SpecialKind = 'bossRush' | 'survival' | 'suddenDeath' | 'finale';
+
 /** Per-level thresholds for the 0-3 star rating (one star per goal met). */
 export interface StarGoals {
   /** Earn a star for finishing with no more than this many lives lost. */
@@ -57,4 +67,6 @@ export interface MapDefinition {
   startingGold?: number;
   /** Drives wave generation for this level (count / scaling / enemy pool / bosses). */
   waveProfile?: WaveProfile;
+  /** Set-piece rule for milestone levels (undefined = a normal level). */
+  special?: SpecialKind;
 }

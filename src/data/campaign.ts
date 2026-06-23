@@ -1,4 +1,4 @@
-import { TileType, type MapDefinition, type StarGoals } from '../types/map';
+import { TileType, type MapDefinition, type SpecialKind, type StarGoals } from '../types/map';
 import type { EnemyTypeKey } from './enemies';
 import { parseMap } from './parseMap';
 import { ENDLESS_PROFILE, type WaveProfile } from './waves';
@@ -26,7 +26,25 @@ export interface CampaignLevel {
   tutorial?: boolean;
   /** Pre-rendered ASCII layout (back-half venues stamp in obstacle props). */
   layoutRows: string[];
+  /** Set-piece rule for milestone levels (undefined = a normal level). */
+  special?: SpecialKind;
 }
+
+/** Milestone set-piece levels: index (0-based) -> the special rule it runs. */
+const SPECIAL_BY_INDEX: Record<number, SpecialKind> = {
+  29: 'bossRush', // Level 30
+  39: 'survival', // Level 40
+  49: 'suddenDeath', // Level 50
+  59: 'finale', // Level 60
+};
+
+/** Player-facing name + one-line blurb for each set-piece (shown at run start). */
+export const SPECIAL_INFO: Record<SpecialKind, { name: string; blurb: string }> = {
+  bossRush: { name: 'BOSS RUSH', blurb: 'A headline act every single wave.' },
+  survival: { name: 'SURVIVAL', blurb: 'No building once a wave is live — plan ahead!' },
+  suddenDeath: { name: 'SUDDEN DEATH', blurb: 'One bad night ends the show — barely any HP.' },
+  finale: { name: 'GRAND FINALE', blurb: 'The ultimate headliner awaits.' },
+};
 
 const COLS = 16;
 const STAGE_W = 2;
@@ -184,6 +202,7 @@ function nameFor(i: number): string {
  */
 function makeLevel(i: number): CampaignLevel {
   const tutorial = i === 0;
+  const special = SPECIAL_BY_INDEX[i];
   const lanes = i < 2 ? 3 : i < 8 ? 4 : i < 20 ? 5 : i < 40 ? 6 : 7;
   const profile: WaveProfile = {
     waveCount: tutorial ? 3 : Math.min(28, 5 + Math.floor(i * 0.45)),
@@ -199,6 +218,13 @@ function makeLevel(i: number): CampaignLevel {
     enemyPool: poolForLevel(i),
     spawnDelay: tutorial ? 1500 : Math.max(300, 900 - i * 11),
   };
+  // Boss Rush: a headliner every wave, light trash between them, short run.
+  if (special === 'bossRush') {
+    profile.bossEvery = 1;
+    profile.waveCount = 8;
+    profile.baseCount = 3;
+    profile.countPerWave = 0.3;
+  }
   return {
     id: `level${i + 1}`,
     name: nameFor(i),
@@ -219,6 +245,7 @@ function makeLevel(i: number): CampaignLevel {
     colors: i >= 20 ? COOL_PALETTE : undefined,
     tutorial,
     layoutRows: makeLayout(i, lanes, tutorial),
+    special,
   };
 }
 
@@ -247,5 +274,6 @@ export function buildMap(entry: CampaignLevel): MapDefinition {
     colors: entry.colors,
     startingGold: entry.startingGold,
     waveProfile: entry.waveProfile,
+    special: entry.special,
   });
 }

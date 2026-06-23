@@ -91,7 +91,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-23 · New back-half foes: Surfer/Roadie/Pyro';
+const LAST_PATCH = '2026-06-23 · Set-piece levels @30/40/50';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume

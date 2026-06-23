@@ -1,4 +1,4 @@
-import { TileType, type MapDefinition, type StarGoals } from '../types/map';
+import { TileType, type MapDefinition, type SpecialKind, type StarGoals } from '../types/map';
 import type { WaveProfile } from './waves';
 
 /**
@@ -37,6 +37,7 @@ export interface MapOptions {
   colors?: Record<TileType, number>;
   startingGold?: number;
   waveProfile?: WaveProfile;
+  special?: SpecialKind;
 }
 
 export function parseMap(opts: MapOptions): MapDefinition {
@@ -82,5 +83,6 @@ export function parseMap(opts: MapOptions): MapDefinition {
     colors: opts.colors ?? DEFAULT_COLORS,
     startingGold: opts.startingGold,
     waveProfile: opts.waveProfile,
+    special: opts.special,
   };
 }
