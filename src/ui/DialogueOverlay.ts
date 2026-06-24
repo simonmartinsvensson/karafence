@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CHARACTERS, type StoryBeat } from '../data/story';
-import { TX } from '../systems/textures';
+import { portraitKey } from '../systems/textures';
 
 /**
  * Reusable visual-novel-style dialogue overlay (story mode). Given a queue of
@@ -124,7 +124,7 @@ export class DialogueOverlay {
     );
     parts.push(
       this.scene.add
-        .image(portraitX, portraitBottom, TX.portrait)
+        .image(portraitX, portraitBottom, portraitKey(beat.character))
         .setOrigin(0.5, 1)
         .setDisplaySize(portraitW, portraitH)
         .setTint(char.color),

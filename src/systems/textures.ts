@@ -62,7 +62,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   generateTileTextures(scene);
   generateTileAccentTextures(scene);
   generateGlowTexture(scene);
-  generatePortraitTexture(scene);
+  generatePortraitTextures(scene);
   generateStageTextures(scene);
   generateTowerTextures(scene);
   generateEnemyTextures(scene);
@@ -240,34 +240,162 @@ function generateGlowTexture(scene: Phaser.Scene): void {
   g.destroy();
 }
 
-// --- Section 1c: story dialogue portrait -----------------------------------
+// --- Section 1c: story dialogue portraits ----------------------------------
 //
-// A grayscale head-and-shoulders bust drawn light so `setTint(character.color)`
-// in the DialogueOverlay renders it as that character's silhouette (visual-novel
-// style). One texture serves the whole cast.
+// Grayscale head-and-shoulders busts drawn light so `setTint(character.color)`
+// in the DialogueOverlay renders each as that character's silhouette (visual-
+// novel style). One distinct bust per cast member (defining hair / accessories),
+// plus a generic `TX.portrait` fallback for any unknown speaker. All share the
+// 96×112 frame + base proportions so the overlay layout is identical.
 
-function generatePortraitTexture(scene: Phaser.Scene): void {
+/** Characters with bespoke portrait art (others fall back to TX.portrait). */
+const PORTRAIT_CHARS = ['alex', 'vy', 'max', 'judge', 'riva', 'dex', 'phantom'];
+
+/** Texture key for a character's dialogue portrait (generic if not bespoke). */
+export const portraitKey = (character: string): string =>
+  PORTRAIT_CHARS.includes(character) ? `kf-portrait-${character}` : TX.portrait;
+
+const P_BASE = 0xd2d2d2; // takes the tint (mid tone)
+const P_SHADE = 0x8f8f8f; // hair / shadow detail
+const P_DARK = 0x565666; // deep features (masks, collars, brims)
+const P_LIT = 0xf2f2f2; // bright accents (jewellery, rim light)
+const PW = 96;
+const PH = 112;
+const PCX = PW / 2;
+
+/** Shared head-and-shoulders base (shoulders, neck, head) for every portrait. */
+function portraitBase(g: Phaser.GameObjects.Graphics): void {
+  g.fillStyle(P_BASE, 1);
+  g.fillRoundedRect(PCX - 38, PH - 42, 76, 60, 22); // shoulders
+  g.fillRect(PCX - 9, PH - 56, 18, 18); // neck
+  g.fillCircle(PCX, PH - 66, 24); // head
+}
+
+function generatePortraitTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
-  const W = 96;
-  const H = 112;
-  const cx = W / 2;
+  const HY = PH - 66; // head center y
+  const stamp = (key: string) => g.generateTexture(key, PW, PH);
+
+  // Generic fallback bust (unchanged look).
   g.clear();
-  // Shoulders / torso (rounded, rising from the bottom edge).
-  g.fillStyle(0xd2d2d2, 1);
-  g.fillRoundedRect(cx - 38, H - 42, 76, 60, 22);
-  // Neck.
-  g.fillRect(cx - 9, H - 56, 18, 18);
-  // Head.
-  g.fillCircle(cx, H - 66, 24);
-  // Hair / brow shadow (darker, reads as a backlit silhouette detail).
-  g.fillStyle(0x8f8f8f, 1);
-  g.fillEllipse(cx, H - 80, 50, 30);
-  g.fillRect(cx - 25, H - 84, 50, 10);
-  // Soft lit highlight along one cheek + shoulder so it isn't a flat blob.
-  g.fillStyle(0xf2f2f2, 0.55);
-  g.fillCircle(cx - 8, H - 70, 9);
-  g.fillRoundedRect(cx - 34, H - 38, 16, 22, 8);
-  g.generateTexture(TX.portrait, W, H);
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillEllipse(PCX, PH - 80, 50, 30);
+  g.fillRect(PCX - 25, PH - 84, 50, 10);
+  g.fillStyle(P_LIT, 0.55);
+  g.fillCircle(PCX - 8, PH - 70, 9);
+  stamp(TX.portrait);
+
+  // ALEX — hopeful up-and-comer: side ponytail + headphones slung on the neck.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillEllipse(PCX, HY - 16, 46, 24); // crown hair
+  g.fillCircle(PCX + 22, HY - 6, 9); // ponytail
+  g.fillCircle(PCX + 28, HY + 4, 7);
+  g.fillStyle(P_DARK, 1);
+  g.fillCircle(PCX - 20, PH - 50, 6); // headphone cups resting on shoulders
+  g.fillCircle(PCX + 20, PH - 50, 6);
+  g.lineStyle(3, P_DARK, 1);
+  g.beginPath();
+  g.arc(PCX, PH - 52, 20, Math.PI, Math.PI * 2, true);
+  g.strokePath(); // headphone band across the chest
+  g.fillStyle(P_LIT, 0.5);
+  g.fillCircle(PCX - 9, HY + 2, 8); // cheek light
+  stamp('kf-portrait-alex');
+
+  // VY — seasoned mentor: flat cap + on-ear headphones + glasses.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillRoundedRect(PCX - 26, HY - 26, 52, 16, 6); // cap crown
+  g.fillStyle(P_DARK, 1);
+  g.fillRoundedRect(PCX - 30, HY - 14, 40, 5, 2); // cap brim
+  g.fillCircle(PCX - 24, HY + 2, 7); // ear cups
+  g.fillCircle(PCX + 24, HY + 2, 7);
+  g.lineStyle(3, P_DARK, 1);
+  g.beginPath();
+  g.arc(PCX, HY, 24, Math.PI * 1.15, Math.PI * 1.85, false);
+  g.strokePath(); // headphone band over the cap
+  g.fillStyle(P_DARK, 1);
+  g.fillRect(PCX - 14, HY - 2, 28, 4); // glasses bar
+  stamp('kf-portrait-vy');
+
+  // MAX — edgy rival: spiky hair + popped jacket collar.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  for (let i = -2; i <= 2; i++) {
+    const x = PCX + i * 11;
+    g.fillTriangle(x - 7, HY - 14, x + 7, HY - 14, x + i * 2, HY - 34); // spikes
+  }
+  g.fillEllipse(PCX, HY - 12, 46, 18); // hair mass
+  g.fillStyle(P_DARK, 1);
+  g.fillTriangle(PCX - 38, PH - 18, PCX - 14, PH - 40, PCX - 14, PH - 14); // collar L
+  g.fillTriangle(PCX + 38, PH - 18, PCX + 14, PH - 40, PCX + 14, PH - 14); // collar R
+  stamp('kf-portrait-max');
+
+  // THE JUDGE — austere gatekeeper: slicked side-part, dark shades, high collar.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillEllipse(PCX, HY - 16, 48, 24); // slicked hair
+  g.fillStyle(P_DARK, 1);
+  g.fillRect(PCX - 9, HY - 28, 3, 18); // side part line
+  g.fillRoundedRect(PCX - 17, HY - 2, 34, 7, 2); // shades
+  g.fillTriangle(PCX - 12, PH - 14, PCX - 12, PH - 40, PCX - 30, PH - 14); // high collar L
+  g.fillTriangle(PCX + 12, PH - 14, PCX + 12, PH - 40, PCX + 30, PH - 14); // high collar R
+  stamp('kf-portrait-judge');
+
+  // RIVA — glamorous champion: voluminous hair, top bun, hoop earrings.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillEllipse(PCX, HY - 8, 62, 40); // big hair
+  g.fillCircle(PCX, HY - 30, 11); // top bun
+  g.fillStyle(P_BASE, 1);
+  g.fillCircle(PCX, HY + 4, 22); // re-reveal the face over the hair
+  g.fillStyle(P_LIT, 1);
+  g.fillCircle(PCX - 24, HY + 12, 4); // earrings
+  g.fillCircle(PCX + 24, HY + 12, 4);
+  g.fillStyle(P_LIT, 0.5);
+  g.fillRoundedRect(PCX - 34, PH - 36, 14, 20, 7); // off-shoulder rim light
+  stamp('kf-portrait-riva');
+
+  // DEX — slick promoter: visor cap + boom headset mic + open collar.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_SHADE, 1);
+  g.fillRoundedRect(PCX - 24, HY - 22, 48, 12, 5); // visor crown
+  g.fillStyle(P_DARK, 1);
+  g.fillRoundedRect(PCX - 32, HY - 12, 44, 5, 2); // visor brim
+  g.fillCircle(PCX + 22, HY + 2, 6); // headset ear cup
+  g.lineStyle(3, P_DARK, 1);
+  g.beginPath();
+  g.moveTo(PCX + 22, HY + 4);
+  g.lineTo(PCX + 2, HY + 16); // boom mic arm
+  g.strokePath();
+  g.fillStyle(P_DARK, 1);
+  g.fillCircle(PCX + 1, HY + 17, 3); // mic tip
+  g.fillTriangle(PCX - 8, PH - 14, PCX, PH - 30, PCX + 8, PH - 14); // open collar V
+  stamp('kf-portrait-dex');
+
+  // THE ENCORE PHANTOM — masked headliner: dramatic high cape collar + eye mask.
+  g.clear();
+  portraitBase(g);
+  g.fillStyle(P_DARK, 1);
+  g.fillEllipse(PCX, HY - 18, 50, 26); // dark hood/hair
+  g.fillRect(PCX - 20, HY - 4, 40, 7); // eye mask band
+  g.fillTriangle(PCX - 16, PH - 12, PCX - 16, PH - 50, PCX - 42, PH - 10); // cape collar L
+  g.fillTriangle(PCX + 16, PH - 12, PCX + 16, PH - 50, PCX + 42, PH - 10); // cape collar R
+  g.fillStyle(P_LIT, 0.7);
+  g.fillTriangle(PCX, HY + 6, PCX - 8, PH - 40, PCX + 8, PH - 40); // glowing collar centre
+  g.lineStyle(2, P_LIT, 0.5);
+  g.beginPath();
+  g.arc(PCX, HY - 2, 30, Math.PI * 1.2, Math.PI * 1.8, false); // halo arc
+  g.strokePath();
+  stamp('kf-portrait-phantom');
+
   g.destroy();
 }
 
