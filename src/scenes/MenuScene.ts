@@ -70,6 +70,7 @@ import {
   clearRun,
   saveActiveMode,
   loadEndlessBest,
+  loadMazeBest,
   loadStoryProgress,
   saveStoryProgress,
   clearStoryProgress,
@@ -93,7 +94,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-25 · Venue bands in Levels grid + late-game balance';
+const LAST_PATCH = '2026-06-25 · New mode: Maze Night + Levels venue bands';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -623,27 +624,37 @@ export class MenuScene extends Phaser.Scene {
     const bottom = sh - TOUCH_MIN - 28;
     const areaH = bottom - top;
 
-    // Endless is hidden until unlocked, so a new player only sees Story.
-    const modes = MODES.filter((m) => m.key !== 'endless' || isFeatureUnlocked('endless'));
+    // Endless + Maze Night are hidden until unlocked, so a new player only sees
+    // Story; both reveal as the campaign progresses (chapters 5 / 18).
+    const modes = MODES.filter(
+      (m) =>
+        (m.key !== 'endless' || isFeatureUnlocked('endless')) &&
+        (m.key !== 'maze' || isFeatureUnlocked('maze')),
+    );
     const n = modes.length;
+    const gap = 16;
 
     let cardW: number;
     let cardH: number;
     const centers: { x: number; y: number }[] = [];
     if (portrait || n === 1) {
       cardW = Math.min(sw - 28, 460);
-      cardH = Math.min((areaH - 16) / n, n === 1 ? 240 : 210);
-      const stackH = cardH * n + 16 * (n - 1);
+      cardH = Math.min((areaH - gap * (n - 1)) / n, n === 1 ? 240 : 210);
+      const stackH = cardH * n + gap * (n - 1);
       const stackTop = top + Math.max(0, (areaH - stackH) / 2);
       modes.forEach((_, i) => {
-        centers.push({ x: sw / 2, y: stackTop + cardH / 2 + i * (cardH + 16) });
+        centers.push({ x: sw / 2, y: stackTop + cardH / 2 + i * (cardH + gap) });
       });
     } else {
-      cardW = Math.min((sw - 44) / 2, 340);
+      // Landscape: a centered row of n cards.
+      cardW = Math.min((sw - 28 - gap * (n - 1)) / n, 340);
       cardH = Math.min(areaH, 280);
+      const rowW = cardW * n + gap * (n - 1);
+      const startX = sw / 2 - rowW / 2 + cardW / 2;
       const cy = top + cardH / 2;
-      centers.push({ x: sw / 2 - cardW / 2 - 10, y: cy });
-      centers.push({ x: sw / 2 + cardW / 2 + 10, y: cy });
+      modes.forEach((_, i) => {
+        centers.push({ x: startX + i * (cardW + gap), y: cy });
+      });
     }
 
     modes.forEach((mode, i) => {
@@ -695,6 +706,11 @@ export class MenuScene extends Phaser.Scene {
         if (sl.fanMult > 1) flavor.push({ text: `🎵 Tonight: ${sl.name} · ${sl.fanMult}× fans`, color: '#ff9ed8' });
       }
       flavor.slice(0, 2).forEach((f, i) => this.text(cx, cardTop + 142 + i * 16, f.text, f.color, 10));
+    } else if (mode.key === 'maze') {
+      const best = loadMazeBest();
+      detail = best > 0 ? `Best: wave ${best} — beat it!` : 'No record yet';
+      resumable = hasRun('maze', 'maze');
+      this.text(cx, cardTop + 142, '🧱 Towers block — wall off a maze', '#a9e34b', 10);
     } else {
       const progress = loadStoryProgress();
       const done = progress?.completedChapters.length ?? 0;
@@ -765,12 +781,12 @@ export class MenuScene extends Phaser.Scene {
         );
         return;
       }
-    } else if (mode === 'endless' && hasRun('endless', 'endless')) {
+    } else if ((mode === 'endless' || mode === 'maze') && hasRun(mode, mode)) {
       this.confirmModal(
-        'Start a new endless run?',
+        mode === 'maze' ? 'Start a new maze run?' : 'Start a new endless run?',
         ['Your run in progress will be abandoned.', 'Your best wave is kept.'],
         'Start new',
-        () => this.startMode('endless', false),
+        () => this.startMode(mode, false),
       );
       return;
     }
@@ -840,9 +856,9 @@ export class MenuScene extends Phaser.Scene {
     const firstChapter = CHAPTER_ORDER[0];
     let levelId: LevelId = firstChapter;
 
-    if (mode === 'endless') {
-      levelId = 'endless';
-      if (!resume) clearRun('endless', 'endless');
+    if (mode === 'endless' || mode === 'maze') {
+      levelId = mode; // standalone map id matches the mode key
+      if (!resume) clearRun(mode, levelId);
     } else if (resume) {
       const progress = loadStoryProgress();
       levelId = progress?.levelId ?? firstChapter;

@@ -14,6 +14,7 @@ import {
   type BoardLayers,
 } from '../systems/grid';
 import { WaveManager } from '../systems/WaveManager';
+import { MazeField } from '../systems/maze';
 import type { Enemy } from '../systems/Enemy';
 import { TowerManager } from '../systems/TowerManager';
 import type { Tower } from '../systems/Tower';
@@ -49,6 +50,8 @@ import {
   saveEndlessBest,
   saveEndlessBestScore,
   loadEndlessBest,
+  loadMazeBest,
+  saveMazeBest,
   loadStoryProgress,
   saveStoryProgress,
   loadSeenSynergyHint,
@@ -124,6 +127,14 @@ export class GameScene extends Phaser.Scene {
   private screen!: ScreenLayout;
   private waves!: WaveManager;
   private towers!: TowerManager;
+  /** Maze Night flow-field router (undefined on lane maps). */
+  private maze?: MazeField;
+  /** Board overlay drawing the crowd's current route through the maze. */
+  private mazeFlowGfx?: Phaser.GameObjects.Graphics;
+  /** True for any never-ending mode (endless + maze) — drives wave generation. */
+  private isEndless = false;
+  /** True only for Maze Night (open-floor flow-field routing + no-seal building). */
+  private isMaze = false;
   private buildPanel!: BuildPanel;
   private upgradePanel!: UpgradePanel;
   /** Gold the currently-open build/upgrade panel was built with, so it can be
@@ -362,9 +373,23 @@ export class GameScene extends Phaser.Scene {
     this.towerCostMult = mods.towerCostMult;
     this.comboWindow = COMBO_WINDOW + mods.comboWindowBonus;
 
+    // Mode flags: maze + endless both run forever; maze adds flow-field routing.
+    this.isMaze = this.map.pathMode === 'maze';
+    this.isEndless = this.mode === 'endless' || this.mode === 'maze';
+
     // Board-local layout (fixed tile size, origin 0,0) + the board container.
     this.layout = computeGridLayout(this.map);
     this.createBoard();
+
+    // Maze Night: build the flow field the crowd pathfinds through + the overlay
+    // that shows its route. Recomputed on every tower place/sell (mazeBlocked
+    // reads live tower occupancy).
+    if (this.isMaze) {
+      this.maze = new MazeField(this.map);
+      this.mazeFlowGfx = this.add.graphics();
+      this.layers.range.add(this.mazeFlowGfx);
+      this.recomputeMaze();
+    }
 
     this.drawHud();
     this.drawControlBar();
@@ -393,8 +418,9 @@ export class GameScene extends Phaser.Scene {
       },
       this.layers.enemies,
       profile,
-      this.mode === 'endless',
+      this.isEndless,
       mods.enemyHpMult,
+      this.maze,
     );
 
     this.towers = new TowerManager(
@@ -429,6 +455,7 @@ export class GameScene extends Phaser.Scene {
       this.highestCombo = saved.highestCombo;
       this.resumeWaveIndex = saved.resumeWaveIndex;
       this.towers.restore(saved.towers);
+      this.recomputeMaze(); // restored towers shape the maze before play resumes
       this.waves.startAtWave(saved.resumeWaveIndex);
     } else {
       this.resumeWaveIndex = 0;
@@ -731,9 +758,9 @@ export class GameScene extends Phaser.Scene {
     this.panelGold = this.gold;
   }
 
-  /** 1-based campaign level reached (endless = everything unlocked). */
+  /** 1-based campaign level reached (endless/maze = everything unlocked). */
   private reachedLevel(): number {
-    return this.mode === 'endless' ? 99 : CHAPTER_ORDER.indexOf(this.levelId) + 1;
+    return this.isEndless ? 99 : CHAPTER_ORDER.indexOf(this.levelId) + 1;
   }
 
   /** Brief red flash on a tile the player can't build on. */
@@ -758,9 +785,24 @@ export class GameScene extends Phaser.Scene {
     const target = this.buildTarget;
     const cost = this.towerCost(type);
     if (target && this.gold >= cost && this.towers.canPlace(target.col, target.row)) {
+      // Maze Night: refuse a placement that would wall the crowd off from the
+      // stage entirely (or sit on a tile a foe is on). You shape the path; you
+      // can't seal it.
+      if (
+        this.isMaze &&
+        this.maze &&
+        !this.maze.pathClearWith(target, this.mazeBlocked, this.mazeSources())
+      ) {
+        this.flashInvalidTile(target.col, target.row);
+        this.screenFloat('🚫 Can’t block the crowd in!', '#ff8787');
+        haptics.play('error');
+        this.closeBuild();
+        return;
+      }
       this.gold -= cost;
       this.goldSpent += cost;
       this.towers.placeTower(type, target.col, target.row, cost);
+      this.recomputeMaze();
       haptics.play('place');
       const { x, y } = tileToWorld(this.layout, target.col, target.row);
       this.fxBurst(x, y, TOWER_TYPES[type].color);
@@ -768,6 +810,71 @@ export class GameScene extends Phaser.Scene {
       this.saveRunState();
     }
     this.closeBuild();
+  }
+
+  /** Live tower occupancy for the maze flow field (stage/obstacle are static). */
+  private readonly mazeBlocked = (c: number, r: number): boolean =>
+    this.towers?.hasTowerAt(c, r) ?? false;
+
+  /** Rebuild the maze flow field for the current tower layout (no-op off maze). */
+  private recomputeMaze(): void {
+    if (!this.maze) return;
+    this.maze.recompute(this.mazeBlocked);
+    this.drawMazeFlow();
+  }
+
+  /**
+   * Draw the crowd's route through the maze: a faint chevron on every walkable
+   * cell pointing the way the flow field sends enemies toward the stage. Lets
+   * the player read the path their walls create. Redrawn on each recompute;
+   * lives in the board's range layer so it scales with the board.
+   */
+  private drawMazeFlow(): void {
+    const g = this.mazeFlowGfx;
+    if (!g || !this.maze) return;
+    g.clear();
+    const ts = this.layout.tileSize;
+    // A bright cyan-white that reads on every venue theme (the per-theme aisle
+    // tint can blend into the board), so the route is legible at a glance.
+    const accent = 0xbfe9ff;
+    const len = ts * 0.24;
+    for (let r = 0; r < this.map.rows; r++) {
+      for (let c = 0; c < this.map.cols; c++) {
+        if (this.towers?.hasTowerAt(c, r)) continue;
+        const n = this.maze.next(c, r);
+        if (!n) continue;
+        const from = tileToWorld(this.layout, c, r);
+        const dx = n.col - c;
+        const dy = n.row - r;
+        // Unit direction toward the next cell (orthogonal, so one axis is 0).
+        const ux = Math.sign(dx);
+        const uy = Math.sign(dy);
+        const tipX = from.x + ux * len;
+        const tipY = from.y + uy * len;
+        g.lineStyle(2, accent, 0.42);
+        g.beginPath();
+        g.moveTo(from.x - ux * len, from.y - uy * len);
+        g.lineTo(tipX, tipY);
+        g.strokePath();
+        // Small arrowhead at the tip (perpendicular wings).
+        const wing = len * 0.6;
+        g.beginPath();
+        g.moveTo(tipX, tipY);
+        g.lineTo(tipX - ux * wing + uy * wing, tipY - uy * wing + ux * wing);
+        g.moveTo(tipX, tipY);
+        g.lineTo(tipX - ux * wing - uy * wing, tipY - uy * wing - ux * wing);
+        g.strokePath();
+      }
+    }
+  }
+
+  /** Cells that must always reach the stage: every spawn tile + every live foe. */
+  private mazeSources(): { col: number; row: number }[] {
+    const sources = this.map.laneRows.map((r) => ({ col: this.map.spawnCol, row: r }));
+    for (const e of this.waves.enemies) {
+      sources.push({ col: e.gridCol, row: e.gridRow });
+    }
+    return sources;
   }
 
   /** A short expanding glow ring + spark burst (tower placed / upgraded). */
@@ -1161,6 +1268,7 @@ export class GameScene extends Phaser.Scene {
     haptics.play('tap');
     this.gold += tower.sellValue;
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
+    this.recomputeMaze(); // freeing a tile reopens routes through it
     this.refreshHud();
     this.saveRunState();
   }
@@ -1505,11 +1613,13 @@ export class GameScene extends Phaser.Scene {
     this.goldText.setText(`${this.gold}`);
     const wave = this.waves.currentWaveNumber;
     const foes = this.waves.enemiesRemaining;
-    // Make the mode legible: endless counts up with no cap; story shows /20.
+    // Make the mode legible: endless/maze count up with no cap; story shows /N.
     this.waveText.setText(
-      this.mode === 'endless'
-        ? `ENDLESS · Wave ${wave} · Foes ${foes}`
-        : `STORY · Wave ${wave}/${this.waves.totalWaves} · Foes ${foes}`,
+      this.isMaze
+        ? `MAZE · Wave ${wave} · Foes ${foes}`
+        : this.mode === 'endless'
+          ? `ENDLESS · Wave ${wave} · Foes ${foes}`
+          : `STORY · Wave ${wave}/${this.waves.totalWaves} · Foes ${foes}`,
     );
     // Anchor the spotlight icon just left of the (variable-width) wave readout.
     this.waveIcon.setPosition(
@@ -2471,7 +2581,7 @@ export class GameScene extends Phaser.Scene {
     // Tonight's Setlist multiplies the in-run fans; the "Going Viral" research
     // node multiplies the whole haul. Quest/first-win/milestone bonuses are fixed.
     let runHaul = Math.round(this.runFans * this.runFanMult);
-    if (this.mode === 'endless') {
+    if (this.isEndless) {
       // Cap the grindy per-run haul so a marathon run can't farm unbounded Fame.
       const cap = ENDLESS_FAME_BASE_CAP + chaptersCleared() * ENDLESS_FAME_CAP_PER_CHAPTER;
       if (runHaul > cap) {
@@ -2701,14 +2811,15 @@ export class GameScene extends Phaser.Scene {
     // Even a loss earns: bank this run's fans → bonus stars (the "never wasted"
     // loop). Banks lifetime + fan meter together.
     this.bankRunFans(false);
-    // Endless: bank the best wave reached (new record only if strictly higher).
-    if (this.mode === 'endless') {
+    // Endless / Maze: bank the best wave reached (new record only if higher).
+    // Maze keeps its own ladder; the endless-only score record stays endless.
+    if (this.isEndless) {
       const reached = this.waves.currentWaveNumber;
-      this.endNewRecord = reached > loadEndlessBest();
-      this.endBestWave = saveEndlessBest(reached);
+      this.endNewRecord = reached > (this.isMaze ? loadMazeBest() : loadEndlessBest());
+      this.endBestWave = this.isMaze ? saveMazeBest(reached) : saveEndlessBest(reached);
       // A single score rewards going deep AND playing well (kills + combo).
       this.endScore = reached * 1000 + this.runKills * 5 + this.highestCombo * 25;
-      this.endBestScore = saveEndlessBestScore(this.endScore);
+      if (!this.isMaze) this.endBestScore = saveEndlessBestScore(this.endScore);
     }
 
     this.endState = 'gameover';
@@ -2741,7 +2852,7 @@ export class GameScene extends Phaser.Scene {
         .setInteractive(), // absorb taps so towers can't be tapped through the overlay
     );
 
-    if (this.endState === 'gameover' && this.mode === 'endless') {
+    if (this.endState === 'gameover' && this.isEndless) {
       this.renderEndlessSurvived(line);
     } else if (this.endState === 'gameover') {
       line(-30, "SHOW'S OVER", 30, '#ff6b6b');

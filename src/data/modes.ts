@@ -9,7 +9,7 @@
  *    Stage) with character dialogue between waves (see `src/data/story.ts`).
  *    Star ratings still apply.
  */
-export type GameMode = 'endless' | 'story';
+export type GameMode = 'endless' | 'story' | 'maze';
 
 export interface ModeInfo {
   key: GameMode;
@@ -33,5 +33,12 @@ export const MODES: ModeInfo[] = [
     icon: '🎭', // 🎭
     tagline: 'Defend the dream.',
     accent: 0xe84393,
+  },
+  {
+    key: 'maze',
+    name: 'MAZE NIGHT',
+    icon: '🧩',
+    tagline: 'Build the path. Trap the crowd.',
+    accent: 0x51cf66,
   },
 ];

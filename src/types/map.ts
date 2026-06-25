@@ -69,4 +69,10 @@ export interface MapDefinition {
   waveProfile?: WaveProfile;
   /** Set-piece rule for milestone levels (undefined = a normal level). */
   special?: SpecialKind;
+  /**
+   * Movement model. Default (undefined) = `lane`: enemies walk a fixed aisle
+   * row right→left. `maze`: the board is an open floor and towers block tiles;
+   * enemies flow-field pathfind around them (Maze Night mode). See systems/maze.ts.
+   */
+  pathMode?: 'lane' | 'maze';
 }
