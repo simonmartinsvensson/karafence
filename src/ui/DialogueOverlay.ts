@@ -1,6 +1,22 @@
 import Phaser from 'phaser';
 import { CHARACTERS, type StoryBeat } from '../data/story';
 import { portraitKey } from '../systems/textures';
+import { audio } from '../systems/audio';
+
+/** Per-character "voice" pitch (Hz) for the typewriter blip; lower = deeper. */
+const VOICE: Record<string, number> = {
+  alex: 520,
+  vy: 300,
+  max: 440,
+  judge: 220,
+  riva: 640,
+  dex: 480,
+  phantom: 190,
+};
+const VOICE_DEFAULT = 400;
+/** Characters typed per typewriter tick + tick length (ms). */
+const TYPE_STEP = 2;
+const TYPE_DELAY = 18;
 
 /**
  * Reusable visual-novel-style dialogue overlay (story mode). Given a queue of
@@ -21,6 +37,15 @@ export class DialogueOverlay {
   private index = 0;
   private onComplete: () => void = () => {};
 
+  // Typewriter state for the current beat.
+  private bodyText?: Phaser.GameObjects.Text;
+  private hintText?: Phaser.GameObjects.Text;
+  private typeEvent?: Phaser.Time.TimerEvent;
+  private fullText = '';
+  private typing = false;
+  /** True once the current beat's text has fully revealed (skip re-typing on relayout). */
+  private revealed = false;
+
   constructor(private readonly scene: Phaser.Scene) {}
 
   get isOpen(): boolean {
@@ -36,6 +61,7 @@ export class DialogueOverlay {
     }
     this.beats = beats;
     this.index = 0;
+    this.revealed = false;
     this.onComplete = onComplete;
 
     this.backdrop = this.scene.add
@@ -44,14 +70,24 @@ export class DialogueOverlay {
       .setDepth(DEPTH)
       .setScrollFactor(0)
       .setInteractive();
-    this.backdrop.on('pointerdown', () => this.advance());
+    this.backdrop.on('pointerdown', () => this.onTap());
 
     this.render();
+  }
+
+  /** Tap: first finish the typewriter, then advance on the next tap. */
+  private onTap(): void {
+    if (this.typing) {
+      this.finishTyping();
+      return;
+    }
+    this.advance();
   }
 
   /** Advance to the next beat, or finish + close after the last one. */
   private advance(): void {
     this.index += 1;
+    this.revealed = false;
     if (this.index >= this.beats.length) {
       const done = this.onComplete;
       this.close();
@@ -63,6 +99,9 @@ export class DialogueOverlay {
 
   /** Re-render the current beat for the current viewport. */
   private render(): void {
+    this.typeEvent?.remove();
+    this.typeEvent = undefined;
+    this.typing = false;
     this.container?.destroy(true);
     const beat = this.beats[this.index];
     if (!beat) return;
@@ -122,13 +161,23 @@ export class DialogueOverlay {
         .rectangle(portraitX, portraitBottom - portraitH * 0.45, portraitW + 8, portraitH * 0.92, 0x0c0c14, 0.9)
         .setStrokeStyle(2, char.color, 0.55),
     );
-    parts.push(
-      this.scene.add
-        .image(portraitX, portraitBottom, portraitKey(beat.character))
-        .setOrigin(0.5, 1)
-        .setDisplaySize(portraitW, portraitH)
-        .setTint(char.color),
-    );
+    const portrait = this.scene.add
+      .image(portraitX, portraitBottom, portraitKey(beat.character))
+      .setOrigin(0.5, 1)
+      .setDisplaySize(portraitW, portraitH)
+      .setTint(char.color);
+    parts.push(portrait);
+    // Fresh beat: slide the portrait up + fade/pop it in so the speaker "enters".
+    if (!this.revealed) {
+      portrait.setAlpha(0).setY(portraitBottom + 14);
+      this.scene.tweens.add({
+        targets: portrait,
+        y: portraitBottom,
+        alpha: 1,
+        duration: 260,
+        ease: 'Back.out',
+      });
+    }
 
     // Name plate.
     const nameY = boxTop + 16;
@@ -148,22 +197,24 @@ export class DialogueOverlay {
         .setOrigin(0, 0.5),
     );
 
-    // Body lines (already built + measured above; just position it).
+    // Body lines (built + measured above). Freeze the wrapped layout so the
+    // typewriter can reveal a growing substring without any reflow jumps.
+    this.fullText = body.getWrappedText(beat.lines.join('\n')).join('\n');
+    body.setText(this.revealed ? this.fullText : '');
     body.setPosition(textLeft, boxTop + topArea);
+    this.bodyText = body;
     parts.push(body);
 
     // Advance hint.
-    const last = this.index === this.beats.length - 1;
-    parts.push(
-      this.scene.add
-        .text(
-          cx + boxW / 2 - 12,
-          boxCy + boxH / 2 - 11,
-          last ? 'tap to continue ▶' : 'tap ▶',
-          { fontFamily: 'monospace', fontSize: '10px', color: '#9aa0b0' },
-        )
-        .setOrigin(1, 0.5),
-    );
+    const hint = this.scene.add
+      .text(cx + boxW / 2 - 12, boxCy + boxH / 2 - 11, '', {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#9aa0b0',
+      })
+      .setOrigin(1, 0.5);
+    this.hintText = hint;
+    parts.push(hint);
 
     this.container = this.scene.add.container(0, 0, parts).setDepth(DEPTH + 1).setScrollFactor(0);
     // Make the whole box tappable too (not just the backdrop).
@@ -171,7 +222,53 @@ export class DialogueOverlay {
       new Phaser.Geom.Rectangle(left, boxTop, boxW, boxH),
       Phaser.Geom.Rectangle.Contains,
     );
-    this.container.on('pointerdown', () => this.advance());
+    this.container.on('pointerdown', () => this.onTap());
+
+    if (this.revealed) this.updateHint();
+    else this.startTyping(beat.character);
+  }
+
+  /** Reveal the current beat's text one chunk at a time, with a per-char blip. */
+  private startTyping(character: string): void {
+    this.typing = true;
+    this.updateHint();
+    const freq = VOICE[character] ?? VOICE_DEFAULT;
+    let n = 0;
+    const total = this.fullText.length;
+    this.typeEvent = this.scene.time.addEvent({
+      delay: TYPE_DELAY,
+      loop: true,
+      callback: () => {
+        n += TYPE_STEP;
+        this.bodyText?.setText(this.fullText.slice(0, n));
+        const ch = this.fullText[n - 1];
+        // Blip only on a printable char, and only every other tick, so the
+        // "voice" patters along with the text without becoming a buzz.
+        if (ch && ch !== ' ' && ch !== '\n' && n % 4 === 0) audio.sfx('talk', { freq });
+        if (n >= total) this.finishTyping();
+      },
+    });
+  }
+
+  /** Skip to (or settle on) the full text and stop the typewriter. */
+  private finishTyping(): void {
+    this.typeEvent?.remove();
+    this.typeEvent = undefined;
+    this.typing = false;
+    this.revealed = true;
+    this.bodyText?.setText(this.fullText);
+    this.updateHint();
+  }
+
+  /** Hint reflects whether we're mid-type (skip) or ready to advance. */
+  private updateHint(): void {
+    if (!this.hintText) return;
+    if (this.typing) {
+      this.hintText.setText('tap to skip');
+      return;
+    }
+    const last = this.index === this.beats.length - 1;
+    this.hintText.setText(last ? 'tap to continue ▶' : 'tap ▶');
   }
 
   /** The beat's lines as a wrapped text object (used for measure + display). */
@@ -195,10 +292,15 @@ export class DialogueOverlay {
   }
 
   close(): void {
+    this.typeEvent?.remove();
+    this.typeEvent = undefined;
+    this.typing = false;
     this.backdrop?.destroy();
     this.backdrop = undefined;
     this.container?.destroy(true);
     this.container = undefined;
+    this.bodyText = undefined;
+    this.hintText = undefined;
     this.beats = [];
     this.index = 0;
   }

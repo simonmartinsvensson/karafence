@@ -49,7 +49,8 @@ export type SfxName =
   // Menu / meta-progression flourishes (see MenuScene).
   | 'reward' // achievement claimed
   | 'levelUp' // a tower branch / research node maxed
-  | 'fanfare'; // prestige + rank-up
+  | 'fanfare' // prestige + rank-up
+  | 'talk'; // story dialogue typewriter blip (pitched per character via opts.freq)
 
 // --- Note helpers ----------------------------------------------------------
 
@@ -359,7 +360,7 @@ class AudioManager {
   // --- SFX -----------------------------------------------------------------
 
   /** Fire a one-shot sound effect (no-op until audio is unlocked). */
-  sfx(name: SfxName, opts: { combo?: number } = {}): void {
+  sfx(name: SfxName, opts: { combo?: number; freq?: number } = {}): void {
     if (!this.ready || !this.ctx) return;
     const now = this.ctx.currentTime;
     const minGap = SFX_THROTTLE[name] ?? 0;
@@ -429,6 +430,13 @@ class AudioManager {
         this.blip(1047, 1047, 0.34, 'square', 0.24, 0.3);
         this.noise(0.3, 0.05);
         break;
+      case 'talk': {
+        // Soft, very short blip as story text types — a per-character "voice"
+        // (pitch from opts.freq). Quiet so a flurry never grates.
+        const f = opts.freq ?? 440;
+        this.blip(f, f * 0.94, 0.035, 'square', 0.05);
+        break;
+      }
     }
   }
 
