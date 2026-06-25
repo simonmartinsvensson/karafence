@@ -444,7 +444,14 @@ export class GameScene extends Phaser.Scene {
     }
     this.refreshHud();
     this.ambientNotes();
-    this.showVenueCard();
+    // On the first level of each 10-level venue band, announce the chapter with
+    // a theme-tinted title card; other levels just flash their level name.
+    const venueIndex = CHAPTER_ORDER.indexOf(this.levelId);
+    if (this.mode === 'story' && venueIndex >= 0 && venueIndex % 10 === 0) {
+      this.showChapterCard(venueIndex);
+    } else {
+      this.showVenueCard();
+    }
     this.maybeShowSynergyHint();
     audio.playMusic('inWave');
   }
@@ -485,6 +492,58 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0);
     card.setShadow(0, 0, '#e84393', 16, true, true);
     this.tweens.add({ targets: card, alpha: 1, duration: 320, yoyo: true, hold: 1400, onComplete: () => card.destroy() });
+  }
+
+  /**
+   * Big venue announcement shown on the first level of each 10-level band
+   * (L1/11/21/31/41/51): "CHAPTER N · <venue name>", tinted to the new theme's
+   * accent so the visual shift to a fresh venue lands. The level name rides
+   * underneath. Replaces the plain venue card on those levels.
+   */
+  private showChapterCard(venueIndex: number): void {
+    const chapter = Math.floor(venueIndex / 10) + 1;
+    const accent = '#' + this.theme.tiles[TileType.Aisle].toString(16).padStart(6, '0');
+    const cx = this.sw / 2;
+    const cy = this.sh * 0.3;
+    const kicker = this.add
+      .text(cx, cy - 30, `CHAPTER ${chapter}`, {
+        fontFamily: 'monospace',
+        fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 36, 11, 16))}px`,
+        color: accent,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setLetterSpacing(4);
+    const title = this.add
+      .text(cx, cy, this.theme.name, {
+        fontFamily: 'monospace',
+        fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 16, 22, 40))}px`,
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    title.setShadow(0, 0, accent, 18, true, true);
+    const sub = this.add
+      .text(cx, cy + 30, `🎤 ${this.map.name}`, {
+        fontFamily: 'monospace',
+        fontSize: `${Math.round(Phaser.Math.Clamp(this.sw / 32, 12, 17))}px`,
+        color: '#d0d0d8',
+      })
+      .setOrigin(0.5);
+    const card = this.add
+      .container(0, 0, [kicker, title, sub])
+      .setDepth(DEPTH_OVERLAY + 40)
+      .setScale(0.7)
+      .setAlpha(0);
+    this.tweens.add({ targets: card, scale: 1, alpha: 1, duration: 360, ease: 'Back.out' });
+    this.tweens.add({
+      targets: card,
+      alpha: 0,
+      delay: 2200,
+      duration: 600,
+      onComplete: () => card.destroy(true),
+    });
+    haptics.play('soft');
   }
 
   /** One-time teach for the adjacency synergy, the first run after it unlocks. */
