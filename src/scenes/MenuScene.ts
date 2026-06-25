@@ -92,7 +92,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-25 · Chapter title cards announce each venue';
+const LAST_PATCH = '2026-06-25 · New mode: Maze Night (build the path!)';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
