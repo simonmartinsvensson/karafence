@@ -26,6 +26,7 @@ const UNLOCK_HIGH_WATER_KEY = 'karafence:maxchapters:v1';
 const MODE_KEY = 'karafence:mode';
 const ENDLESS_BEST_KEY = 'karafence:endless:best';
 const ENDLESS_SCORE_KEY = 'karafence:endless:bestscore';
+const MAZE_BEST_KEY = 'karafence:maze:best';
 const STORY_KEY = 'karafence:story:progress';
 
 /** One placed tower, captured for resume. */
@@ -196,6 +197,18 @@ export function loadEndlessBestScore(): number {
 export function saveEndlessBestScore(score: number): number {
   const best = Math.max(loadEndlessBestScore(), Math.floor(score));
   write(ENDLESS_SCORE_KEY, best);
+  return best;
+}
+
+/** Maze Night keeps its own best-wave record (separate ladder from endless). */
+export function loadMazeBest(): number {
+  const n = read<number>(MAZE_BEST_KEY);
+  return typeof n === 'number' && n > 0 ? n : 0;
+}
+
+export function saveMazeBest(wave: number): number {
+  const best = Math.max(loadMazeBest(), Math.floor(wave));
+  write(MAZE_BEST_KEY, best);
   return best;
 }
 

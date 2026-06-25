@@ -34,4 +34,11 @@ export const MODES: ModeInfo[] = [
     tagline: 'Defend the dream.',
     accent: 0xe84393,
   },
+  {
+    key: 'maze',
+    name: 'MAZE NIGHT',
+    icon: '🧩',
+    tagline: 'Build the path. Trap the crowd.',
+    accent: 0x51cf66,
+  },
 ];

@@ -20,7 +20,8 @@ export type Feature =
   | 'records' // the Records / Goals button
   | 'dailies' // daily quests + Tonight's Setlist
   | 'synergies' // tower adjacency synergies
-  | 'boons'; // between-wave "encore boon" choices
+  | 'boons' // between-wave "encore boon" choices
+  | 'maze'; // Maze Night mode card
 
 /** Chapters cleared required to unlock each feature. */
 export const FEATURE_UNLOCK: Record<Feature, number> = {
@@ -32,6 +33,7 @@ export const FEATURE_UNLOCK: Record<Feature, number> = {
   dailies: 8,
   synergies: 12,
   boons: 15,
+  maze: 18,
 };
 
 /** Short label shown in the "🔓 New: …" reveal toast when a feature unlocks. */
@@ -44,6 +46,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   dailies: 'Daily quests & Setlist',
   synergies: 'Tower synergies',
   boons: 'Encore boons (between waves)',
+  maze: 'Maze Night mode',
 };
 
 export function chaptersCleared(): number {

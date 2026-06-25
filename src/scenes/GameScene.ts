@@ -50,6 +50,8 @@ import {
   saveEndlessBest,
   saveEndlessBestScore,
   loadEndlessBest,
+  loadMazeBest,
+  saveMazeBest,
   loadStoryProgress,
   saveStoryProgress,
   loadSeenSynergyHint,
@@ -751,9 +753,9 @@ export class GameScene extends Phaser.Scene {
     this.panelGold = this.gold;
   }
 
-  /** 1-based campaign level reached (endless = everything unlocked). */
+  /** 1-based campaign level reached (endless/maze = everything unlocked). */
   private reachedLevel(): number {
-    return this.mode === 'endless' ? 99 : CHAPTER_ORDER.indexOf(this.levelId) + 1;
+    return this.isEndless ? 99 : CHAPTER_ORDER.indexOf(this.levelId) + 1;
   }
 
   /** Brief red flash on a tile the player can't build on. */
@@ -1559,11 +1561,13 @@ export class GameScene extends Phaser.Scene {
     this.goldText.setText(`${this.gold}`);
     const wave = this.waves.currentWaveNumber;
     const foes = this.waves.enemiesRemaining;
-    // Make the mode legible: endless counts up with no cap; story shows /20.
+    // Make the mode legible: endless/maze count up with no cap; story shows /N.
     this.waveText.setText(
-      this.mode === 'endless'
-        ? `ENDLESS · Wave ${wave} · Foes ${foes}`
-        : `STORY · Wave ${wave}/${this.waves.totalWaves} · Foes ${foes}`,
+      this.isMaze
+        ? `MAZE · Wave ${wave} · Foes ${foes}`
+        : this.mode === 'endless'
+          ? `ENDLESS · Wave ${wave} · Foes ${foes}`
+          : `STORY · Wave ${wave}/${this.waves.totalWaves} · Foes ${foes}`,
     );
     // Anchor the spotlight icon just left of the (variable-width) wave readout.
     this.waveIcon.setPosition(
@@ -2525,7 +2529,7 @@ export class GameScene extends Phaser.Scene {
     // Tonight's Setlist multiplies the in-run fans; the "Going Viral" research
     // node multiplies the whole haul. Quest/first-win/milestone bonuses are fixed.
     let runHaul = Math.round(this.runFans * this.runFanMult);
-    if (this.mode === 'endless') {
+    if (this.isEndless) {
       // Cap the grindy per-run haul so a marathon run can't farm unbounded Fame.
       const cap = ENDLESS_FAME_BASE_CAP + chaptersCleared() * ENDLESS_FAME_CAP_PER_CHAPTER;
       if (runHaul > cap) {
@@ -2755,14 +2759,15 @@ export class GameScene extends Phaser.Scene {
     // Even a loss earns: bank this run's fans → bonus stars (the "never wasted"
     // loop). Banks lifetime + fan meter together.
     this.bankRunFans(false);
-    // Endless: bank the best wave reached (new record only if strictly higher).
-    if (this.mode === 'endless') {
+    // Endless / Maze: bank the best wave reached (new record only if higher).
+    // Maze keeps its own ladder; the endless-only score record stays endless.
+    if (this.isEndless) {
       const reached = this.waves.currentWaveNumber;
-      this.endNewRecord = reached > loadEndlessBest();
-      this.endBestWave = saveEndlessBest(reached);
+      this.endNewRecord = reached > (this.isMaze ? loadMazeBest() : loadEndlessBest());
+      this.endBestWave = this.isMaze ? saveMazeBest(reached) : saveEndlessBest(reached);
       // A single score rewards going deep AND playing well (kills + combo).
       this.endScore = reached * 1000 + this.runKills * 5 + this.highestCombo * 25;
-      this.endBestScore = saveEndlessBestScore(this.endScore);
+      if (!this.isMaze) this.endBestScore = saveEndlessBestScore(this.endScore);
     }
 
     this.endState = 'gameover';
@@ -2795,7 +2800,7 @@ export class GameScene extends Phaser.Scene {
         .setInteractive(), // absorb taps so towers can't be tapped through the overlay
     );
 
-    if (this.endState === 'gameover' && this.mode === 'endless') {
+    if (this.endState === 'gameover' && this.isEndless) {
       this.renderEndlessSurvived(line);
     } else if (this.endState === 'gameover') {
       line(-30, "SHOW'S OVER", 30, '#ff6b6b');
