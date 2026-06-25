@@ -14,6 +14,7 @@ import {
   type BoardLayers,
 } from '../systems/grid';
 import { WaveManager } from '../systems/WaveManager';
+import { MazeField } from '../systems/maze';
 import type { Enemy } from '../systems/Enemy';
 import { TowerManager } from '../systems/TowerManager';
 import type { Tower } from '../systems/Tower';
@@ -124,6 +125,12 @@ export class GameScene extends Phaser.Scene {
   private screen!: ScreenLayout;
   private waves!: WaveManager;
   private towers!: TowerManager;
+  /** Maze Night flow-field router (undefined on lane maps). */
+  private maze?: MazeField;
+  /** True for any never-ending mode (endless + maze) — drives wave generation. */
+  private isEndless = false;
+  /** True only for Maze Night (open-floor flow-field routing + no-seal building). */
+  private isMaze = false;
   private buildPanel!: BuildPanel;
   private upgradePanel!: UpgradePanel;
   /** Gold the currently-open build/upgrade panel was built with, so it can be
@@ -362,9 +369,20 @@ export class GameScene extends Phaser.Scene {
     this.towerCostMult = mods.towerCostMult;
     this.comboWindow = COMBO_WINDOW + mods.comboWindowBonus;
 
+    // Mode flags: maze + endless both run forever; maze adds flow-field routing.
+    this.isMaze = this.map.pathMode === 'maze';
+    this.isEndless = this.mode === 'endless' || this.mode === 'maze';
+
     // Board-local layout (fixed tile size, origin 0,0) + the board container.
     this.layout = computeGridLayout(this.map);
     this.createBoard();
+
+    // Maze Night: build the flow field the crowd pathfinds through. Recomputed
+    // on every tower place/sell (mazeBlocked reads live tower occupancy).
+    if (this.isMaze) {
+      this.maze = new MazeField(this.map);
+      this.maze.recompute(this.mazeBlocked);
+    }
 
     this.drawHud();
     this.drawControlBar();
@@ -393,8 +411,9 @@ export class GameScene extends Phaser.Scene {
       },
       this.layers.enemies,
       profile,
-      this.mode === 'endless',
+      this.isEndless,
       mods.enemyHpMult,
+      this.maze,
     );
 
     this.towers = new TowerManager(
@@ -429,6 +448,7 @@ export class GameScene extends Phaser.Scene {
       this.highestCombo = saved.highestCombo;
       this.resumeWaveIndex = saved.resumeWaveIndex;
       this.towers.restore(saved.towers);
+      this.recomputeMaze(); // restored towers shape the maze before play resumes
       this.waves.startAtWave(saved.resumeWaveIndex);
     } else {
       this.resumeWaveIndex = 0;
@@ -758,9 +778,24 @@ export class GameScene extends Phaser.Scene {
     const target = this.buildTarget;
     const cost = this.towerCost(type);
     if (target && this.gold >= cost && this.towers.canPlace(target.col, target.row)) {
+      // Maze Night: refuse a placement that would wall the crowd off from the
+      // stage entirely (or sit on a tile a foe is on). You shape the path; you
+      // can't seal it.
+      if (
+        this.isMaze &&
+        this.maze &&
+        !this.maze.pathClearWith(target, this.mazeBlocked, this.mazeSources())
+      ) {
+        this.flashInvalidTile(target.col, target.row);
+        this.screenFloat('🚫 Can’t block the crowd in!', '#ff8787');
+        haptics.play('error');
+        this.closeBuild();
+        return;
+      }
       this.gold -= cost;
       this.goldSpent += cost;
       this.towers.placeTower(type, target.col, target.row, cost);
+      this.recomputeMaze();
       haptics.play('place');
       const { x, y } = tileToWorld(this.layout, target.col, target.row);
       this.fxBurst(x, y, TOWER_TYPES[type].color);
@@ -768,6 +803,24 @@ export class GameScene extends Phaser.Scene {
       this.saveRunState();
     }
     this.closeBuild();
+  }
+
+  /** Live tower occupancy for the maze flow field (stage/obstacle are static). */
+  private readonly mazeBlocked = (c: number, r: number): boolean =>
+    this.towers?.hasTowerAt(c, r) ?? false;
+
+  /** Rebuild the maze flow field for the current tower layout (no-op off maze). */
+  private recomputeMaze(): void {
+    this.maze?.recompute(this.mazeBlocked);
+  }
+
+  /** Cells that must always reach the stage: every spawn tile + every live foe. */
+  private mazeSources(): { col: number; row: number }[] {
+    const sources = this.map.laneRows.map((r) => ({ col: this.map.spawnCol, row: r }));
+    for (const e of this.waves.enemies) {
+      sources.push({ col: e.gridCol, row: e.gridRow });
+    }
+    return sources;
   }
 
   /** A short expanding glow ring + spark burst (tower placed / upgraded). */
@@ -1161,6 +1214,7 @@ export class GameScene extends Phaser.Scene {
     haptics.play('tap');
     this.gold += tower.sellValue;
     this.towers.removeTower(tower); // deselects -> closes the upgrade panel
+    this.recomputeMaze(); // freeing a tile reopens routes through it
     this.refreshHud();
     this.saveRunState();
   }

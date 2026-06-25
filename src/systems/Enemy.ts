@@ -5,6 +5,7 @@ import { type GridLayout, tileToWorld } from './grid';
 import { enemyTextureKey } from './textures';
 import { perf } from './perf';
 import { AFFIX_REWARD_MULT, type Affix } from '../data/affixes';
+import type { MazeField } from './maze';
 
 /** Per-boss aura glow color (independent of the tinted body silhouette). */
 const BOSS_AURA: Record<BossKind, number> = {
@@ -66,10 +67,15 @@ export class Enemy {
 
   private col: number;
   private laneIndex: number;
+  /** Actual grid row (maze mode moves freely between rows; lane mode = the lane's row). */
+  private row: number;
   private targetCol: number;
   private targetLane: number;
+  private targetRow: number;
   private targetX = 0;
   private targetY = 0;
+  /** Flow-field router for maze maps (undefined = fixed-lane walking). */
+  private readonly field?: MazeField;
   /** Walk-cycle phase + hop height, so the silhouette waddles as it moves. */
   private walkPhase = Math.random() * Math.PI * 2;
   private readonly bobAmp: number;
@@ -86,6 +92,8 @@ export class Enemy {
     parent?: Phaser.GameObjects.Container,
     affix?: Affix,
     mega = false,
+    field?: MazeField,
+    startRow?: number,
   ) {
     this.scene = scene;
     this.map = map;
@@ -102,13 +110,17 @@ export class Enemy {
     this.maxShield = this.shield;
     this.bypassLimit = type.bypassCount ?? (type.bypassFirstTower ? 1 : 0);
 
+    this.field = field;
     this.laneIndex = laneIndex;
     this.targetLane = laneIndex;
     this.col = startCol;
     this.targetCol = startCol;
+    // Maze enemies move on free grid rows; lane enemies stay on their lane's row.
+    this.row = startRow ?? map.laneRows[laneIndex];
+    this.targetRow = this.row;
 
     const ts = layout.tileSize;
-    const start = tileToWorld(layout, this.col, map.laneRows[laneIndex]);
+    const start = tileToWorld(layout, this.col, this.row);
 
     const bodySize = Math.max(6, Math.floor(ts * type.size * (mega ? 1.5 : 1)));
     this.bobAmp = bodySize * 0.12;
@@ -211,8 +223,17 @@ export class Enemy {
     return this.laneIndex;
   }
 
-  /** Choose the next waypoint: one column left, possibly switching lanes. */
+  /** Current grid row (maze mode); used to spawn splits at the death location. */
+  get gridRow(): number {
+    return this.row;
+  }
+
+  /** Choose the next waypoint: a flow-field step (maze) or one column left (lane). */
   private pickNextTarget(): void {
+    if (this.field) {
+      this.pickNextTargetMaze();
+      return;
+    }
     const nextCol = this.col - 1;
     let nextLane = this.laneIndex;
 
@@ -229,7 +250,21 @@ export class Enemy {
 
     this.targetCol = nextCol;
     this.targetLane = nextLane;
-    const target = tileToWorld(this.layout, nextCol, this.map.laneRows[nextLane]);
+    this.targetRow = this.map.laneRows[nextLane];
+    const target = tileToWorld(this.layout, nextCol, this.targetRow);
+    this.targetX = target.x;
+    this.targetY = target.y;
+  }
+
+  /** Maze routing: step toward the flow field's next cell from the current one. */
+  private pickNextTargetMaze(): void {
+    const n = this.field!.next(this.col, this.row);
+    // No route right now (sealing is forbidden, so this is a transient safety):
+    // idle on the current tile until the maze reopens.
+    const cell = n ?? { col: this.col, row: this.row };
+    this.targetCol = cell.col;
+    this.targetRow = cell.row;
+    const target = tileToWorld(this.layout, cell.col, cell.row);
     this.targetX = target.x;
     this.targetY = target.y;
   }
@@ -269,6 +304,7 @@ export class Enemy {
     if (dist <= step || dist === 0) {
       this.container.setPosition(this.targetX, this.targetY);
       this.col = this.targetCol;
+      this.row = this.targetRow;
       this.laneIndex = this.targetLane;
       if (this.col <= this.map.stageCol) {
         this.arrivedAtStage = true;
@@ -361,7 +397,7 @@ export class Enemy {
   knockback(tiles: number): void {
     if (this.arrivedAtStage || this.dead || tiles <= 0) return;
     const ts = this.layout.tileSize;
-    const laneRow = this.map.laneRows[this.laneIndex];
+    const laneRow = this.row;
     const spawnX = tileToWorld(this.layout, this.map.spawnCol, laneRow).x;
     const newX = Math.min(spawnX, this.container.x + tiles * ts);
     const laneY = tileToWorld(this.layout, 0, laneRow).y;

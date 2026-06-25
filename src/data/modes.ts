@@ -9,7 +9,7 @@
  *    Stage) with character dialogue between waves (see `src/data/story.ts`).
  *    Star ratings still apply.
  */
-export type GameMode = 'endless' | 'story';
+export type GameMode = 'endless' | 'story' | 'maze';
 
 export interface ModeInfo {
   key: GameMode;

@@ -38,6 +38,7 @@ export interface MapOptions {
   startingGold?: number;
   waveProfile?: WaveProfile;
   special?: SpecialKind;
+  pathMode?: 'lane' | 'maze';
 }
 
 export function parseMap(opts: MapOptions): MapDefinition {
@@ -84,5 +85,6 @@ export function parseMap(opts: MapOptions): MapDefinition {
     startingGold: opts.startingGold,
     waveProfile: opts.waveProfile,
     special: opts.special,
+    pathMode: opts.pathMode,
   };
 }

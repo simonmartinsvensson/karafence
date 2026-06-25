@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { MapDefinition } from '../types/map';
 import type { GridLayout } from './grid';
+import type { MazeField } from './maze';
 import { Enemy } from './Enemy';
 import { ENEMY_TYPES, type EnemyTypeKey } from '../data/enemies';
 import { rollAffix } from '../data/affixes';
@@ -60,6 +61,7 @@ export class WaveManager {
     profile: WaveProfile,
     endless = false,
     enemyHpMult = 1,
+    field?: MazeField,
   ) {
     this.scene = scene;
     this.map = map;
@@ -69,7 +71,11 @@ export class WaveManager {
     this.profile = profile;
     this.endless = endless;
     this.enemyHpMult = enemyHpMult;
+    this.field = field;
   }
+
+  /** Flow-field router for maze maps (undefined on lane maps). */
+  private readonly field?: MazeField;
 
   /** Account-wide enemy-HP multiplier from the "Stage Fright" research node. */
   private readonly enemyHpMult: number = 1;
@@ -161,14 +167,15 @@ export class WaveManager {
    * boss-summoned enemies). Bosses are never difficulty-scaled. Does not touch
    * `toSpawn` (use `spawn` for scheduled wave spawns).
    */
-  spawnAt(typeKey: EnemyTypeKey, laneIndex: number, startCol?: number): Enemy {
-    return this.spawnEnemy(typeKey, laneIndex, startCol);
+  spawnAt(typeKey: EnemyTypeKey, laneIndex: number, startCol?: number, startRow?: number): Enemy {
+    return this.spawnEnemy(typeKey, laneIndex, startCol, startRow);
   }
 
   private spawnEnemy(
     typeKey: EnemyTypeKey,
     laneIndex: number,
     startCol?: number,
+    startRow?: number,
   ): Enemy {
     const type = ENEMY_TYPES[typeKey];
     const isBoss = type.boss !== undefined;
@@ -194,6 +201,8 @@ export class WaveManager {
       this.enemyLayer,
       affix ?? undefined,
       mega,
+      this.field,
+      startRow,
     );
     this.enemies.add(enemy);
     if (isBoss) this.callbacks.onBossSpawn?.(enemy);
@@ -216,7 +225,7 @@ export class WaveManager {
         const split = enemy.type.splitInto;
         if (split) {
           for (let i = 0; i < split.count; i++) {
-            this.spawnAt(split.type, enemy.lane, enemy.gridCol);
+            this.spawnAt(split.type, enemy.lane, enemy.gridCol, enemy.gridRow);
           }
         }
         enemy.destroy();

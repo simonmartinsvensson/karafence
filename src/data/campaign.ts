@@ -29,6 +29,8 @@ export interface CampaignLevel {
   layoutRows: string[];
   /** Set-piece rule for milestone levels (undefined = a normal level). */
   special?: SpecialKind;
+  /** `maze` = open-floor flow-field routing (Maze Night); default lane walking. */
+  pathMode?: 'lane' | 'maze';
 }
 
 /** Milestone set-piece levels: index (0-based) -> the special rule it runs. */
@@ -260,6 +262,35 @@ export const ENDLESS_LEVEL: CampaignLevel = {
   layoutRows: makeAscii(5),
 };
 
+/**
+ * Standalone **Maze Night** map: an open floor (no fixed lanes) where towers
+ * block tiles and the crowd flow-field pathfinds around them. The stage sits in
+ * the left columns; the right edge is a walkable-but-unbuildable spawn strip so
+ * spawns can never be walled in. Everything between is buildable seating — build
+ * it into a maze to lengthen the crowd's walk. See systems/maze.ts.
+ */
+const MAZE_ROWS = 13;
+function makeMazeAscii(): string[] {
+  const stage = 'S'.repeat(STAGE_W);
+  const interior = '.'.repeat(COLS - STAGE_W - 1); // buildable + walkable floor
+  const row = stage + interior + '#'; // trailing '#': walkable spawn strip, not buildable
+  return Array.from({ length: MAZE_ROWS }, () => row);
+}
+
+export const MAZE_LEVEL: CampaignLevel = {
+  id: 'maze',
+  name: 'Maze Night',
+  lanes: MAZE_ROWS,
+  enemySpeedMultiplier: 1,
+  startingGold: 260,
+  waveProfile: ENDLESS_PROFILE,
+  starGoals: { maxLivesLost: 99, maxGoldSpent: 99999, minCombo: 0 },
+  // The grand-theater teal — visually distinct from the neon-lounge endless map.
+  colors: CHAPTER_THEMES[2].tiles,
+  layoutRows: makeMazeAscii(),
+  pathMode: 'maze',
+};
+
 /** Turn a campaign entry into a playable MapDefinition. */
 export function buildMap(entry: CampaignLevel): MapDefinition {
   return parseMap({
@@ -272,5 +303,6 @@ export function buildMap(entry: CampaignLevel): MapDefinition {
     startingGold: entry.startingGold,
     waveProfile: entry.waveProfile,
     special: entry.special,
+    pathMode: entry.pathMode,
   });
 }

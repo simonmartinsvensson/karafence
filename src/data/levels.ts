@@ -1,5 +1,5 @@
 import type { MapDefinition } from '../types/map';
-import { CAMPAIGN, ENDLESS_LEVEL, buildMap } from './campaign';
+import { CAMPAIGN, ENDLESS_LEVEL, MAZE_LEVEL, buildMap } from './campaign';
 
 /**
  * Level registry, derived from the single campaign source (`campaign.ts`) plus
@@ -7,7 +7,7 @@ import { CAMPAIGN, ENDLESS_LEVEL, buildMap } from './campaign';
  */
 export type LevelId = string;
 
-const ALL = [...CAMPAIGN, ENDLESS_LEVEL];
+const ALL = [...CAMPAIGN, ENDLESS_LEVEL, MAZE_LEVEL];
 
 /** Levels in campaign order (id + built map). */
 export const LEVELS: { id: LevelId; map: MapDefinition }[] = ALL.map((entry) => ({
