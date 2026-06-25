@@ -3,6 +3,8 @@ import { TOUCH_MIN } from '../config';
 import type { LevelId } from '../data/levels';
 import { MODES, type GameMode, type ModeInfo } from '../data/modes';
 import { CHAPTER_ORDER } from '../data/story';
+import { themeForChapterIndex } from '../data/themes';
+import { TileType } from '../types/map';
 import {
   isFeatureUnlocked,
   featuresUnlockedBetween,
@@ -91,7 +93,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-25 · Chapter title cards announce each venue';
+const LAST_PATCH = '2026-06-25 · Venue bands in Levels grid + late-game balance';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
@@ -1410,17 +1412,25 @@ export class MenuScene extends Phaser.Scene {
     const w = Math.min(sw - 16, 460);
     const cols = 5;
     const rows = Math.ceil(CHAPTER_ORDER.length / cols);
+    const bandRows = 10 / cols; // 2 grid rows per 10-level venue band
+    const bands = Math.ceil(CHAPTER_ORDER.length / 10);
     const pad = 12;
     const gap = 6;
     const headerH = 34;
     const closeArea = TOUCH_MIN + 16;
+    // A compact venue-name strip sits above each band's two rows, tying the
+    // Levels grid to the in-game chapter themes. Sized small so the whole 60
+    // even on portrait phones still fits without scrolling (stars stay legible).
+    const bandLabelH = Math.round(Phaser.Math.Clamp(sh * 0.02, 12, 16));
+    const labelGap = 3;
+    const bandsExtra = bands * (bandLabelH + labelGap);
     // 60 levels: size cells to fit BOTH width and the available height so the
     // whole campaign shows without scrolling, even on short screens.
     const widthCell = Math.floor((w - pad * 2 - gap * (cols - 1)) / cols);
     const maxGridH = sh - 12 - headerH - closeArea;
-    const heightCell = Math.floor((maxGridH - gap * (rows - 1)) / rows);
+    const heightCell = Math.floor((maxGridH - gap * (rows - 1) - bandsExtra) / rows);
     const cell = Math.max(28, Math.min(widthCell, heightCell));
-    const gridH = rows * cell + (rows - 1) * gap;
+    const gridH = rows * cell + (rows - 1) * gap + bandsExtra;
     const h = headerH + gridH + closeArea;
     const showStars = cell >= 52; // star row only legible on bigger cells
     this.pushBackdrop();
@@ -1440,17 +1450,59 @@ export class MenuScene extends Phaser.Scene {
     const unlockedMax = this.highestUnlockedIndex();
     const gridW = cols * cell + (cols - 1) * gap;
     const gridLeft = sw / 2 - gridW / 2 + cell / 2;
-    const gridTop = top + headerH + cell / 2;
+    const baseTop = top + headerH;
+    const labelSlot = bandLabelH + labelGap;
+    // Cells in band b sit below b+1 venue-label slots (its own + earlier bands').
+    const cyFor = (i: number) => {
+      const r = Math.floor(i / cols);
+      const labelsAbove = Math.floor(r / bandRows) + 1;
+      return baseTop + labelsAbove * labelSlot + r * (cell + gap) + cell / 2;
+    };
+
+    // Venue header strip above each 10-level band (tied to the in-game themes).
+    const mix = (a: number, base: number, t: number) => {
+      const ch = (v: number, s: number) => (v >> s) & 0xff;
+      const m = (s: number) => Math.round(ch(a, s) * t + ch(base, s) * (1 - t));
+      return (m(16) << 16) | (m(8) << 8) | m(0);
+    };
+    for (let b = 0; b < bands; b++) {
+      const theme = themeForChapterIndex(b * 10);
+      const accent = theme.tiles[TileType.Aisle];
+      const r0 = b * bandRows;
+      const stripCy = baseTop + b * labelSlot + r0 * (cell + gap) + bandLabelH / 2;
+      const stripX = sw / 2 - gridW / 2;
+      this.modal.push(
+        this.add
+          .rectangle(stripX, stripCy, gridW, bandLabelH, mix(accent, 0x14141c, 0.32))
+          .setOrigin(0, 0.5)
+          .setDepth(311),
+      );
+      this.modal.push(
+        this.add
+          .text(stripX + 5, stripCy, `CH ${b + 1} · ${theme.name.toUpperCase()}`, {
+            fontFamily: 'monospace',
+            fontSize: `${Math.round(Phaser.Math.Clamp(bandLabelH * 0.62, 9, 12))}px`,
+            color: '#' + mix(accent, 0xffffff, 0.55).toString(16).padStart(6, '0'),
+            fontStyle: 'bold',
+          })
+          .setOrigin(0, 0.5)
+          .setDepth(312),
+      );
+    }
+
     CHAPTER_ORDER.forEach((id, i) => {
       const cx = gridLeft + (i % cols) * (cell + gap);
-      const cy = gridTop + Math.floor(i / cols) * (cell + gap);
+      const cy = cyFor(i);
       const unlocked = i <= unlockedMax;
       const stars = this.meta.stars[id] ?? 0;
+      const accent = themeForChapterIndex(i).tiles[TileType.Aisle];
       // Unlocked-but-not-3★ levels get an amber border to flag stars still on
       // the table; fully-starred ones go bright green; locked ones stay grey.
       const border = !unlocked ? 0x444455 : stars >= 3 ? 0x69db7c : 0xffd43b;
+      // Tint the cell fill toward its venue color so the grid reads as 6 zones.
+      const fill = unlocked ? mix(accent, 0x232336, 0.22) : 0x1a1a22;
       const rect = this.add
-        .rectangle(cx, cy, cell, cell, unlocked ? 0x232336 : 0x1a1a22)
+        .rectangle(cx, cy, cell, cell, fill)
         .setStrokeStyle(2, border, unlocked ? 0.9 : 0.6)
         .setDepth(311);
       this.modal.push(rect);

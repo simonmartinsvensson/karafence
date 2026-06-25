@@ -225,9 +225,13 @@ function makeLevel(i: number): CampaignLevel {
     name: nameFor(i),
     lanes,
     enemySpeedMultiplier: tutorial ? 0.62 : Math.min(2.0, 0.8 + i * 0.018),
-    // Floor raised 180→210: late levels widen to 7 lanes while starting gold
-    // falls, so give a little more opening budget to cover the board.
-    startingGold: tutorial ? 420 : Math.max(210, 300 - i * 2),
+    // Floor raised 180→210; plus a lane-aware opening allowance (+25 per lane
+    // beyond 5). A real-engine playtest (L48-60) confirmed the levels are
+    // mechanically winnable, but the *opening* budget was the binding squeeze:
+    // lanes widen to 6-7 late while base gold falls to its floor, so the wide
+    // boards couldn't seed every lane before kill-gold compounds. Narrow early
+    // maps (≤5 lanes) are unchanged.
+    startingGold: tutorial ? 420 : Math.max(210, 300 - i * 2) + Math.max(0, lanes - 5) * 25,
     waveProfile: profile,
     starGoals: {
       // "Lives" is singer-HP damage (0-30; most foes deal 1, bosses 4-5).
