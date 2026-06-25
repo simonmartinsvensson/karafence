@@ -129,6 +129,8 @@ export class GameScene extends Phaser.Scene {
   private towers!: TowerManager;
   /** Maze Night flow-field router (undefined on lane maps). */
   private maze?: MazeField;
+  /** Board overlay drawing the crowd's current route through the maze. */
+  private mazeFlowGfx?: Phaser.GameObjects.Graphics;
   /** True for any never-ending mode (endless + maze) — drives wave generation. */
   private isEndless = false;
   /** True only for Maze Night (open-floor flow-field routing + no-seal building). */
@@ -379,11 +381,14 @@ export class GameScene extends Phaser.Scene {
     this.layout = computeGridLayout(this.map);
     this.createBoard();
 
-    // Maze Night: build the flow field the crowd pathfinds through. Recomputed
-    // on every tower place/sell (mazeBlocked reads live tower occupancy).
+    // Maze Night: build the flow field the crowd pathfinds through + the overlay
+    // that shows its route. Recomputed on every tower place/sell (mazeBlocked
+    // reads live tower occupancy).
     if (this.isMaze) {
       this.maze = new MazeField(this.map);
-      this.maze.recompute(this.mazeBlocked);
+      this.mazeFlowGfx = this.add.graphics();
+      this.layers.range.add(this.mazeFlowGfx);
+      this.recomputeMaze();
     }
 
     this.drawHud();
@@ -813,7 +818,54 @@ export class GameScene extends Phaser.Scene {
 
   /** Rebuild the maze flow field for the current tower layout (no-op off maze). */
   private recomputeMaze(): void {
-    this.maze?.recompute(this.mazeBlocked);
+    if (!this.maze) return;
+    this.maze.recompute(this.mazeBlocked);
+    this.drawMazeFlow();
+  }
+
+  /**
+   * Draw the crowd's route through the maze: a faint chevron on every walkable
+   * cell pointing the way the flow field sends enemies toward the stage. Lets
+   * the player read the path their walls create. Redrawn on each recompute;
+   * lives in the board's range layer so it scales with the board.
+   */
+  private drawMazeFlow(): void {
+    const g = this.mazeFlowGfx;
+    if (!g || !this.maze) return;
+    g.clear();
+    const ts = this.layout.tileSize;
+    // A bright cyan-white that reads on every venue theme (the per-theme aisle
+    // tint can blend into the board), so the route is legible at a glance.
+    const accent = 0xbfe9ff;
+    const len = ts * 0.24;
+    for (let r = 0; r < this.map.rows; r++) {
+      for (let c = 0; c < this.map.cols; c++) {
+        if (this.towers?.hasTowerAt(c, r)) continue;
+        const n = this.maze.next(c, r);
+        if (!n) continue;
+        const from = tileToWorld(this.layout, c, r);
+        const dx = n.col - c;
+        const dy = n.row - r;
+        // Unit direction toward the next cell (orthogonal, so one axis is 0).
+        const ux = Math.sign(dx);
+        const uy = Math.sign(dy);
+        const tipX = from.x + ux * len;
+        const tipY = from.y + uy * len;
+        g.lineStyle(2, accent, 0.42);
+        g.beginPath();
+        g.moveTo(from.x - ux * len, from.y - uy * len);
+        g.lineTo(tipX, tipY);
+        g.strokePath();
+        // Small arrowhead at the tip (perpendicular wings).
+        const wing = len * 0.6;
+        g.beginPath();
+        g.moveTo(tipX, tipY);
+        g.lineTo(tipX - ux * wing + uy * wing, tipY - uy * wing + ux * wing);
+        g.moveTo(tipX, tipY);
+        g.lineTo(tipX - ux * wing - uy * wing, tipY - uy * wing - ux * wing);
+        g.strokePath();
+      }
+    }
   }
 
   /** Cells that must always reach the stage: every spawn tile + every live foe. */

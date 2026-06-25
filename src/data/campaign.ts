@@ -1,7 +1,7 @@
 import { TileType, type MapDefinition, type SpecialKind, type StarGoals } from '../types/map';
 import type { EnemyTypeKey } from './enemies';
 import { parseMap } from './parseMap';
-import { ENDLESS_PROFILE, type WaveProfile } from './waves';
+import { ENDLESS_PROFILE, MAZE_PROFILE, type WaveProfile } from './waves';
 import { CHAPTER_THEMES, themeForChapterIndex } from './themes';
 
 /**
@@ -282,8 +282,10 @@ export const MAZE_LEVEL: CampaignLevel = {
   name: 'Maze Night',
   lanes: MAZE_ROWS,
   enemySpeedMultiplier: 1,
-  startingGold: 260,
-  waveProfile: ENDLESS_PROFILE,
+  // A wider opening than a lane map: you must lay a starting funnel across a
+  // 13-row front before the first wave.
+  startingGold: 320,
+  waveProfile: MAZE_PROFILE,
   starGoals: { maxLivesLost: 99, maxGoldSpent: 99999, minCombo: 0 },
   // The grand-theater teal — visually distinct from the neon-lounge endless map.
   colors: CHAPTER_THEMES[2].tiles,

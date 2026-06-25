@@ -120,6 +120,38 @@ export const ENDLESS_PROFILE: WaveProfile = {
   spawnDelay: 420,
 };
 
+/**
+ * Maze Night profile. The crowd enters across the whole right edge (13 rows),
+ * so a flat endless ramp would overwhelm before you can wall up a funnel. This
+ * trickles fewer, slower foes early (more time to build the maze) while keeping
+ * the deep-wave hp compounding so a long run still walls out eventually.
+ */
+export const MAZE_PROFILE: WaveProfile = {
+  waveCount: 999,
+  baseCount: 5,
+  countPerWave: 1.0,
+  hpPerWave: 0.1,
+  hpCompoundPerWave: 0.02,
+  hpCompoundFrom: 40,
+  speedPerWave: 0.035,
+  speedCap: 2.6,
+  bossEvery: 6,
+  bossHpPerCycle: 0.15,
+  enemyPool: [
+    'heckler',
+    'phoneScroller',
+    'drunkUncle',
+    'stageRusher',
+    'critic',
+    'superfan',
+    'vip',
+    'crowdSurfer',
+    'roadie',
+    'pyro',
+  ],
+  spawnDelay: 520,
+};
+
 /** Per-wave hp / speed / boss-hp scaling derived from a profile (0-based index). */
 export function waveScaling(
   index: number,
