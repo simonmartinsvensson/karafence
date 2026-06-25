@@ -2,6 +2,7 @@ import { TileType, type MapDefinition, type SpecialKind, type StarGoals } from '
 import type { EnemyTypeKey } from './enemies';
 import { parseMap } from './parseMap';
 import { ENDLESS_PROFILE, type WaveProfile } from './waves';
+import { CHAPTER_THEMES, themeForChapterIndex } from './themes';
 
 /**
  * The story campaign: 20 levels generated from a difficulty curve so the ramp
@@ -101,14 +102,6 @@ function makeLayout(i: number, lanes: number, tutorial: boolean): string[] {
   }
   return rows.map((cells) => cells.join(''));
 }
-
-/** A cooler palette for the back half of the campaign (bigger, fancier venues). */
-const COOL_PALETTE: Record<TileType, number> = {
-  [TileType.Stage]: 0x24243a,
-  [TileType.Aisle]: 0x394a63,
-  [TileType.Build]: 0x33405a,
-  [TileType.Obstacle]: 0x161a2a,
-};
 
 /** Enemy types unlocked by level index (variety grows as you progress). */
 function poolForLevel(i: number): EnemyTypeKey[] {
@@ -244,7 +237,7 @@ function makeLevel(i: number): CampaignLevel {
       maxGoldSpent: 600 + i * 60,
       minCombo: 3 + Math.floor(i / 3),
     },
-    colors: i >= 20 ? COOL_PALETTE : undefined,
+    colors: themeForChapterIndex(i).tiles,
     tutorial,
     layoutRows: makeLayout(i, lanes, tutorial),
     special,
@@ -262,6 +255,8 @@ export const ENDLESS_LEVEL: CampaignLevel = {
   startingGold: 240,
   waveProfile: ENDLESS_PROFILE,
   starGoals: { maxLivesLost: 99, maxGoldSpent: 99999, minCombo: 0 },
+  // Endless is "the club that never closes" — the neon lounge look.
+  colors: CHAPTER_THEMES[1].tiles,
   layoutRows: makeAscii(5),
 };
 

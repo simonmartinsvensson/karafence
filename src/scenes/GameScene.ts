@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TOUCH_MIN } from '../config';
 import { LEVEL_BY_ID, type LevelId } from '../data/levels';
 import { SPECIAL_INFO } from '../data/campaign';
+import { themeForChapterIndex, type ChapterTheme } from '../data/themes';
 import { type MapDefinition, type SpecialKind } from '../types/map';
 import {
   computeGridLayout,
@@ -142,6 +143,8 @@ export class GameScene extends Phaser.Scene {
   private singerHp = SINGER_MAX_HP;
   /** Run's singer max HP (lowered on Sudden Death set-pieces). */
   private singerMaxHp = SINGER_MAX_HP;
+  /** This level's chapter visual theme (palette / background / vignette). */
+  private theme!: ChapterTheme;
   /** True while a wave is in progress (drives the Survival build-lock). */
   private waveActive = false;
   private gold = STARTING_GOLD;
@@ -338,7 +341,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.cameras.main.setBackgroundColor('#0b0b12');
+    // Per-chapter visual theme (endless → the neon-lounge band).
+    const ci = CHAPTER_ORDER.indexOf(this.levelId);
+    this.theme = themeForChapterIndex(ci >= 0 ? ci : 11);
+    this.cameras.main.setBackgroundColor(this.theme.bg);
     this.cameras.main.fadeIn(350, 11, 11, 18);
     addNeonCameraFX(this.cameras.main);
     // Reset speed scaling (the scene instance + its clock are reused across runs).
@@ -1176,15 +1182,16 @@ export class GameScene extends Phaser.Scene {
     const g = this.add.graphics({ x: offsetX, y: offsetY });
     const vY = mapH * 0.16;
     const vX = mapW * 0.08;
+    const v = this.theme.vignette; // per-chapter edge tint
     // Top / bottom.
-    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.55, 0.55, 0, 0);
+    g.fillGradientStyle(v, v, v, v, 0.55, 0.55, 0, 0);
     g.fillRect(0, 0, mapW, vY);
-    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0, 0.55, 0.55);
+    g.fillGradientStyle(v, v, v, v, 0, 0, 0.55, 0.55);
     g.fillRect(0, mapH - vY, mapW, vY);
     // Left / right.
-    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0.45, 0, 0.45, 0);
+    g.fillGradientStyle(v, v, v, v, 0.45, 0, 0.45, 0);
     g.fillRect(0, 0, vX, mapH);
-    g.fillGradientStyle(0x05050a, 0x05050a, 0x05050a, 0x05050a, 0, 0.45, 0, 0.45);
+    g.fillGradientStyle(v, v, v, v, 0, 0.45, 0, 0.45);
     g.fillRect(mapW - vX, 0, vX, mapH);
     this.layers.tiles.add(g);
   }
@@ -1235,7 +1242,7 @@ export class GameScene extends Phaser.Scene {
     // stage tiles under it) read as a clean shadowed frame edge, not leftover
     // footlights peeking past the curtain.
     const backstage = this.add
-      .rectangle(0, 0, stageW, mapH, 0x140a1e, 1)
+      .rectangle(0, 0, stageW, mapH, this.theme.backstage, 1)
       .setOrigin(0.5);
     // Theatre-curtain backdrop, left-anchored and narrower.
     const curtain = this.add

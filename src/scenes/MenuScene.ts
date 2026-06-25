@@ -91,7 +91,7 @@ const STOP = (
 ) => ev?.stopPropagation();
 
 /** Bump this whenever the game is patched — shown in the menu corner. */
-const LAST_PATCH = '2026-06-25 · Living dialogue: typewriter + voices';
+const LAST_PATCH = '2026-06-25 · Six themed chapters change the look';
 
 /**
  * Landing screen: pick a game mode (Endless or Story — each with a Resume
